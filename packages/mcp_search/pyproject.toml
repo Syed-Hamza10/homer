@@ -1,0 +1,21 @@
+[project]
+name = "achilles-mcp-search"
+version = "0.1.0"
+description = "Achilles MCP server for web search, news and page fetching."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "achilles-net",
+    "fastmcp>=4.0,<5",
+    "ddgs>=9.0",
+    "trafilatura>=2.0",
+]
+
+[project.scripts]
+achilles-mcp-search = "achilles_mcp_search.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["achilles_mcp_search"]
