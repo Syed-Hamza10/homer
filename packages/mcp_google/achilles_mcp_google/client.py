@@ -4,7 +4,7 @@ from achilles_mcp_google.auth import TokenStore
 from achilles_mcp_google.settings import Settings
 from achilles_net import Allowlist, AllowlistedClient, SqliteLog
 from achilles_net.allowlist import host_key
-from achilles_net.client import no_log
+from achilles_net.client import LogFn, no_log
 
 TIMEOUT = 30.0
 
@@ -17,11 +17,13 @@ class GoogleError(Exception):
 
 
 class GoogleClient:
-    def __init__(self, settings: Settings, store: TokenStore) -> None:
+    def __init__(self, settings: Settings, store: TokenStore, log: LogFn | None = None) -> None:
+        """Logs to the core database when it exists unless a log callable is given."""
         self.settings = settings
         self.store = store
         allowlist = Allowlist({host_key(settings.api_base), host_key(settings.token_url)})
-        log = SqliteLog(settings.db_path) if settings.db_path.exists() else no_log
+        if log is None:
+            log = SqliteLog(settings.db_path) if settings.db_path.exists() else no_log
         self.http = AllowlistedClient(allowlist, log=log, timeout=TIMEOUT)
 
     async def request(
