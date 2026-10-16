@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dashboard/dist/
+packages/core/achilles_core/static/
+
+# Secrets and local data
+.env
+*.local
+~/.achilles/
+client_secret*.json
+token*.json
+
+# Editors
+.idea/
+.vscode/
