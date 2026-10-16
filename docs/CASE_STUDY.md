@@ -20,7 +20,8 @@ answers are the next steps.
   Google API hosts; anything else is refused before a connection is opened, and a test proves it.
 - **Outbound log.** Each call is written to a local SQLite table (host, path, status, duration).
   The Privacy page shows that table grouped by host. After a demo it reads exactly `127.0.0.1:11434`
-  (Ollama) and `www.googleapis.com`, with call counts, and "Spent on inference: $0.00".
+  (Ollama), `www.googleapis.com` and `oauth2.googleapis.com` (token refresh), with call counts, and
+  "Spent on inference: $0.00".
 - **Approvals enforced by the backend.** Tools that send or change anything return a proposal
   (action, payload, preview) instead of acting. The server stores it with a hash and shows a card.
   The code that performs the action is hidden from the model entirely; only the approval handler
