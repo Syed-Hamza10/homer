@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from importlib.metadata import version
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -8,8 +8,8 @@ import dateparser
 from fastmcp import FastMCP
 
 VERSION = version("achilles-mcp-system")
-WEEKDAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
-NEXT_WEEKDAY = re.compile(rf"\bnext\s+(?=(?:{WEEKDAYS})\b)", re.IGNORECASE)
+WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+NEXT_WEEKDAY = re.compile(rf"\bnext\s+({'|'.join(WEEKDAYS)})\b", re.IGNORECASE)
 
 mcp = FastMCP("achilles-system", version=VERSION)
 
@@ -19,6 +19,19 @@ def zone_or_none(timezone: str) -> ZoneInfo | None:
         return ZoneInfo(timezone)
     except (ZoneInfoNotFoundError, ValueError):
         return None
+
+
+def following_week(base: datetime, weekday: int) -> date:
+    """Returns the date of that weekday in the week after base: 7 to 13 days ahead."""
+    ahead = (weekday - base.weekday()) % 7
+    return (base + timedelta(days=7 if ahead == 0 else ahead + 7)).date()
+
+
+def resolve_next_weekday(text: str, base: datetime) -> str:
+    def to_date(match: re.Match[str]) -> str:
+        return following_week(base, WEEKDAYS.index(match.group(1).lower())).isoformat()
+
+    return NEXT_WEEKDAY.sub(to_date, text)
 
 
 @mcp.tool
@@ -53,7 +66,7 @@ def parse_datetime(text: str, timezone: str, now: str | None = None) -> dict[str
         "TIMEZONE": timezone,
         "RELATIVE_BASE": base,
     }
-    parsed = dateparser.parse(NEXT_WEEKDAY.sub("", text), languages=["en"], settings=settings)
+    parsed = dateparser.parse(resolve_next_weekday(text, base), languages=["en"], settings=settings)
     if parsed is None:
         return {"error": "unparseable"}
     return {"iso": parsed.astimezone(zone).isoformat(timespec="seconds")}

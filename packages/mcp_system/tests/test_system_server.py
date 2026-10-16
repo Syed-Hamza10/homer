@@ -44,16 +44,23 @@ async def test_now_unknown_timezone(client: Client) -> None:
     assert result.data == {"error": "unknown_timezone"}
 
 
+THURSDAY = "2026-10-15T12:00:00+05:00"
+
+
 @pytest.mark.parametrize(
-    ("text", "expected"),
+    ("text", "now", "expected"),
     [
-        ("tomorrow at 9am", "2026-10-17T09:00:00+05:00"),
-        ("next friday 3pm", "2026-10-23T15:00:00+05:00"),
-        ("in 2 hours", "2026-10-16T14:00:00+05:00"),
+        ("tomorrow at 9am", BASE, "2026-10-17T09:00:00+05:00"),
+        ("next friday 3pm", BASE, "2026-10-23T15:00:00+05:00"),
+        ("next friday 3pm", THURSDAY, "2026-10-23T15:00:00+05:00"),
+        ("next thursday at 10:30", THURSDAY, "2026-10-22T10:30:00+05:00"),
+        ("next wednesday", THURSDAY, "2026-10-28T00:00:00+05:00"),
+        ("friday 3pm", THURSDAY, "2026-10-16T15:00:00+05:00"),
+        ("in 2 hours", BASE, "2026-10-16T14:00:00+05:00"),
     ],
 )
-async def test_parse_datetime(client: Client, text: str, expected: str) -> None:
-    args = {"text": text, "timezone": KARACHI, "now": BASE}
+async def test_parse_datetime(client: Client, text: str, now: str, expected: str) -> None:
+    args = {"text": text, "timezone": KARACHI, "now": now}
     result = await client.call_tool("parse_datetime", args)
     assert result.data == {"iso": expected}
 
