@@ -1,0 +1,20 @@
+[project]
+name = "achilles-eval"
+version = "0.1.0"
+description = "Gmail, Calendar and People simulator: the fixture for every Google test and eval."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "typer>=0.15",
+]
+
+[project.scripts]
+achilles-sim = "achilles_sim.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["achilles_sim"]

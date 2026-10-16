@@ -1,0 +1,134 @@
+{
+  "owner": {"name": "Jordan Reyes", "email": "jordan.reyes@example.test"},
+  "history_id": 1000,
+  "labels": [
+    {"id": "Label_1", "name": "Clients"},
+    {"id": "Label_2", "name": "Invoices"},
+    {"id": "Label_3", "name": "Follow up"}
+  ],
+  "contacts": [
+    {"id": "c1", "given": "Maya", "family": "Lindqvist", "email": "maya.lindqvist@example.test"},
+    {"id": "c2", "given": "Tomas", "family": "Keller", "email": "tomas.keller@example.test"},
+    {"id": "c3", "given": "Priya", "family": "Natarajan", "email": "priya.natarajan@example.test"},
+    {"id": "c4", "given": "Samuel", "family": "Okafor", "email": "samuel.okafor@example.test"},
+    {"id": "c5", "given": "Elena", "family": "Marchetti", "email": "elena.marchetti@example.test"}
+  ],
+  "messages": [
+    {
+      "id": "msg_001", "thread_id": "thr_001", "days_ago": 6, "hour": 9,
+      "from": "Maya Lindqvist <maya.lindqvist@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Kickoff for the Northwind website redesign",
+      "labels": ["INBOX", "Label_1"],
+      "body": "Hi Jordan,\n\nThanks for the call yesterday. Attached is the brief for the redesign. Can we lock the kickoff for next week?\n\nBest,\nMaya"
+    },
+    {
+      "id": "msg_002", "thread_id": "thr_001", "days_ago": 6, "hour": 14,
+      "from": "jordan.reyes@example.test", "to": "Maya Lindqvist <maya.lindqvist@example.test>",
+      "subject": "Re: Kickoff for the Northwind website redesign",
+      "labels": ["SENT", "Label_1"],
+      "body": "Hi Maya,\n\nWorks for me. I will send a few slots tomorrow.\n\nJordan"
+    },
+    {
+      "id": "msg_003", "thread_id": "thr_001", "days_ago": 1, "hour": 10,
+      "from": "Maya Lindqvist <maya.lindqvist@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Re: Kickoff for the Northwind website redesign",
+      "labels": ["INBOX", "UNREAD", "Label_1"],
+      "html": "<html><body><p>Hi Jordan,</p><p>Any update on the <b>kickoff slots</b>? Thursday or Friday afternoon would suit us.</p><p>Maya</p></body></html>"
+    },
+    {
+      "id": "msg_004", "thread_id": "thr_002", "days_ago": 5, "hour": 11,
+      "from": "Tomas Keller <tomas.keller@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Invoice 2026-041 for September",
+      "labels": ["INBOX", "Label_2"],
+      "body": "Hello Jordan,\n\nPlease find invoice 2026-041 for the September retainer. Payment terms are 30 days.\n\nRegards,\nTomas"
+    },
+    {
+      "id": "msg_005", "thread_id": "thr_002", "days_ago": 2, "hour": 16,
+      "from": "Tomas Keller <tomas.keller@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Re: Invoice 2026-041 for September",
+      "labels": ["INBOX", "UNREAD", "Label_2"],
+      "body": "Hello Jordan,\n\nA gentle reminder about invoice 2026-041. Let me know if anything is missing.\n\nTomas"
+    },
+    {
+      "id": "msg_006", "thread_id": "thr_003", "days_ago": 4, "hour": 8,
+      "from": "Priya Natarajan <priya.natarajan@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Weekend support for the launch",
+      "labels": ["INBOX", "Label_1"],
+      "body": "Hi Jordan,\n\nOur launch is on Saturday. Does your service guide cover weekend support, and what are the response times?\n\nThanks,\nPriya"
+    },
+    {
+      "id": "msg_007", "thread_id": "thr_003", "days_ago": 4, "hour": 12,
+      "from": "jordan.reyes@example.test", "to": "Priya Natarajan <priya.natarajan@example.test>",
+      "subject": "Re: Weekend support for the launch",
+      "labels": ["SENT", "Label_1"],
+      "body": "Hi Priya,\n\nYes, weekend support is included for launches. I will send the details.\n\nJordan"
+    },
+    {
+      "id": "msg_008", "thread_id": "thr_003", "days_ago": 3, "hour": 9,
+      "from": "Priya Natarajan <priya.natarajan@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Re: Weekend support for the launch",
+      "labels": ["INBOX", "Label_1", "Label_3"],
+      "body": "Great, thank you. Looking forward to the details.\n\nPriya"
+    },
+    {
+      "id": "msg_009", "thread_id": "thr_004", "days_ago": 2, "hour": 7,
+      "from": "Samuel Okafor <samuel.okafor@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Partnership proposal",
+      "labels": ["INBOX", "UNREAD"],
+      "html": "<html><head><style>p{color:red}</style></head><body><h1>Proposal</h1><p>Hi Jordan, I run a small agency and would like to explore a partnership. Could we talk this week?</p><script>alert(1)</script><p>Samuel</p></body></html>"
+    },
+    {
+      "id": "msg_010", "thread_id": "thr_004", "days_ago": 1, "hour": 15,
+      "from": "jordan.reyes@example.test", "to": "Samuel Okafor <samuel.okafor@example.test>",
+      "subject": "Re: Partnership proposal",
+      "labels": ["SENT"],
+      "body": "Hi Samuel,\n\nHappy to talk. Does Wednesday work?\n\nJordan"
+    },
+    {
+      "id": "msg_011", "thread_id": "thr_005", "days_ago": 0, "hour": 8,
+      "from": "Elena Marchetti <elena.marchetti@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Quarterly review deck",
+      "labels": ["INBOX", "UNREAD", "IMPORTANT"],
+      "body": "Hi Jordan,\n\nThe quarterly review deck is ready for your comments. Could you review it before Friday?\n\nElena"
+    },
+    {
+      "id": "msg_012", "thread_id": "thr_005", "days_ago": 0, "hour": 9,
+      "from": "Elena Marchetti <elena.marchetti@example.test>", "to": "jordan.reyes@example.test",
+      "subject": "Re: Quarterly review deck",
+      "labels": ["INBOX", "UNREAD", "IMPORTANT"],
+      "body": "Forgot to add: the budget slide still needs your numbers.\n\nElena"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_001", "weekday": 0, "start": "09:00", "end": "09:30",
+      "summary": "Weekly planning", "location": "", "description": "Plan the week.",
+      "attendees": []
+    },
+    {
+      "id": "evt_002", "weekday": 1, "start": "10:00", "end": "11:00",
+      "summary": "Northwind redesign kickoff prep", "location": "Online",
+      "description": "Prepare the kickoff agenda.",
+      "attendees": ["maya.lindqvist@example.test"]
+    },
+    {
+      "id": "evt_003", "weekday": 2, "start": "14:00", "end": "15:00",
+      "summary": "Call with Samuel Okafor", "location": "Phone", "description": "Partnership talk.",
+      "attendees": ["samuel.okafor@example.test"]
+    },
+    {
+      "id": "evt_004", "weekday": 3, "start": "09:00", "end": "12:00",
+      "summary": "Deep work block", "location": "", "description": "", "attendees": []
+    },
+    {
+      "id": "evt_005", "weekday": 3, "start": "15:00", "end": "16:00",
+      "summary": "Review quarterly deck", "location": "Online", "description": "",
+      "attendees": ["elena.marchetti@example.test"]
+    },
+    {
+      "id": "evt_006", "weekday": 4, "start": "11:00", "end": "12:00",
+      "summary": "Lunch with Tomas", "location": "Cafe Lindhagen", "description": "",
+      "attendees": ["tomas.keller@example.test"]
+    }
+  ]
+}
