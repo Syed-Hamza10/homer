@@ -26,9 +26,8 @@ export async function getJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await send(url, jsonInit(body))
-  return res.json() as Promise<T>
+export async function post(url: string, body: unknown): Promise<void> {
+  await send(url, jsonInit(body))
 }
 
 export async function streamSse(

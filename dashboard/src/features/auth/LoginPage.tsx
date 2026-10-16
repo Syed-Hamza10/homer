@@ -4,7 +4,7 @@ import { useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ApiError, postJson } from "@/lib/api"
+import { ApiError, post } from "@/lib/api"
 
 const messages: Record<number, string> = {
   401: "Wrong passphrase",
@@ -23,7 +23,7 @@ export function LoginPage() {
   const queryClient = useQueryClient()
   const login = useMutation({
     mutationFn: (value: string) =>
-      postJson<unknown>("/api/auth/login", { passphrase: value }),
+      post("/api/auth/login", { passphrase: value }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["auth"] })
       navigate("/", { replace: true })
