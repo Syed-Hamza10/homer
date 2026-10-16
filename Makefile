@@ -1,7 +1,10 @@
-.PHONY: dev test lint fmt build
+.PHONY: dev dashboard-dev test lint fmt build
 
 dev:
 	EXTRA_ORIGINS='["http://localhost:5173"]' uv run uvicorn achilles_core.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+
+dashboard-dev:
+	cd dashboard && pnpm dev
 
 test:
 	uv run pytest
@@ -15,4 +18,4 @@ fmt:
 	uv run ruff check --fix .
 
 build:
-	@echo "todo"
+	cd dashboard && pnpm install --frozen-lockfile && pnpm build
