@@ -167,3 +167,48 @@ def test_token_and_reset(client: TestClient) -> None:
     assert client.post("/token", data={"grant_type": "password"}).status_code == 400
     client.post(f"{GMAIL}/labels", json={"name": "Temp"}, headers=AUTH)
     assert client.post("/_sim/reset").json()["labels"] == 11
+
+
+def test_insert_and_trash(client: TestClient) -> None:
+    message = EmailMessage()
+    message["From"] = "Someone <someone@example.test>"
+    message["To"] = "jordan.reyes@example.test"
+    message["Subject"] = "Inserted"
+    message["Date"] = "Mon, 05 Oct 2026 09:00:00 +0000"
+    message.set_content("Hello")
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
+    inserted = client.post(
+        f"{GMAIL}/messages",
+        params={"internalDateSource": "dateHeader"},
+        json={"raw": raw, "labelIds": ["INBOX", "UNREAD"]},
+        headers=AUTH,
+    ).json()
+    assert inserted["labelIds"] == ["INBOX", "UNREAD"]
+    assert inserted["internalDate"] == str(
+        int(datetime(2026, 10, 5, 9, tzinfo=UTC).timestamp() * 1000)
+    )
+    reply = client.post(
+        f"{GMAIL}/messages",
+        json={"raw": raw, "labelIds": ["SENT"], "threadId": inserted["threadId"]},
+        headers=AUTH,
+    ).json()
+    assert reply["threadId"] == inserted["threadId"]
+    assert (
+        client.post(
+            f"{GMAIL}/messages", json={"raw": raw, "labelIds": ["Nope"]}, headers=AUTH
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            f"{GMAIL}/messages", json={"raw": raw, "threadId": "thr_nope"}, headers=AUTH
+        ).status_code
+        == 404
+    )
+
+    trashed = client.post(f"{GMAIL}/messages/{inserted['id']}/trash", headers=AUTH).json()
+    assert trashed["labelIds"] == ["TRASH"]
+    found = client.get(
+        f"{GMAIL}/messages", params={"q": "subject:Inserted -in:trash"}, headers=AUTH
+    )
+    assert [m["id"] for m in found.json()["messages"]] == [reply["id"]]

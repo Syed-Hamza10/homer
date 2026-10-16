@@ -36,6 +36,22 @@ def list_messages(
     return response
 
 
+@router.post("/messages")
+def insert_message(
+    sim: Sim, body: dict[str, Any], internalDateSource: str = "receivedTime"
+) -> dict[str, Any]:
+    if "raw" not in body:
+        raise ApiError(400, "Missing raw message.")
+    message = sim.mailbox.insert(
+        body["raw"],
+        body.get("labelIds", []),
+        body.get("threadId"),
+        sim.now,
+        internalDateSource == "dateHeader",
+    )
+    return sim.mailbox.render(message, "minimal")
+
+
 @router.get("/messages/{message_id}")
 def get_message(sim: Sim, message_id: str, format: str = "full") -> dict[str, Any]:
     return sim.mailbox.render(sim.mailbox.get(message_id), format)
@@ -47,6 +63,11 @@ def modify_message(sim: Sim, message_id: str, body: dict[str, Any]) -> dict[str,
         message_id, body.get("addLabelIds", []), body.get("removeLabelIds", [])
     )
     return sim.mailbox.render(message, "minimal")
+
+
+@router.post("/messages/{message_id}/trash")
+def trash_message(sim: Sim, message_id: str) -> dict[str, Any]:
+    return sim.mailbox.render(sim.mailbox.trash(message_id), "minimal")
 
 
 @router.get("/threads/{thread_id}")
