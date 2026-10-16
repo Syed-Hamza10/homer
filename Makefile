@@ -1,7 +1,7 @@
 .PHONY: dev test lint fmt build
 
 dev:
-	@echo "todo"
+	EXTRA_ORIGINS='["http://localhost:5173"]' uv run uvicorn achilles_core.main:create_app --factory --reload --host 127.0.0.1 --port 8000
 
 test:
 	uv run pytest
