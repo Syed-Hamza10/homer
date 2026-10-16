@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     ollama_url: str = "http://127.0.0.1:11434"
     achilles_passphrase: SecretStr
     web_search: bool = True
+    google_api_base: str = "https://www.googleapis.com"
+    google_token_url: str = "https://oauth2.googleapis.com/token"
     host: str = "127.0.0.1"
     port: int = 8000
     extra_origins: list[str] = []

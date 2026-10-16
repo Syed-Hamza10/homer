@@ -10,7 +10,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "typer>=0.15",
     "structlog>=24.4",
-    "pydantic-ai-slim[openai]>=1.0",
+    "pydantic-ai-slim[mcp,openai]>=1.0",
     "sqlmodel>=0.0.22",
     "alembic>=1.14",
     "itsdangerous>=2.2",
@@ -29,5 +29,10 @@ packages = ["achilles_core"]
 
 [dependency-groups]
 dev = [
+    "fastmcp>=4.1",
     "pytest-playwright>=0.6",
+    "achilles-eval",
+    "achilles-mcp-google",
+    "achilles-mcp-search",
+    "achilles-mcp-system",
 ]

@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
@@ -72,11 +72,14 @@ class TestHistory:
 
     @pytest.fixture
     def model(self, seen: list[list[ModelMessage]]) -> Model:
+        def classify(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[TextPart(content="system")])
+
         async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
             seen.append(messages)
             yield "ok"
 
-        return FunctionModel(stream_function=respond)
+        return FunctionModel(function=classify, stream_function=respond)
 
     def test_second_message_carries_history(
         self, logged_in: TestClient, post_chat: PostChat, seen: list[list[ModelMessage]]
@@ -86,7 +89,7 @@ class TestHistory:
         assert frames[0][1]["conversation_id"] == conversation_id
         assert frames[-1][0] == "done"
 
-        texts = [part.content for message in seen[1] for part in message.parts]
+        texts = [part.content for message in seen[-1] for part in message.parts]
         assert texts[:3] == ["first", "ok", "second"]
         rows = logged_in.get(f"/api/conversations/{conversation_id}/messages").json()
         assert [m["content"] for m in rows] == ["first", "ok", "second", "ok"]
@@ -95,11 +98,14 @@ class TestHistory:
 class TestModelFailure:
     @pytest.fixture
     def model(self) -> Model:
+        def classify(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[TextPart(content="mail")])
+
         async def explode(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
             raise RuntimeError("secret internal detail")
             yield ""
 
-        return FunctionModel(stream_function=explode)
+        return FunctionModel(function=classify, stream_function=explode)
 
     def test_model_failure_yields_generic_error_event(
         self, logged_in: TestClient, app: FastAPI, post_chat: PostChat

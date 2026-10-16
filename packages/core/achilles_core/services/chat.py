@@ -1,26 +1,53 @@
+import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
-from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+    UserPromptPart,
+)
+from pydantic_ai.run import AgentRunResultEvent
+from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
 from achilles_core.agent.agent import Deps
+from achilles_core.agent.gate import APPROVAL_METADATA_KEY, ApprovalGate, RunState
+from achilles_core.agent.router import Command, classify, parse_command
+from achilles_core.agent.runtime import Runtime
 from achilles_core.db.models import Conversation, Message, TokenCounter, User, utcnow
+from achilles_core.services import approvals
 from achilles_core.services.conversations import get_conversation, list_messages
+from achilles_core.services.errors import DomainError
 
 log = structlog.get_logger(__name__)
 
 TITLE_LENGTH = 60
+SUMMARY_LENGTH = 200
 GENERIC_ERROR = "The assistant could not answer. Please try again."
+NOT_YET_AVAILABLE = "This command is not available yet; it arrives with the skills step."
+REMIND_TOOLSET = "system"
 
 
 @dataclass(frozen=True)
 class ChatEvent:
     name: str
     data: dict[str, Any]
+
+
+@dataclass
+class Outcome:
+    answer: str = ""
+    usage: RunUsage = field(default_factory=RunUsage)
 
 
 def to_history(messages: list[Message]) -> list[ModelMessage]:
@@ -59,10 +86,110 @@ def count_tokens(session: Session, user: User, input_tokens: int, output_tokens:
     session.commit()
 
 
+def summarise(content: Any) -> str:
+    text = content if isinstance(content, str) else json.dumps(content, default=str)
+    return text if len(text) <= SUMMARY_LENGTH else text[: SUMMARY_LENGTH - 1] + "…"
+
+
+def text_event(outcome: Outcome, text: str) -> ChatEvent:
+    outcome.answer += text
+    return ChatEvent("token", {"text": text})
+
+
+async def decide(session: Session, user: User, runtime: Runtime, command: Command) -> str:
+    if not command.arg.isdigit():
+        return f"Usage: /{command.name} <approval id>"
+    approval_id = int(command.arg)
+    try:
+        if command.name == "approve":
+            approval = await approvals.approve(session, user, approval_id, runtime.manager)
+        else:
+            approval = approvals.reject(session, user, approval_id)
+    except DomainError as error:
+        return str(error).capitalize()
+    return f"Approval #{approval.id} ({approval.action}): {approval.status}."
+
+
+async def run_agent(
+    runtime: Runtime,
+    toolset_name: str,
+    prompt: str,
+    history: list[ModelMessage],
+    deps: Deps,
+    outcome: Outcome,
+) -> AsyncIterator[ChatEvent]:
+    state = RunState()
+    gate = ApprovalGate(wrapped=runtime.toolsets[toolset_name], state=state)
+    async with runtime.agent.run_stream_events(
+        prompt, deps=deps, message_history=history, toolsets=[gate]
+    ) as events:
+        async for event in events:
+            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+                if outcome.answer:
+                    yield text_event(outcome, "\n\n")
+                if event.part.content:
+                    yield text_event(outcome, event.part.content)
+            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+                yield text_event(outcome, event.delta.content_delta)
+            elif isinstance(event, FunctionToolCallEvent):
+                yield ChatEvent(
+                    "tool_call",
+                    {"name": event.part.tool_name, "args": event.part.args_as_dict()},
+                )
+            elif isinstance(event, FunctionToolResultEvent):
+                metadata = event.part.metadata
+                if isinstance(metadata, dict) and APPROVAL_METADATA_KEY in metadata:
+                    approval = next(
+                        a for a in state.approvals if a.id == metadata[APPROVAL_METADATA_KEY]
+                    )
+                    yield ChatEvent(
+                        "approval_required",
+                        {
+                            "approval_id": approval.id,
+                            "action": approval.action,
+                            "preview": approval.preview,
+                        },
+                    )
+                yield ChatEvent(
+                    "tool_result",
+                    {"name": event.part.tool_name, "summary": summarise(event.part.content)},
+                )
+            elif isinstance(event, AgentRunResultEvent):
+                outcome.usage.incr(event.result.usage)
+
+
+async def respond(
+    session: Session,
+    user: User,
+    runtime: Runtime,
+    history: list[ModelMessage],
+    message: str,
+    outcome: Outcome,
+) -> AsyncIterator[ChatEvent]:
+    command = parse_command(message)
+    deps = Deps(user_id=user.id, user_name=user.name, timezone=user.timezone, session=session)
+    if command is None:
+        toolset_name, usage = await classify(runtime.classifier, message)
+        outcome.usage.incr(usage)
+        log.info("toolset_chosen", toolset=toolset_name)
+        events = run_agent(runtime, toolset_name, message, history, deps, outcome)
+    elif command.name == "remind":
+        prompt = f"Set a reminder: {command.arg}"
+        events = run_agent(runtime, REMIND_TOOLSET, prompt, history, deps, outcome)
+    elif command.name in ("approve", "reject"):
+        yield text_event(outcome, await decide(session, user, runtime, command))
+        return
+    else:
+        yield text_event(outcome, NOT_YET_AVAILABLE)
+        return
+    async for event in events:
+        yield event
+
+
 async def stream(
     session: Session,
     user: User,
-    agent: Agent[Deps, str],
+    runtime: Runtime,
     conversation_id: int | None,
     message: str,
 ) -> AsyncIterator[ChatEvent]:
@@ -74,20 +201,17 @@ async def stream(
     user_message = save_message(session, conversation, "user", message)
     yield ChatEvent("meta", {"conversation_id": conversation.id, "message_id": user_message.id})
 
-    deps = Deps(user_name=user.name, timezone=user.timezone)
-    answer = ""
+    outcome = Outcome()
     try:
-        async with agent.run_stream(message, deps=deps, message_history=history) as result:
-            async for delta in result.stream_text(delta=True):
-                answer += delta
-                yield ChatEvent("token", {"text": delta})
-            usage = result.usage
+        async for event in respond(session, user, runtime, history, message, outcome):
+            yield event
     except Exception:
         log.exception("chat_failed", conversation_id=conversation.id)
         yield ChatEvent("error", {"message": GENERIC_ERROR})
         return
 
-    save_message(session, conversation, "assistant", answer)
+    save_message(session, conversation, "assistant", outcome.answer)
+    usage = outcome.usage
     count_tokens(session, user, usage.input_tokens, usage.output_tokens)
     yield ChatEvent(
         "done", {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
