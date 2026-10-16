@@ -20,6 +20,8 @@ members = ["packages/*"]
 [tool.uv.sources]
 achilles-net = { workspace = true }
 achilles-core = { workspace = true }
+achilles-eval = { workspace = true }
+achilles-mcp-google = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -49,4 +51,4 @@ filterwarnings = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["achilles_net", "achilles_core"]
+known-first-party = ["achilles_net", "achilles_core", "achilles_sim", "achilles_mcp_google"]
