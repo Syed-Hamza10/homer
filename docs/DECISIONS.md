@@ -7,3 +7,7 @@ One line each. Newest at the bottom.
 - 2026-10-15: Google is called through our own thin REST client over `achilles_net`, not `google-api-python-client`. Reason: the official library brings its own HTTP stack and would bypass the allowlist.
 - 2026-10-15: Private repo under `Syed-Hamza10`, proprietary license. Reason: the code is the product; the demo video and case study are the public portfolio.
 - 2026-10-16: Model tags verified on ollama.com: `qwen3.5:9b` (Q4_K_M, 6.6 GB) and `qwen3.5:4b-q8_0` (5.2 GB).
+- 2026-10-16: Spike on M3 Pro 18 GB, `qwen3.5:9b`, 16k context: 27–32 tok/s, first token <1 s warm, ~10 s cold load, 7.7 GB resident / 8.7 GB peak, tool-call round trip 6 s. 9B confirmed as the supported tier.
+- 2026-10-16: Thinking is turned off with `reasoning_effort: "none"` on Ollama's OpenAI-compatible API (Pydantic AI `thinking=False` sends exactly this). `think: false` is ignored on that API, and the default thinks for 4–6 minutes per answer. Reason: measured in the spike.
+- 2026-10-16: Ollama runs with `OLLAMA_CONTEXT_LENGTH=16384` in its service environment; the OpenAI-compatible API cannot set context per request.
+- 2026-10-16: Build backend is `hatchling` for every package. Reason: plan was silent; it is the uv default and needs no config.
