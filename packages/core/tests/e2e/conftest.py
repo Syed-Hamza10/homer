@@ -33,11 +33,6 @@ STARTUP_TIMEOUT = 60.0
 Frames = list[tuple[str, dict[str, Any]]]
 
 
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Runs e2e last: the sync Playwright API leaves an event loop running for the session."""
-    items.sort(key=lambda item: item.get_closest_marker("e2e") is not None)
-
-
 def require_ollama() -> None:
     tag = chat_model_tag(hardware_tier())
     try:
@@ -68,17 +63,25 @@ def write_fake_servers(home: Path) -> Path:
     return bin_dir
 
 
-def process_env(home: Path, port: int) -> dict[str, str]:
+def process_env(home: Path, port: int, bin_dir: Path | None = None, **extra: str) -> dict[str, str]:
+    """Env for `achilles serve`; bin_dir goes first on PATH so stand-in servers win there."""
     (home / ".env").write_text(f"ACHILLES_PASSPHRASE={PASSPHRASE}\nOLLAMA_URL={OLLAMA_URL}\n")
     inherited = {k: v for k, v in os.environ.items() if k.lower() not in Settings.model_fields}
-    path = os.pathsep.join([str(write_fake_servers(home)), inherited.get("PATH", "")])
+    path = inherited.get("PATH", "")
+    if bin_dir is not None:
+        path = os.pathsep.join([str(bin_dir), path])
     return {
         **inherited,
         "PATH": path,
         "ACHILLES_HOME": str(home),
         "HOST": "127.0.0.1",
         "PORT": str(port),
+        **extra,
     }
+
+
+def stand_in_env(home: Path, port: int) -> dict[str, str]:
+    return process_env(home, port, write_fake_servers(home))
 
 
 def achilles_command(*args: str) -> list[str]:
@@ -127,15 +130,14 @@ def wait_until_healthy(process: subprocess.Popen[bytes], base_url: str, log: Pat
 
 
 @contextmanager
-def running_server(home: Path) -> Iterator[str]:
-    port = free_port()
-    base_url = f"http://127.0.0.1:{port}"
+def running_server(home: Path, env: dict[str, str]) -> Iterator[str]:
+    base_url = f"http://127.0.0.1:{env['PORT']}"
     log = home / "server.log"
     with log.open("wb") as log_file:
         process = subprocess.Popen(
             achilles_command("serve"),
             cwd=home,
-            env=process_env(home, port),
+            env=env,
             stdout=log_file,
             stderr=subprocess.STDOUT,
         )
@@ -174,17 +176,23 @@ def home(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return tmp_path_factory.mktemp("achilles-home")
 
 
+@contextmanager
+def stand_in_server(home: Path) -> Iterator[str]:
+    with running_server(home, stand_in_env(home, free_port())) as base_url:
+        yield base_url
+
+
 @pytest.fixture(scope="session")
 def server(home: Path) -> Iterator[str]:
     require_ollama()
-    with running_server(home) as base_url:
+    with stand_in_server(home) as base_url:
         yield base_url
 
 
 @pytest.fixture
 def fresh_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     require_ollama()
-    with running_server(tmp_path_factory.mktemp("achilles-home")) as base_url:
+    with stand_in_server(tmp_path_factory.mktemp("achilles-home")) as base_url:
         yield base_url
 
 
@@ -192,7 +200,7 @@ def fresh_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 def server_env(home: Path, server: str) -> dict[str, str]:
     port = urlsplit(server).port
     assert port is not None
-    return process_env(home, port)
+    return stand_in_env(home, port)
 
 
 @pytest.fixture
