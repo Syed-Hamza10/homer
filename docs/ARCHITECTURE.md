@@ -62,3 +62,7 @@ SSE events on `/api/chat`, in order:
 
 When `achilles_core/static/index.html` exists the built dashboard is served at `/`; unknown non-`/api`
 paths return `index.html`.
+
+## Tests
+
+`packages/core/tests/` holds the fake-model suite (`TestModel`, `respx`), which is the CI gate because CI has no model. `packages/core/tests/e2e/` (marker `e2e`) is the real proof: it starts `achilles serve` as a subprocess on a temp `ACHILLES_HOME`, talks to it over real HTTP, reads the real SQLite file, calls the real Ollama model and drives the built dashboard with Playwright; it skips itself when Ollama or the model is missing, and runs locally (`make test-e2e`) before every merge.

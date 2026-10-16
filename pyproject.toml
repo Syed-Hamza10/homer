@@ -36,12 +36,14 @@ select = ["E", "F", "I", "UP", "B", "SIM", "TID251"]
 
 [tool.ruff.lint.per-file-ignores]
 "packages/net/**" = ["TID251"]
+"packages/*/tests/**" = ["TID251"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
 addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = ["e2e: real server, real SQLite, real Ollama model and a real browser"]
 filterwarnings = [
     "ignore:.*httpx.AsyncClient.*:pydantic_ai._warnings.PydanticAIDeprecationWarning",
 ]

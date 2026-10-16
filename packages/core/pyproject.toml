@@ -26,3 +26,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["achilles_core"]
+
+[dependency-groups]
+dev = [
+    "pytest-playwright>=0.6",
+]
