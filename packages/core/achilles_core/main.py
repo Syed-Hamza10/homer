@@ -9,12 +9,13 @@ from pydantic_ai.models import Model
 from sqlmodel import Session
 
 from achilles_core import __version__
-from achilles_core.agent.agent import build_agent
-from achilles_core.api import auth, chat, conversations, health
+from achilles_core.agent.runtime import build_runtime
+from achilles_core.api import approvals, auth, chat, conversations, health, privacy, reminders
 from achilles_core.auth import LoginLimiter, origin_middleware
 from achilles_core.config import Settings, own_origins, session_secret
 from achilles_core.db.session import make_engine, run_migrations
 from achilles_core.llm import build_http_client, build_model
+from achilles_core.mcp.manager import McpManager
 from achilles_core.platform import ensure_home
 from achilles_core.services.errors import DomainError
 from achilles_core.services.outbound_log import make_logger
@@ -28,7 +29,9 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
 
 
-def create_app(settings: Settings | None = None, model: Model | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, model: Model | None = None, mcp: McpManager | None = None
+) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
@@ -44,8 +47,11 @@ def create_app(settings: Settings | None = None, model: Model | None = None) -> 
         app.state.limiter = LoginLimiter()
         app.state.http_client = http_client
         app.state.model = model or build_model(settings, http_client)
-        app.state.agent = build_agent(app.state.model)
+        manager = mcp or McpManager.discover(settings)
+        await manager.start()
+        app.state.runtime = build_runtime(app.state.model, manager)
         yield
+        await manager.stop()
         await http_client.aclose()
 
     app = FastAPI(title="Achilles", version=__version__, lifespan=lifespan)
@@ -59,7 +65,16 @@ def create_app(settings: Settings | None = None, model: Model | None = None) -> 
         allow_headers=["*"],
     )
     app.add_exception_handler(DomainError, domain_error_handler)
-    for router in (health.router, auth.router, chat.router, conversations.router):
+    routers = (
+        health.router,
+        auth.router,
+        chat.router,
+        conversations.router,
+        approvals.router,
+        privacy.router,
+        reminders.router,
+    )
+    for router in routers:
         app.include_router(router)
     if (STATIC / "index.html").exists():
         mount_spa(app, STATIC)

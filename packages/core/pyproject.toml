@@ -29,5 +29,6 @@ packages = ["achilles_core"]
 
 [dependency-groups]
 dev = [
+    "fastmcp>=4.1",
     "pytest-playwright>=0.6",
 ]
