@@ -76,7 +76,7 @@ this client, so anything else the app contacted would show up here.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/api/health` | – | `{status: "ok", version, ollama: "ok"\|"down", model}` (public) |
+| GET | `/api/health` | – | `{status: "ok", version, ollama: "ok"\|"down", model, servers: {google, search, system: "ok"\|"down"}}` (public) |
 | POST | `/api/auth/login` | `{passphrase}` | 204 + cookie; 401 wrong; 429 after 5 failures in 60 s |
 | POST | `/api/auth/logout` | – | 204, cookie cleared |
 | GET | `/api/auth/me` | – | `{user_id, name}` |

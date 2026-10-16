@@ -31,4 +31,8 @@ packages = ["achilles_core"]
 dev = [
     "fastmcp>=4.1",
     "pytest-playwright>=0.6",
+    "achilles-eval",
+    "achilles-mcp-google",
+    "achilles-mcp-search",
+    "achilles-mcp-system",
 ]

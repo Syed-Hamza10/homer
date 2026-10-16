@@ -56,6 +56,10 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "achilles-eval" },
+    { name = "achilles-mcp-google" },
+    { name = "achilles-mcp-search" },
+    { name = "achilles-mcp-system" },
     { name = "fastmcp" },
     { name = "pytest-playwright" },
 ]
@@ -77,6 +81,10 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "achilles-eval", editable = "packages/eval" },
+    { name = "achilles-mcp-google", editable = "packages/mcp_google" },
+    { name = "achilles-mcp-search", editable = "packages/mcp_search" },
+    { name = "achilles-mcp-system", editable = "packages/mcp_system" },
     { name = "fastmcp", specifier = ">=4.1" },
     { name = "pytest-playwright", specifier = ">=0.6" },
 ]

@@ -41,7 +41,7 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
         "contacts_search",
         "now",
     ),
-    "search": ("web_search", "web_news", "fetch_page", "now", "remind"),
+    "search": ("web_search", "fetch_page", "now", "remind"),
     "system": ("now", "parse_datetime", "remind"),
 }
 
