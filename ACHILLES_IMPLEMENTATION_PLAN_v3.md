@@ -11,7 +11,11 @@ Changes in v3.1 (2026-10-15, after review): Docker dropped from v1 (install with
 
 ## 1. The promise
 
-> Achilles is your team's private AI assistant. It handles search, email and calendar, and does it all on your own machine. Your data is never sent to an LLM provider, and you are never billed for tokens.
+> Achilles is your team's private AI assistant for Gmail and Calendar. AI inference runs on your own computer: no hosted-model subscription, no per-token bills, and your emails and documents are never sent to an AI provider. Google still sees your Google traffic and the search engine sees your searches; the Privacy page lists exactly those hosts and nothing else.
+
+First target customer: small agencies and consultants who run inquiries, proposals and client meetings through Gmail. A hypothesis to test in the first client calls.
+
+What we sell first: inbox assistance, approved replies, follow-up tracking, and answers grounded in the client's own documents.
 
 In code:
 - The LLM, embeddings and (later) speech run on the client's machine through Ollama and local Python libraries.
@@ -33,14 +37,19 @@ Small teams on **Google Workspace**, one install per person's machine. "Team" me
 - Calendar: answer questions, find free slots, create or move events with approval
 - Morning brief and end-of-day digest, shown on the Today page and optionally emailed to the user from their own Gmail
 - Reminders in natural language
+- Follow-up tracker: the user marks a thread "follow up in N days". If no reply arrives, it shows on Today with an approved follow-up draft. Closes itself when a reply lands; re-checks for replies right before sending; checks on wake, never promises continuous monitoring. User-selected threads only, no automatic detection.
+- Client rules in Settings: signature, tone notes, business hours, default follow-up delay, priority contacts. This is what "install plus customize" means in practice.
 - Privacy: outbound allowlist, Privacy page with live host list, Web search off switch, $0.00 widget
 - Minimal dashboard: Chat, Today, Inbox, Calendar, Approvals, Privacy, Settings
 
 ### Slice 2 — after the first bids are out
-- Document Q&A over a watched folder and Google Drive, with citations ("chat with our files locally" is the most common job in this niche)
+In this order:
+- Document-grounded replies: a customer asks a question, Achilles answers from a selected folder of the client's documents and shows the passages it used, or says what is missing. Start with text files and PDFs that contain real text; no scanned documents, no Drive sync, no folder-wide auto-ingest yet. Needs its own retrieval and citation eval before it is trusted. General "chat with our files" falls out of the same work.
+- Meeting prep or inquiry intake, whichever client calls ask for first. Meeting prep: summary of recent emails with the attendees, open questions, links. Inquiry intake: extract service, budget and deadline from a new lead into a fixed form, list what is missing, draft the questions.
 - Voice in and out (about a day of work; strongest demo moment)
 - Explicit memory: a "remember that X" tool and a Memory page. No automatic extraction.
-- Meeting prep and follow-up tracking
+
+Not now, each is a separate product: CRM, autonomous outreach, meeting recording, WhatsApp, visual workflow builder.
 
 ### Deferred — not built now, but the architecture must leave room
 
@@ -221,10 +230,10 @@ Build in this order. Stop at each "done when" for Hamza to review before startin
 | 1 Skeleton | `uv` workspace, `achilles_net` with allowlist and log, config, `platform.py`, SQLite + migrations, auth baseline, `achilles doctor`, Ollama wiring, SSE chat endpoint, minimal Chat page, CI configured | Streaming chat from the supported-tier model; allowlist test refuses a disallowed host; CI green locally (verified on GitHub once pushed) |
 | 2 Tools | First: throwaway Google account and Cloud project (External + Testing, desktop client; secret file in `~/.achilles/credentials/`, never in the repo). Then: Gmail/Calendar simulator, google/search/system MCP servers, MCP manager, router with curated toolsets, approvals queue with hash check and status transitions, Approvals page, minimal Privacy page (host list, $0.00) | "What's on tomorrow, and draft a reply to the last email from X" works end to end with approval, against the real account and the simulator |
 | 3 Demo | `scripts/seed_demo.py` (fictional emails and events into the throwaway account), `scripts/record_demo.md`, one-page case study with measured latency and task success | Hamza records one workflow: read email → check calendar → draft reply → show approval → send → show the outbound log, plus one rejected approval. Bidding starts here. |
-| 4 Skills | Triage with labels, draft-in-tone, find-slot, morning brief, EOD digest, email-to-self, scheduler jobs, Inbox / Today / Calendar pages | Labels appear in Gmail; brief lands on Today at 07:30 |
+| 4 Skills | Triage with labels, draft-in-tone, find-slot, morning brief, EOD digest, email-to-self, follow-up tracker, client rules in Settings, scheduler jobs, Inbox / Today / Calendar pages | Labels appear in Gmail; brief lands on Today at 07:30; a thread marked "follow up in 3 days" with no reply shows on Today with a draft |
 | 5 Eval & settings | 10-task smoke eval runner on the simulator; full Privacy page; Settings page with model picker; rate limiting polish | `make eval-smoke` passes locally; CI green on macOS and Linux |
 | 6 Install | `install.sh`, release workflow (wheel on GitHub release), `CLIENT_ONBOARDING.md`, `PRIVACY.md`, backups | Fresh Mac → working assistant in under an hour using only the docs |
-| 7 Slice 2 | Document Q&A (docs MCP), voice, explicit memory (memory MCP), meeting prep, follow-ups | Each with at least one eval task; demo video v2 |
+| 7 Slice 2 | Document-grounded replies (docs MCP, retrieval eval), then meeting prep or inquiry intake, then voice, then explicit memory (memory MCP) | Each with at least one eval task; demo video v2: "customer asks about weekend support, Achilles answers from the service guide and shows the paragraph" |
 | 8 Packaging | Windows install and CI, Dockerfile for Linux servers | Fresh Ubuntu and Windows machine both reach a working assistant in under an hour |
 
 After every step: a chat summary for Hamza in simple English and `docs/EXPLAINERS/<step>.md`, at most one page: what was built, why, how to explain it in an interview, what a client may ask.
