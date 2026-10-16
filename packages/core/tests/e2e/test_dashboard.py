@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -7,14 +8,8 @@ pytestmark = pytest.mark.e2e
 REPLY_TIMEOUT = 60_000
 
 
-def test_dashboard_login_and_chat(server: str, passphrase: str, prompt: str, page: Page) -> None:
-    page.goto(server)
-    expect(page).to_have_url(f"{server}/login")
-
-    page.get_by_placeholder("Passphrase").fill(passphrase)
-    page.get_by_role("button", name="Unlock").click()
-    expect(page).to_have_url(f"{server}/")
-
+def test_dashboard_login_and_chat(unlocked: Page, prompt: str) -> None:
+    page = unlocked
     page.get_by_placeholder("Message Achilles").fill(prompt)
     page.get_by_placeholder("Message Achilles").press("Enter")
     expect(page.get_by_text(re.compile(r"^\W*PONG\W*$"))).to_be_visible(timeout=REPLY_TIMEOUT)
@@ -24,3 +19,47 @@ def test_dashboard_login_and_chat(server: str, passphrase: str, prompt: str, pag
         re.compile(r"Tokens processed locally: [1-9][\d,]* · Spent on inference: \$0\.00"),
         timeout=REPLY_TIMEOUT,
     )
+
+
+def test_approvals_page_approves_and_shows_result(
+    unlocked: Page,
+    server: str,
+    create_approval: Callable[[str], int],
+    status_of: Callable[[int], str],
+) -> None:
+    approval_id = create_approval("d-ui")
+    page = unlocked
+    page.get_by_role("link", name="Approvals").click()
+    expect(page).to_have_url(f"{server}/approvals")
+
+    card = page.get_by_test_id(f"approval-{approval_id}")
+    expect(card).to_contain_text("Send draft d-ui")
+    card.get_by_role("button", name="Approve").click()
+
+    expect(page.get_by_test_id(f"decided-{approval_id}")).to_contain_text("done")
+    expect(card).not_to_be_visible()
+    assert status_of(approval_id) == "done"
+
+
+def test_approvals_page_rejects(
+    unlocked: Page,
+    server: str,
+    create_approval: Callable[[str], int],
+    status_of: Callable[[int], str],
+) -> None:
+    approval_id = create_approval("d-reject")
+    page = unlocked
+    page.goto(f"{server}/approvals")
+    page.get_by_test_id(f"approval-{approval_id}").get_by_role("button", name="Reject").click()
+    expect(page.get_by_test_id(f"decided-{approval_id}")).to_contain_text("rejected")
+    assert status_of(approval_id) == "rejected"
+
+
+def test_privacy_page_lists_hosts(unlocked: Page, server: str) -> None:
+    page = unlocked
+    page.get_by_role("link", name="Privacy").click()
+    expect(page).to_have_url(f"{server}/privacy")
+    expect(page.get_by_text("Tokens processed locally")).to_have_text(
+        re.compile(r"Tokens processed locally: [\d,]+ · Spent on inference: \$0\.00")
+    )
+    expect(page.get_by_role("cell", name="127.0.0.1:11434")).to_be_visible()

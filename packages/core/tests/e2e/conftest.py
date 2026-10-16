@@ -2,8 +2,9 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -11,12 +12,19 @@ from urllib.parse import urlsplit
 
 import httpx
 import pytest
+from playwright.sync_api import Page, expect
+from sqlmodel import Session
 
 from achilles_core.config import Settings
+from achilles_core.db.models import Approval
+from achilles_core.db.session import make_engine
 from achilles_core.llm import chat_model_tag
 from achilles_core.platform import hardware_tier
+from achilles_core.services.approvals import create_from_tool_result
 
 REPO = Path(__file__).resolve().parents[4]
+FAKE_SERVERS = Path(__file__).resolve().parents[1] / "fake_servers"
+VENV_BIN = Path(sys.executable).parent
 OLLAMA_URL = "http://127.0.0.1:11434"
 PASSPHRASE = "e2e-pass"
 PONG_PROMPT = "Reply with exactly the single word PONG and nothing else."
@@ -47,14 +55,60 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
+def write_fake_servers(home: Path) -> Path:
+    """Puts stand-in achilles-mcp-google and achilles-mcp-system launchers on a bin dir."""
+    bin_dir = home / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    for name in ("google", "system"):
+        script = bin_dir / f"achilles-mcp-{name}"
+        source = FAKE_SERVERS / f"{name}.py"
+        launcher = f"runpy.run_path({str(source)!r}, run_name='__main__')"
+        script.write_text(f"#!{sys.executable}\nimport runpy\n{launcher}\n")
+        script.chmod(0o755)
+    return bin_dir
+
+
 def process_env(home: Path, port: int) -> dict[str, str]:
     (home / ".env").write_text(f"ACHILLES_PASSPHRASE={PASSPHRASE}\nOLLAMA_URL={OLLAMA_URL}\n")
     inherited = {k: v for k, v in os.environ.items() if k.lower() not in Settings.model_fields}
-    return {**inherited, "ACHILLES_HOME": str(home), "HOST": "127.0.0.1", "PORT": str(port)}
+    path = os.pathsep.join([str(write_fake_servers(home)), inherited.get("PATH", "")])
+    return {
+        **inherited,
+        "PATH": path,
+        "ACHILLES_HOME": str(home),
+        "HOST": "127.0.0.1",
+        "PORT": str(port),
+    }
 
 
 def achilles_command(*args: str) -> list[str]:
-    return ["uv", "run", "--project", str(REPO), "achilles", *args]
+    return [str(VENV_BIN / "achilles"), *args]
+
+
+def create_pending_approval(home: Path, draft_id: str = "d1") -> int:
+    result = {
+        "approval_required": True,
+        "action": "mail_send",
+        "payload": {"draft_id": draft_id},
+        "preview": f"Send draft {draft_id}",
+    }
+    with Session(make_engine(home)) as session:
+        return create_from_tool_result(session, 1, "google", result).id
+
+
+def approval_status(home: Path, approval_id: int) -> str:
+    with Session(make_engine(home)) as session:
+        approval = session.get(Approval, approval_id)
+        assert approval is not None
+        return approval.status
+
+
+def unlock(page: Page, server: str) -> None:
+    page.goto(server)
+    expect(page).to_have_url(f"{server}/login")
+    page.get_by_placeholder("Passphrase").fill(PASSPHRASE)
+    page.get_by_role("button", name="Unlock").click()
+    expect(page).to_have_url(f"{server}/")
 
 
 def wait_until_healthy(process: subprocess.Popen[bytes], base_url: str, log: Path) -> None:
@@ -193,3 +247,24 @@ def follow_up_reply(server: str, first_reply: Frames) -> Frames:
                 "message": "What word did you just say? Answer with that word only.",
             },
         )
+
+
+@pytest.fixture
+def create_approval(home: Path, server: str) -> Callable[[str], int]:
+    return lambda draft_id: create_pending_approval(home, draft_id)
+
+
+@pytest.fixture
+def status_of(home: Path) -> Callable[[int], str]:
+    return lambda approval_id: approval_status(home, approval_id)
+
+
+@pytest.fixture
+def unlocked(page: Page, server: str) -> Page:
+    unlock(page, server)
+    return page
+
+
+@pytest.fixture
+def chat(logged_in: httpx.Client) -> Callable[[dict[str, Any]], Frames]:
+    return lambda body: post_chat(logged_in, body)

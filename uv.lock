@@ -56,6 +56,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastmcp" },
     { name = "pytest-playwright" },
 ]
 
@@ -75,7 +76,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-playwright", specifier = ">=0.6" }]
+dev = [
+    { name = "fastmcp", specifier = ">=4.1" },
+    { name = "pytest-playwright", specifier = ">=0.6" },
+]
 
 [[package]]
 name = "achilles-eval"

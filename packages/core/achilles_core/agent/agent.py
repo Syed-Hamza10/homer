@@ -5,14 +5,17 @@ from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models import Model
+from sqlmodel import Session
 
 TEMPLATE = (Path(__file__).parent / "prompts" / "system.md").read_text()
 
 
 @dataclass(frozen=True)
 class Deps:
+    user_id: int
     user_name: str
     timezone: str
+    session: Session
 
 
 def render_prompt(deps: Deps, now: datetime) -> str:

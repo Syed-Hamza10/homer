@@ -1,4 +1,4 @@
-# Architecture (step 1)
+# Architecture (step 2)
 
 ## Layering
 
@@ -7,25 +7,59 @@ api/        routers, one file per resource; thin; return Pydantic schemas (api/s
 services/   business logic as plain functions taking a Session; raise small DomainError subclasses
 db/         SQLModel tables, engine/session factory, Alembic migrations; no logic
 agent/      Pydantic AI agent and prompts/system.md; the model is injected, never built here
+            tools.py (core-native `remind`), toolsets.py (five curated name lists), router.py
+            (slash commands + one-word classifier), gate.py (approval wrapper), runtime.py (bundle)
+mcp/        manager.py: starts the MCP servers over stdio, hides `execute`/`health`, runs `execute`
 main.py cli.py config.py platform.py llm.py doctor.py auth.py   top-level wiring
 ```
 
-Routers depend on services; services on db and agent. Nothing points upward. Dependencies arrive
-through FastAPI `Depends` (`api/deps.py`) from `app.state`, which the lifespan fills: engine,
-session secret, login limiter, allowlisted HTTP client, model, agent. `DomainError` subclasses carry
-a `status_code`; one handler in `main.py` turns them into `{"detail": ...}` JSON.
+Routers depend on services; services on db, agent and mcp. Nothing points upward. Dependencies
+arrive through FastAPI `Depends` (`api/deps.py`) from `app.state`, which the lifespan fills: engine,
+session secret, login limiter, allowlisted HTTP client, model, and a `Runtime` (agent, classifier,
+toolsets, MCP manager). `DomainError` subclasses carry a `status_code`; one handler in `main.py`
+turns them into `{"detail": ...}` JSON.
+
+## MCP manager
+
+`McpManager.discover(settings)` looks for `achilles-mcp-google`, `achilles-mcp-search` and
+`achilles-mcp-system` on PATH, then in the venv `bin`, and builds one `MCPToolset` per server over a
+`StdioTransport` with env `ACHILLES_HOME`, `GOOGLE_API_BASE`, `GOOGLE_TOKEN_URL`, `WEB_SEARCH`.
+`start()` enters each toolset; a server that is missing or fails to start is logged and dropped, the
+app runs with whatever is left. `model_toolset()` is the combined view with `execute` and `health`
+filtered out; `call(server, tool, args)` is the only path to `execute`, used by the approvals
+executor. Core tools (`remind`) live in a `FunctionToolset`; `agent/toolsets.py` builds the five
+`FilteredToolset`s (`mail`, `calendar`, `mail+calendar`, `search`, `system`) over both.
 
 ## Chat request flow
 
 1. `POST /api/chat` passes the Origin middleware (non-GET under `/api` needs an own origin) and
    `current_user` (signed `achilles_session` cookie, 7 days).
 2. `services.chat.stream` creates the conversation if needed (title = first 60 chars), saves the
-   user message, rebuilds the model history from the stored messages, and runs
-   `agent.run_stream`.
-3. It yields `ChatEvent`s; `api/chat.py` writes each as an SSE frame
+   user message and rebuilds the model history from the stored messages.
+3. `agent/router.py` matches `/brief`, `/inbox` (fixed "not yet available" text), `/remind <text>`
+   (agent run with the `system` toolset), `/approve N` and `/reject N` (service call, one line of
+   text). Anything else gets one short non-streamed classification call on the same model that
+   answers one of the five toolset names (`mail+calendar` on anything unexpected).
+4. The agent runs with that toolset wrapped in an `ApprovalGate`. The gate stores any tool result
+   shaped `{"approval_required": true, action, payload, preview}` as an `approvals` row and hands
+   the model the text "Approval #N requested; the user will decide". It also remembers whether any
+   result contained `<untrusted>`; from then on `mail_label` and `mail_archive` are turned into
+   approvals instead of being called.
+5. `stream` turns the run's events into `ChatEvent`s; `api/chat.py` writes each as an SSE frame
    `event: <name>\ndata: <json>\n\n` (no SSE library).
-4. On completion it saves the assistant message and adds the run's tokens to `token_counter`.
-   On failure it logs the exception with structlog and yields a generic `error` event.
+6. On completion it saves the assistant message and adds the run's tokens (classifier included) to
+   `token_counter`. On failure it logs the exception with structlog and yields a generic `error`.
+
+## Approvals
+
+`services/approvals.py`. `create_from_tool_result` stores server, action, canonical-JSON payload,
+its sha256, preview and `channel="web"`. `approve` does one `UPDATE … SET status='running' WHERE
+id=? AND status='pending'`; zero rows means someone else decided first and the API answers 409. It
+recomputes the payload hash (mismatch → `failed`, nothing runs), then calls
+`manager.call(server, "execute", {action, payload})` with a 60 s timeout: a result → `done`, a
+`ToolFailed` from the server or a missing server → `failed`, a timeout or any other exception →
+`unknown` (never retried). `reject` is the same conditional update to `rejected`. `expire_stale`
+moves pending rows older than 24 h to `expired` and runs before every list/approve/reject.
 
 The agent's instructions are rendered per run from `agent/prompts/system.md` (user name, timezone,
 current time, and the line that `<untrusted>` content is data, not instructions).
@@ -49,6 +83,12 @@ this client, so anything else the app contacted would show up here.
 | POST | `/api/chat` | `{conversation_id?: int, message}` | `text/event-stream`; 404 unknown conversation |
 | GET | `/api/conversations` | – | `[{id, title, created_at, updated_at}]` newest first |
 | GET | `/api/conversations/{id}/messages` | – | `[{id, conversation_id, role, content, created_at}]`; 404 if not the user's |
+| GET | `/api/approvals?status=pending` | – | `[{id, server, action, payload, preview, status, channel, created_at, decided_at, result}]` |
+| POST | `/api/approvals/{id}/approve` | – | the approval after execution (`done`/`failed`/`unknown`); 404 unknown; 409 not pending |
+| POST | `/api/approvals/{id}/reject` | – | the approval as `rejected`; 404 unknown; 409 not pending |
+| GET | `/api/privacy/hosts` | – | `{hosts: [{host, calls, last_seen}], web_search}` from `outbound_log` |
+| GET | `/api/privacy/usage` | – | `{input_tokens, output_tokens, requests, spent_usd: 0}` |
+| GET | `/api/reminders` | – | `[{id, text, due_at, status, created_at}]` by due date |
 
 Everything under `/api` except `/api/health` needs the cookie (401 otherwise). Non-GET requests
 without an own `Origin` get 403. Errors are `{"detail": "<message>"}`.
@@ -56,6 +96,9 @@ without an own `Origin` get 403. Errors are `{"detail": "<message>"}`.
 SSE events on `/api/chat`, in order:
 
 - `meta` `{conversation_id, message_id}` (`message_id` is the saved user message)
+- `tool_call` `{name, args}` and `tool_result` `{name, summary}` (summary cut at 200 chars),
+  interleaved with `token`s as the run proceeds
+- `approval_required` `{approval_id, action, preview}` right before the matching `tool_result`
 - `token` `{text}` repeated
 - `done` `{input_tokens, output_tokens}`
 - `error` `{message}` replaces `done` when the model call fails
@@ -65,7 +108,7 @@ paths return `index.html`.
 
 ## Tests
 
-`packages/core/tests/` holds the fake-model suite (`TestModel`, `respx`), which is the CI gate because CI has no model. `packages/core/tests/e2e/` (marker `e2e`) is the real proof: it starts `achilles serve` as a subprocess on a temp `ACHILLES_HOME`, talks to it over real HTTP, reads the real SQLite file, calls the real Ollama model and drives the built dashboard with Playwright; it skips itself when Ollama or the model is missing, and runs locally (`make test-e2e`) before every merge.
+`packages/core/tests/` holds the fake-model suite (`TestModel`, `respx`, scripted `FunctionModel`s that call tools), which is the CI gate because CI has no model. `tests/fake_servers/` holds stand-in `google` and `system` MCP servers built with `fastmcp` over canned fictional data; the unit suite runs them in-process through `Client(server)`, the e2e suite writes stdio launchers for them onto the server's PATH. `packages/core/tests/e2e/` (marker `e2e`) is the real proof: it starts `achilles serve` as a subprocess on a temp `ACHILLES_HOME`, talks to it over real HTTP, reads the real SQLite file, calls the real Ollama model and drives the built dashboard with Playwright; it skips itself when Ollama or the model is missing, and runs locally (`make test-e2e`) before every merge.
 
 ## Step 2 contract: tools, approvals, simulator
 
