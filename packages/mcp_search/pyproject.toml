@@ -1,12 +1,11 @@
 [project]
 name = "achilles-mcp-search"
 version = "0.1.0"
-description = "Achilles MCP server for web search, news and page fetching."
+description = "Achilles MCP server for web search and page fetching."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "achilles-net",
     "fastmcp>=4.0,<5",
-    "ddgs>=9.0",
     "trafilatura>=2.0",
 ]
 
