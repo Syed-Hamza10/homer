@@ -1,7 +1,7 @@
 import base64
 from datetime import UTC, datetime, timedelta
 from email import message_from_bytes, policy
-from email.utils import format_datetime
+from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any
 
 from achilles_sim.errors import ApiError
@@ -138,28 +138,49 @@ class Mailbox:
         self.labels[label["id"]] = label
         return label
 
-    def create_draft(self, raw: str, thread_id: str | None, now: datetime) -> dict[str, Any]:
+    def _from_raw(
+        self, raw: str, thread_id: str | None, labels: list[str], sent_at: datetime | None
+    ) -> dict[str, Any]:
         parsed = message_from_bytes(b64url_decode(raw), policy=policy.default)
         headers = {name: str(parsed[name]) for name in HEADER_NAMES if parsed[name]}
         headers.setdefault("From", self.owner)
         part = parsed.get_body(("plain", "html"))
         body = part.get_content() if part is not None else ""
         mime_type = part.get_content_type() if part is not None else "text/plain"
+        if sent_at is None:
+            sent_at = parsedate_to_datetime(headers["Date"])
         message_id = self._next_id("msg")
         message = self._stored(
             message_id,
             thread_id or self._next_id("thr"),
-            ["DRAFT"],
+            labels,
             headers,
             mime_type,
             body,
-            now,
+            sent_at,
         )
         self.messages[message_id] = message
         self._bump({"messagesAdded": [{"message": self.render(message, "minimal")}]})
         message["historyId"] = str(self.history_id)
+        return message
+
+    def insert(
+        self, raw: str, labels: list[str], thread_id: str | None, now: datetime, from_header: bool
+    ) -> dict[str, Any]:
+        unknown = [label for label in labels if label not in self.labels]
+        if unknown:
+            raise ApiError(400, f"Invalid label: {unknown[0]}")
+        if thread_id and not any(m["threadId"] == thread_id for m in self.messages.values()):
+            raise ApiError(404, "Requested entity was not found.")
+        return self._from_raw(raw, thread_id, labels, None if from_header else now)
+
+    def trash(self, message_id: str) -> dict[str, Any]:
+        return self.modify(message_id, ["TRASH"], ["INBOX", "UNREAD"])
+
+    def create_draft(self, raw: str, thread_id: str | None, now: datetime) -> dict[str, Any]:
+        message = self._from_raw(raw, thread_id, ["DRAFT"], now)
         draft_id = self._next_id("r")
-        self.drafts[draft_id] = message_id
+        self.drafts[draft_id] = message["id"]
         return {"id": draft_id, "message": self.render(message, "minimal")}
 
     def draft(self, draft_id: str) -> dict[str, Any]:
