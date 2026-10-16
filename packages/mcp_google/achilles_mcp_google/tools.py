@@ -181,11 +181,9 @@ class GoogleTools:
         )
         return approval("mail_send", {"draft_id": draft_id}, preview)
 
-    @guarded
-    async def mail_label(
-        self, message_id: str, add: list[str] | None = None, remove: list[str] | None = None
+    async def _modify_labels(
+        self, message_id: str, add: list[str] | None, remove: list[str] | None
     ) -> dict[str, Any]:
-        """Adds and removes labels by name on one message, creating missing labels to add."""
         names = await self._label_names()
         ids = {name.lower(): label_id for label_id, name in names.items()}
         add_ids = []
@@ -203,12 +201,16 @@ class GoogleTools:
         return neutral_message(modified, names, with_body=False)
 
     @guarded
+    async def mail_label(
+        self, message_id: str, add: list[str] | None = None, remove: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Adds and removes labels by name on one message, creating missing labels to add."""
+        return await self._modify_labels(message_id, add, remove)
+
+    @guarded
     async def mail_archive(self, message_id: str) -> dict[str, Any]:
         """Removes a message from the inbox without deleting it."""
-        modified = await self.client.post(
-            f"{GMAIL}/messages/{message_id}/modify", {"removeLabelIds": ["INBOX"]}
-        )
-        return neutral_message(modified, await self._label_names(), with_body=False)
+        return await self._modify_labels(message_id, None, ["INBOX"])
 
     async def _events(self, start: str, end: str) -> list[dict[str, Any]]:
         listing = await self.client.get(
@@ -336,7 +338,7 @@ class GoogleTools:
 
     @guarded
     async def execute(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Performs an approved tier-1 action with its approval payload. Executor use only."""
+        """Performs an approved action with its approval payload. Executor use only."""
         match action:
             case "mail_send":
                 sent = await self.client.post(f"{GMAIL}/drafts/send", {"id": payload["draft_id"]})
@@ -352,6 +354,12 @@ class GoogleTools:
             case "cal_delete":
                 await self.client.delete(f"{CALENDAR}/{payload['event_id']}")
                 return {"deleted": True, "event_id": payload["event_id"]}
+            case "mail_label":
+                return await self._modify_labels(
+                    payload["message_id"], payload.get("add"), payload.get("remove")
+                )
+            case "mail_archive":
+                return await self._modify_labels(payload["message_id"], None, ["INBOX"])
         raise ValueError(f"unknown action {action!r}")
 
 

@@ -93,6 +93,20 @@ async def test_label_and_archive(mcp: Client, sim: httpx.Client) -> None:
     assert "INBOX" not in archived["labels"] and "Urgent" in archived["labels"]
 
 
+async def test_execute_runs_approved_label_and_archive(mcp: Client, sim: httpx.Client) -> None:
+    labels_before = sim.get("/_sim/state").json()["labels"]
+    labelled = await call(
+        mcp,
+        "execute",
+        action="mail_label",
+        payload={"message_id": "msg_005", "add": ["Follow up"], "remove": ["Invoices"]},
+    )
+    assert "Follow up" in labelled["labels"] and "Invoices" not in labelled["labels"]
+    archived = await call(mcp, "execute", action="mail_archive", payload={"message_id": "msg_005"})
+    assert "INBOX" not in archived["labels"] and "Follow up" in archived["labels"]
+    assert sim.get("/_sim/state").json()["labels"] == labels_before
+
+
 async def test_calendar_list_and_free_slots(mcp: Client, sim: httpx.Client) -> None:
     monday, sunday = this_week()
     listing = await call(mcp, "cal_list", start=monday.isoformat(), end=sunday.isoformat())
