@@ -13,7 +13,7 @@ Local-first AI assistant (email, calendar, search) running on the client's machi
 - No abstraction without a second implementation.
 - All outbound HTTP goes through `achilles_net`. Nothing else imports `httpx`, `requests`, `aiohttp` or `urllib.request`.
 - Model tags live only in `models/manifest.json`.
-- Tests ship with the code. Unit tests never need Ollama; use Pydantic AI's `TestModel`.
+- Tests ship with the code. Prefer end-to-end functional tests through the real API, real SQLite, the real Ollama model and a real browser (Playwright), marked `e2e` and auto-skipped when Ollama is unreachable. A thin fake-model suite (Pydantic AI `TestModel`) stays only as the CI gate, because CI has no model.
 - No real credentials, emails or names anywhere in the repo.
 
 ## Commands

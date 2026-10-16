@@ -1,0 +1,52 @@
+[project]
+name = "achilles"
+version = "0.1.0"
+description = "Local-first AI assistant for email, calendar and search, running on the client's machine through Ollama."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "ruff>=0.8",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+achilles-net = { workspace = true }
+achilles-core = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"httpx".msg = "Use achilles_net."
+"requests".msg = "Use achilles_net."
+"aiohttp".msg = "Use achilles_net."
+"urllib.request".msg = "Use achilles_net."
+
+[tool.ruff.lint.per-file-ignores]
+"packages/net/**" = ["TID251"]
+"packages/*/tests/**" = ["TID251"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages"]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["e2e: real server, real SQLite, real Ollama model and a real browser"]
+filterwarnings = [
+    "ignore:.*httpx.AsyncClient.*:pydantic_ai._warnings.PydanticAIDeprecationWarning",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["achilles_net", "achilles_core"]

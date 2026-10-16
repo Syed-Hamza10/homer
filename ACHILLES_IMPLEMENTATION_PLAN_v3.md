@@ -90,7 +90,7 @@ Default family: Qwen3.5 small series on Ollama (native tool calling, image input
 
 - Thinking mode off for tool-calling turns. The method is settled in step 0 and recorded in `DECISIONS.md`.
 - Model tags live only in `models/manifest.json`. The Settings page lets the user switch models and runs the smoke eval afterwards.
-- Ollama env: `OLLAMA_KEEP_ALIVE=30m`, `OLLAMA_MAX_LOADED_MODELS=2`, `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`.
+- Ollama env: `OLLAMA_CONTEXT_LENGTH=16384`, `OLLAMA_KEEP_ALIVE=30m`, `OLLAMA_MAX_LOADED_MODELS=2`, `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`.
 - Dev machine: M3 Pro, 18 GB. Build and test against the supported tier.
 
 ---

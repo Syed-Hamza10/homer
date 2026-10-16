@@ -1,0 +1,6 @@
+{
+  "tiers": {
+    "supported": {"chat": "qwen3.5:9b", "embed": "nomic-embed-text", "context": 16384},
+    "degraded": {"chat": "qwen3.5:4b-q8_0", "embed": "nomic-embed-text", "context": 12288}
+  }
+}
