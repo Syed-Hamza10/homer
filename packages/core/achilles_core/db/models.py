@@ -63,3 +63,31 @@ class Setting(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", primary_key=True)
     key: str = Field(primary_key=True)
     value: str
+
+
+class Reminder(SQLModel, table=True):
+    __tablename__ = "reminders"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    text: str
+    due_at: datetime
+    status: str = "pending"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Approval(SQLModel, table=True):
+    __tablename__ = "approvals"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    server: str
+    action: str
+    payload_json: str
+    payload_hash: str
+    preview: str
+    status: str = Field(default="pending", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    decided_at: datetime | None = None
+    result_json: str | None = None
+    channel: str = "web"
