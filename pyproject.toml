@@ -39,8 +39,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "TID251"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
+addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore:.*httpx.AsyncClient.*:pydantic_ai._warnings.PydanticAIDeprecationWarning",
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["achilles_net", "achilles_core"]
