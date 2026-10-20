@@ -10,8 +10,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import type { ClientRules } from "./types"
-import { useRules, useSaveRules } from "./useSettings"
+import type { ClientRules, ModelTier } from "./types"
+import {
+  useModelOptions,
+  useRules,
+  useSaveRules,
+  useSmoke,
+} from "./useSettings"
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -30,7 +35,10 @@ function RulesForm({ initial }: { initial: ClientRules }) {
   const [contacts, setContacts] = useState(initial.priority_contacts.join("\n"))
   const [selfEmail, setSelfEmail] = useState(initial.self_email)
   const [emailToSelf, setEmailToSelf] = useState(initial.email_to_self)
+  const [modelTier, setModelTier] = useState(initial.model_tier ?? "")
   const save = useSaveRules()
+  const options = useModelOptions()
+  const smoke = useSmoke()
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -45,6 +53,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
         .filter(Boolean),
       email_to_self: emailToSelf,
       self_email: selfEmail,
+      model_tier: modelTier ? (modelTier as ModelTier) : null,
     })
   }
 
@@ -102,6 +111,48 @@ function RulesForm({ initial }: { initial: ClientRules }) {
         />
         Email the morning brief and digest to me
       </label>
+      <Field label="Model tier">
+        <select
+          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+          value={modelTier}
+          onChange={(event) => setModelTier(event.target.value)}
+        >
+          <option value="">
+            Automatic ({options.data?.effective_tier ?? "detected"})
+          </option>
+          {options.data?.tiers.map((tier) => (
+            <option key={tier.tier} value={tier.tier}>
+              {tier.tier} · {tier.tag} · {tier.context} context
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p className="text-xs text-muted-foreground">
+        A changed model tier takes effect after Achilles restarts.
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={smoke.isPending}
+          onClick={() => smoke.mutate(modelTier || null)}
+        >
+          Test model
+        </Button>
+        {smoke.data && (
+          <span
+            className={
+              smoke.data.ok
+                ? "text-sm text-muted-foreground"
+                : "text-sm text-destructive"
+            }
+          >
+            {smoke.data.ok
+              ? `${smoke.data.text} in ${smoke.data.latency_ms} ms`
+              : `Failed: ${smoke.data.error}`}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={save.isPending}>
           Save

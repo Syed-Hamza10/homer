@@ -25,6 +25,7 @@ class InvalidPassphrase(DomainError):
 
 class TooManyAttempts(DomainError):
     status_code = 429
+    headers = {"Retry-After": "60"}
 
 
 class LoginLimiter:

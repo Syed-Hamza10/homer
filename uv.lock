@@ -96,14 +96,24 @@ name = "achilles-eval"
 version = "0.1.0"
 source = { editable = "packages/eval" }
 dependencies = [
+    { name = "achilles-core" },
+    { name = "achilles-net" },
     { name = "fastapi" },
+    { name = "pydantic-ai-slim", extra = ["openai"] },
+    { name = "pyyaml" },
+    { name = "rich" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "achilles-core", editable = "packages/core" },
+    { name = "achilles-net", editable = "packages/net" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rich", specifier = ">=13.0" },
     { name = "typer", specifier = ">=0.15" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]

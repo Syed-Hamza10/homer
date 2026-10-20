@@ -30,6 +30,7 @@ def test_sixth_failure_is_429_even_with_the_right_passphrase(
         )
     response = client.post("/api/auth/login", json={"passphrase": "test-pass"}, headers=origin)
     assert response.status_code == 429
+    assert response.headers["Retry-After"] == "60"
 
 
 def test_non_get_without_origin_is_403(client: TestClient) -> None:

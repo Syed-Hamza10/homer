@@ -3,6 +3,7 @@ from typing import ClassVar
 
 class DomainError(Exception):
     status_code: ClassVar[int] = 400
+    headers: ClassVar[dict[str, str]] = {}
 
 
 class NotFound(DomainError):

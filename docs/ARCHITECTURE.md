@@ -48,6 +48,23 @@ Caches: `email_cache` (one row per message per user, category, unread, priority,
 `calendar_cache` (events for the next 14 days), `daily_briefs` (kind + local day, overwritten) and
 `follow_ups`. `GET /api/today` reads through the caches and primes them once when empty.
 
+## Eval harness (step 5)
+
+`packages/eval/achilles_eval` is the `achilles-eval` console script. It loads YAML tasks from
+`achilles_eval/tasks/`, starts `achilles-sim` (or uses `--sim-url`), starts the real MCP servers
+through `McpManager` with the token file pointing at the simulator, and builds an
+OpenAI-compatible `Model` from `--base-url`/`--model`. Each task run gets a fresh temporary
+database and a simulator reset; the runner calls `services.chat.stream` and checks tool calls,
+approval actions, answer substrings and simulator counts. `FunctionModel` can replace the endpoint
+for tests. `make eval-smoke` runs three attempts per task locally; it is not a CI target because CI
+has no model.
+
+The Settings model picker stores `model_tier` in client rules. The lifespan reads it before
+`build_model`, so a restart applies the choice; `GET /api/settings/models` exposes the manifest
+tags and `POST /api/settings/smoke` runs a PONG check against the current model or a selected tier.
+The Privacy web-search override is stored in `settings`, applied to the search server env on the
+next start, and reported as `restart_required`.
+
 ## Chat request flow
 
 1. `POST /api/chat` passes the Origin middleware (non-GET under `/api` needs an own origin) and
@@ -104,8 +121,10 @@ this client, so anything else the app contacted would show up here.
 | GET | `/api/approvals?status=pending` | – | `[{id, server, action, payload, preview, status, channel, created_at, decided_at, result}]` |
 | POST | `/api/approvals/{id}/approve` | – | the approval after execution (`done`/`failed`/`unknown`); 404 unknown; 409 not pending |
 | POST | `/api/approvals/{id}/reject` | – | the approval as `rejected`; 404 unknown; 409 not pending |
-| GET | `/api/privacy/hosts` | – | `{hosts: [{host, calls, last_seen}], web_search}` from `outbound_log` |
+| GET | `/api/privacy/hosts` | – | `{hosts: [{host, calls, last_seen}], web_search, web_search_configured}` from `outbound_log` |
 | GET | `/api/privacy/usage` | – | `{input_tokens, output_tokens, requests, spent_usd: 0}` |
+| PUT | `/api/privacy/web-search` | `{enabled}` | `{enabled, restart_required}` |
+| POST | `/api/privacy/wipe` | `{confirm}` | `{deleted: {table: count}}`; 400 without confirm |
 | GET | `/api/reminders` | – | `[{id, text, due_at, status, created_at}]` by due date |
 | GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals}` |
 | POST | `/api/today/brief` | – | the morning `daily_briefs` row; runs the skill |
@@ -121,6 +140,8 @@ this client, so anything else the app contacted would show up here.
 | POST | `/api/calendar/find-slot` | `{duration_minutes, days}` | `[{start, end}]`, at most three |
 | GET | `/api/settings` | – | `ClientRules` |
 | PUT | `/api/settings` | `ClientRules` | the saved rules; 422 on bad business hours |
+| GET | `/api/settings/models` | – | `{selected_tier, effective_tier, tiers: [{tier, tag, context}]}` |
+| POST | `/api/settings/smoke?tier=` | – | `{ok, text, error, latency_ms}` on the current or chosen tier |
 
 Everything under `/api` except `/api/health` needs the cookie (401 otherwise). Non-GET requests
 without an own `Origin` get 403. Errors are `{"detail": "<message>"}`.

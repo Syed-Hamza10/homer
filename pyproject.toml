@@ -56,6 +56,7 @@ filterwarnings = [
 known-first-party = [
     "achilles_net",
     "achilles_core",
+    "achilles_eval",
     "achilles_sim",
     "achilles_mcp_google",
     "achilles_mcp_search",

@@ -10,3 +10,11 @@ make test
 ```
 
 Unit tests never need Ollama or a network connection.
+
+## Evaluating a model
+
+```
+make eval-smoke
+```
+
+Runs ten YAML tasks against the Google simulator, three times each, and reports pass rate, latency and tokens. It needs Ollama (or any OpenAI-compatible endpoint via `achilles-eval --base-url ... --model ...`).
