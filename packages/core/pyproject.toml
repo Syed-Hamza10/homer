@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-ai-slim[mcp,openai]>=1.0",
     "sqlmodel>=0.0.22",
     "alembic>=1.14",
+    "apscheduler>=3.10,<4",
     "itsdangerous>=2.2",
     "psutil>=6.0",
 ]

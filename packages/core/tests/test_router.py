@@ -11,7 +11,6 @@ from sqlmodel import Session
 from achilles_core.agent.router import Command, normalise, parse_command
 from achilles_core.agent.toolsets import TOOLSETS
 from achilles_core.services import approvals
-from achilles_core.services.chat import NOT_YET_AVAILABLE
 
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
@@ -33,6 +32,10 @@ def tokens(frames: Frames) -> str:
         ),
         ("/approve 3", Command("approve", "3")),
         ("/reject 12", Command("reject", "12")),
+        ("/slot 45", Command("slot", "45")),
+        ("/draft m1", Command("draft", "m1")),
+        ("/followup t1 3", Command("followup", "t1 3")),
+        ("/digest", Command("digest", "")),
         ("hello /brief", None),
         ("/briefing", None),
         ("/unknown", None),
@@ -58,11 +61,11 @@ def test_normalise(answer: str, expected: str) -> None:
     assert normalise(answer) == expected
 
 
-@pytest.mark.parametrize("message", ["/brief", "/inbox"])
-def test_brief_and_inbox_are_not_yet_available(post_chat: PostChat, message: str) -> None:
+@pytest.mark.parametrize(("message", "needle"), [("/brief", "Good morning"), ("/inbox", "cache")])
+def test_skill_commands(post_chat: PostChat, message: str, needle: str) -> None:
     frames = post_chat({"message": message})
     assert [name for name, _ in frames] == ["meta", "token", "done"]
-    assert tokens(frames) == NOT_YET_AVAILABLE
+    assert needle in tokens(frames)
 
 
 def test_approve_command(

@@ -30,6 +30,24 @@ filtered out; `call(server, tool, args)` is the only path to `execute`, used by 
 executor. Core tools (`remind`) live in a `FunctionToolset`; `agent/toolsets.py` builds the five
 `FilteredToolset`s (`mail`, `calendar`, `mail+calendar`, `search`, `system`) over both.
 
+## Skills, caches and scheduler (step 4)
+
+`services/` now holds the deterministic workflows: `inbox.py` (cache + rule-based triage),
+`calendar.py` (cache + slots), `briefs.py` (morning brief and digest), `followups.py` (close on
+reply or draft after the delay), `drafts.py` (model-written reply in the client's tone) and
+`scheduler.py`. Client rules live in `services/rules.py` as one JSON row in `settings`; the Gmail
+cursor is another row, through `services/store.py`.
+
+`Scheduler` starts in the lifespan when `SCHEDULER_ENABLED` is true. It opens its own
+`Session(engine)` per job and calls the MCP manager like any service. Jobs: mail poll (3 min,
+`mail_changes_since`, label only changed messages), calendar poll (10 min), reminders (1 min, marks
+`due`), follow-up check (10 min), morning brief at 07:30 and digest at 18:00 in the user's
+timezone. All have `misfire_grace_time=3600` and `coalesce=True`.
+
+Caches: `email_cache` (one row per message per user, category, unread, priority, archived),
+`calendar_cache` (events for the next 14 days), `daily_briefs` (kind + local day, overwritten) and
+`follow_ups`. `GET /api/today` reads through the caches and primes them once when empty.
+
 ## Chat request flow
 
 1. `POST /api/chat` passes the Origin middleware (non-GET under `/api` needs an own origin) and
@@ -89,6 +107,20 @@ this client, so anything else the app contacted would show up here.
 | GET | `/api/privacy/hosts` | – | `{hosts: [{host, calls, last_seen}], web_search}` from `outbound_log` |
 | GET | `/api/privacy/usage` | – | `{input_tokens, output_tokens, requests, spent_usd: 0}` |
 | GET | `/api/reminders` | – | `[{id, text, due_at, status, created_at}]` by due date |
+| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals}` |
+| POST | `/api/today/brief` | – | the morning `daily_briefs` row; runs the skill |
+| POST | `/api/today/digest` | – | the digest row; runs the skill |
+| GET | `/api/inbox` | – | cached `[{message_id, thread_id, sender, subject, snippet, category, labels, unread, priority, received_at}]` |
+| POST | `/api/inbox/refresh` | – | `{messages, labeled, failed}`; refresh then triage |
+| POST | `/api/inbox/triage` | – | `{labeled, failed}` |
+| POST | `/api/inbox/{message_id}/archive` | – | the cached message, archived |
+| POST | `/api/inbox/{message_id}/follow-up` | `{days?}` | the follow-up row |
+| POST | `/api/inbox/{message_id}/draft` | – | `{draft_id, to, subject, body}` |
+| GET | `/api/calendar?days=7` | – | `[{event_id, title, start, end, location, attendees}]` |
+| POST | `/api/calendar/refresh` | – | the refreshed event list |
+| POST | `/api/calendar/find-slot` | `{duration_minutes, days}` | `[{start, end}]`, at most three |
+| GET | `/api/settings` | – | `ClientRules` |
+| PUT | `/api/settings` | `ClientRules` | the saved rules; 422 on bad business hours |
 
 Everything under `/api` except `/api/health` needs the cookie (401 otherwise). Non-GET requests
 without an own `Origin` get 403. Errors are `{"detail": "<message>"}`.

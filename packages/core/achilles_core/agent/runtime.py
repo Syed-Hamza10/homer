@@ -17,6 +17,7 @@ class Runtime:
     classifier: Agent[None, str]
     toolsets: dict[str, AbstractToolset[Deps]]
     manager: McpManager
+    model: Model
 
 
 def build_runtime(model: Model, manager: McpManager) -> Runtime:
@@ -25,4 +26,5 @@ def build_runtime(model: Model, manager: McpManager) -> Runtime:
         classifier=build_classifier(model),
         toolsets=build_toolsets(manager.model_toolset(), build_core_toolset()),
         manager=manager,
+        model=model,
     )

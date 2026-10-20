@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -91,3 +92,65 @@ class Approval(SQLModel, table=True):
     decided_at: datetime | None = None
     result_json: str | None = None
     channel: str = "web"
+
+
+class EmailCache(SQLModel, table=True):
+    __tablename__ = "email_cache"
+    __table_args__ = (UniqueConstraint("user_id", "message_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    message_id: str = Field(index=True)
+    thread_id: str = Field(default="", index=True)
+    sender: str = ""
+    subject: str = ""
+    snippet: str = ""
+    received_at: datetime = Field(default_factory=utcnow)
+    labels_json: str = "[]"
+    category: str = "To review"
+    unread: bool = False
+    priority: bool = False
+    archived: bool = False
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CalendarEventCache(SQLModel, table=True):
+    __tablename__ = "calendar_cache"
+    __table_args__ = (UniqueConstraint("user_id", "event_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    event_id: str = Field(index=True)
+    title: str = ""
+    start_at: datetime
+    end_at: datetime
+    location: str = ""
+    description: str = ""
+    attendees_json: str = "[]"
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class DailyBrief(SQLModel, table=True):
+    __tablename__ = "daily_briefs"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    kind: str = Field(index=True)
+    day: str = Field(index=True)
+    content: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class FollowUp(SQLModel, table=True):
+    __tablename__ = "follow_ups"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    thread_id: str = Field(index=True)
+    subject: str = ""
+    contact: str = ""
+    due_at: datetime
+    status: str = Field(default="open", index=True)
+    draft_id: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

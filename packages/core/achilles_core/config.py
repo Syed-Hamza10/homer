@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     extra_origins: list[str] = []
     user_name: str = "there"
     timezone: str = "UTC"
+    scheduler_enabled: bool = True
 
     @field_validator("achilles_home")
     @classmethod

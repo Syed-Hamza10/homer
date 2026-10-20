@@ -25,17 +25,19 @@ from achilles_core.agent.gate import APPROVAL_METADATA_KEY, ApprovalGate, RunSta
 from achilles_core.agent.router import Command, classify, parse_command
 from achilles_core.agent.runtime import Runtime
 from achilles_core.db.models import Conversation, Message, TokenCounter, User, utcnow
-from achilles_core.services import approvals
+from achilles_core.services import approvals, briefs, calendar, drafts, followups, inbox
 from achilles_core.services.conversations import get_conversation, list_messages
 from achilles_core.services.errors import DomainError
+from achilles_core.services.rules import get_rules
 
 log = structlog.get_logger(__name__)
 
 TITLE_LENGTH = 60
 SUMMARY_LENGTH = 200
 GENERIC_ERROR = "The assistant could not answer. Please try again."
-NOT_YET_AVAILABLE = "This command is not available yet; it arrives with the skills step."
 REMIND_TOOLSET = "system"
+SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
+SLOT_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,51 @@ async def decide(session: Session, user: User, runtime: Runtime, command: Comman
     return f"Approval #{approval.id} ({approval.action}): {approval.status}."
 
 
+async def run_skill(session: Session, user: User, runtime: Runtime, command: Command) -> str:
+    rules = get_rules(session, user.id)
+    try:
+        match command.name:
+            case "brief":
+                return (await briefs.morning_brief(session, user, runtime.manager, rules)).content
+            case "inbox":
+                rows = await inbox.refresh_inbox(session, user, runtime.manager, rules)
+                if rows:
+                    await inbox.triage(session, user, runtime.manager, rules)
+                return inbox.summary(session, user)
+            case "digest":
+                return (await briefs.eod_digest(session, user, runtime.manager, rules)).content
+            case "slot":
+                minutes = int(command.arg) if command.arg.isdigit() else 30
+                slots = await calendar.find_slots(runtime.manager, rules, minutes)
+                if not slots:
+                    return "No free slots found in the next week."
+                shown = slots[:SLOT_LIMIT]
+                listed = "; ".join(f"{slot['start']} to {slot['end']}" for slot in shown)
+                return f"Free slots: {listed}."
+            case "draft":
+                if not command.arg:
+                    return "Usage: /draft <message id>"
+                result = await drafts.draft_reply(
+                    user, runtime.manager, runtime.model, rules, command.arg
+                )
+                return (
+                    f"Draft ready to {result['to']}: {result['subject']} "
+                    f"(draft {result['draft_id']})."
+                )
+            case "followup":
+                parts = command.arg.split()
+                if not parts:
+                    return "Usage: /followup <thread id> [days]"
+                days = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+                row = await followups.create_followup(
+                    session, user, runtime.manager, rules, parts[0], days
+                )
+                return f"Follow-up #{row.id} on '{row.subject}' due {row.due_at:%Y-%m-%d}."
+    except DomainError as error:
+        return str(error).capitalize()
+    return "Unknown command."
+
+
 async def run_agent(
     runtime: Runtime,
     toolset_name: str,
@@ -173,6 +220,9 @@ async def respond(
         outcome.usage.incr(usage)
         log.info("toolset_chosen", toolset=toolset_name)
         events = run_agent(runtime, toolset_name, message, history, deps, outcome)
+    elif command.name in SKILL_COMMANDS:
+        yield text_event(outcome, await run_skill(session, user, runtime, command))
+        return
     elif command.name == "remind":
         prompt = f"Set a reminder: {command.arg}"
         events = run_agent(runtime, REMIND_TOOLSET, prompt, history, deps, outcome)
@@ -180,7 +230,7 @@ async def respond(
         yield text_event(outcome, await decide(session, user, runtime, command))
         return
     else:
-        yield text_event(outcome, NOT_YET_AVAILABLE)
+        yield text_event(outcome, "Unknown command.")
         return
     async for event in events:
         yield event

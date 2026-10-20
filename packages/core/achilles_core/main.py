@@ -10,7 +10,21 @@ from sqlmodel import Session
 
 from achilles_core import __version__
 from achilles_core.agent.runtime import build_runtime
-from achilles_core.api import approvals, auth, chat, conversations, health, privacy, reminders
+from achilles_core.api import (
+    approvals,
+    auth,
+    calendar,
+    chat,
+    conversations,
+    health,
+    inbox,
+    privacy,
+    reminders,
+    today,
+)
+from achilles_core.api import (
+    settings as settings_api,
+)
 from achilles_core.auth import LoginLimiter, origin_middleware
 from achilles_core.config import Settings, own_origins, session_secret
 from achilles_core.db.session import make_engine, run_migrations
@@ -19,6 +33,7 @@ from achilles_core.mcp.manager import McpManager
 from achilles_core.platform import ensure_home
 from achilles_core.services.errors import DomainError
 from achilles_core.services.outbound_log import make_logger
+from achilles_core.services.scheduler import build_scheduler
 from achilles_core.services.users import ensure_first_user
 
 STATIC = Path(__file__).parent / "static"
@@ -49,8 +64,13 @@ def create_app(
         app.state.model = model or build_model(settings, http_client)
         manager = mcp or McpManager.discover(settings)
         await manager.start()
-        app.state.runtime = build_runtime(app.state.model, manager)
+        runtime = build_runtime(app.state.model, manager)
+        app.state.runtime = runtime
+        scheduler = build_scheduler(settings, engine, runtime)
+        scheduler.start()
+        app.state.scheduler = scheduler
         yield
+        scheduler.stop()
         await manager.stop()
         await http_client.aclose()
 
@@ -73,6 +93,10 @@ def create_app(
         approvals.router,
         privacy.router,
         reminders.router,
+        inbox.router,
+        calendar.router,
+        today.router,
+        settings_api.router,
     )
     for router in routers:
         app.include_router(router)
