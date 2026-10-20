@@ -3,6 +3,7 @@ import re
 from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session
 
+from achilles_core.platform import Tier
 from achilles_core.services.store import read_setting, write_setting
 
 RULES_KEY = "client_rules"
@@ -17,6 +18,7 @@ class ClientRules(BaseModel):
     priority_contacts: list[str] = Field(default_factory=list)
     email_to_self: bool = False
     self_email: str = ""
+    model_tier: Tier | None = None
 
     @field_validator("business_hours")
     @classmethod

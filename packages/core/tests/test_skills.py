@@ -1,12 +1,8 @@
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from fastmcp.client import Client
-from pydantic_ai.mcp import MCPToolset
 from sqlmodel import Session, select
 
 from achilles_core.db.models import EmailCache, FollowUp, Reminder
@@ -15,20 +11,6 @@ from achilles_core.services import briefs, calendar, followups
 from achilles_core.services.rules import get_rules
 from achilles_core.services.scheduler import Scheduler
 from achilles_core.services.users import first_user
-
-
-@pytest.fixture
-async def live_mcp(fake_google: ModuleType) -> AsyncIterator[McpManager]:
-    manager = McpManager(
-        {
-            "google": MCPToolset(
-                Client(fake_google.server), id="google", tool_error_behavior="failed"
-            )
-        }
-    )
-    await manager.start()
-    yield manager
-    await manager.stop()
 
 
 def test_refresh_and_triage_labels(
@@ -68,11 +50,24 @@ def test_settings_round_trip(logged_in: TestClient, origin: dict[str, str]) -> N
         "priority_contacts": ["maya@example.test"],
         "email_to_self": True,
         "self_email": "tester@example.test",
+        "model_tier": "degraded",
     }
     assert logged_in.put("/api/settings", json=body, headers=origin).json() == body
     assert logged_in.get("/api/settings").json() == body
     bad = logged_in.put("/api/settings", json={**body, "business_hours": "9-5"}, headers=origin)
     assert bad.status_code == 422
+
+
+def test_model_options_and_smoke(logged_in: TestClient, origin: dict[str, str]) -> None:
+    options = logged_in.get("/api/settings/models").json()
+    assert options["effective_tier"] in ("supported", "degraded")
+    assert {tier["tier"] for tier in options["tiers"]} == {"supported", "degraded"}
+    assert all(tier["tag"] for tier in options["tiers"])
+
+    result = logged_in.post("/api/settings/smoke", headers=origin).json()
+    assert result["ok"] is True
+    assert result["text"] == "Hello from the test model."
+    assert result["latency_ms"] >= 0
 
 
 def test_morning_brief_lands_on_today(logged_in: TestClient, origin: dict[str, str]) -> None:

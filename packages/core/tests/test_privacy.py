@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from achilles_core.db.models import OutboundLog
+from achilles_core.services import approvals
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
 
@@ -17,6 +18,7 @@ def test_hosts_are_grouped_with_counts(logged_in: TestClient, app: FastAPI) -> N
         session.commit()
     body = logged_in.get("/api/privacy/hosts").json()
     assert body["web_search"] is True
+    assert body["web_search_configured"] is True
     assert [(h["host"], h["calls"]) for h in body["hosts"]] == [
         ("127.0.0.1:11434", 2),
         ("www.googleapis.com", 1),
@@ -36,6 +38,57 @@ def test_usage_counts_tokens_and_spends_nothing(logged_in: TestClient, post_chat
     assert body["input_tokens"] > 0 and body["output_tokens"] > 0
     assert body["requests"] == 1
     assert body["spent_usd"] == 0
+
+
+def test_web_search_toggle_needs_a_restart(logged_in: TestClient, origin: dict[str, str]) -> None:
+    off = logged_in.put("/api/privacy/web-search", json={"enabled": False}, headers=origin)
+    assert off.json() == {"enabled": False, "restart_required": True}
+    hosts = logged_in.get("/api/privacy/hosts").json()
+    assert hosts["web_search"] is True
+    assert hosts["web_search_configured"] is False
+
+    on = logged_in.put("/api/privacy/web-search", json={"enabled": True}, headers=origin)
+    assert on.json() == {"enabled": True, "restart_required": False}
+
+
+def test_wipe_clears_local_data(
+    logged_in: TestClient, app: FastAPI, origin: dict[str, str], post_chat: PostChat
+) -> None:
+    post_chat({"message": "Hi"})
+    with Session(app.state.engine) as session:
+        session.add(
+            OutboundLog(method="GET", host="127.0.0.1:11434", path="/", status=200, duration_ms=1)
+        )
+        approvals.create_from_tool_result(
+            session,
+            1,
+            "google",
+            {
+                "approval_required": True,
+                "action": "mail_send",
+                "payload": {"draft_id": "d1"},
+                "preview": "Send draft d1",
+            },
+        )
+    assert logged_in.get("/api/conversations").json()
+
+    response = logged_in.post("/api/privacy/wipe", json={"confirm": True}, headers=origin)
+    assert response.status_code == 200
+    deleted = response.json()["deleted"]
+    assert deleted["conversations"] == 1
+    assert deleted["messages"] == 2
+    assert deleted["outbound_log"] == 1
+    assert deleted["approvals"] == 1
+
+    assert logged_in.get("/api/conversations").json() == []
+    assert logged_in.get("/api/approvals").json() == []
+    assert logged_in.get("/api/privacy/hosts").json()["hosts"] == []
+    assert logged_in.get("/api/privacy/usage").json()["requests"] == 0
+
+
+def test_wipe_requires_confirmation(logged_in: TestClient, origin: dict[str, str]) -> None:
+    response = logged_in.post("/api/privacy/wipe", json={"confirm": False}, headers=origin)
+    assert response.status_code == 400
 
 
 def test_privacy_requires_login(client: TestClient) -> None:

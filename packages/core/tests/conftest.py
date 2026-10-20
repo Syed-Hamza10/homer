@@ -97,6 +97,20 @@ def mcp(fake_google: ModuleType) -> McpManager:
 
 
 @pytest.fixture
+async def live_mcp(fake_google: ModuleType) -> AsyncIterator[McpManager]:
+    manager = McpManager(
+        {
+            "google": MCPToolset(
+                Client(fake_google.server), id="google", tool_error_behavior="failed"
+            )
+        }
+    )
+    await manager.start()
+    yield manager
+    await manager.stop()
+
+
+@pytest.fixture
 def app(settings: Settings, model: Model, mcp: McpManager) -> FastAPI:
     return create_app(settings, model=model, mcp=mcp)
 

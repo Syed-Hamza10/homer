@@ -34,10 +34,12 @@ def build_http_client(settings: Settings, log: LogFn = no_log) -> AllowlistedCli
     return AllowlistedClient(Allowlist([host_key(settings.ollama_url)]), log=log)
 
 
-def build_model(settings: Settings, http_client: AllowlistedClient) -> Model:
+def build_model(
+    settings: Settings, http_client: AllowlistedClient, tier: Tier | None = None
+) -> Model:
     provider = OllamaProvider(base_url=f"{settings.ollama_url}/v1", http_client=http_client)
     return OllamaModel(
-        chat_model_tag(hardware_tier()),
+        chat_model_tag(tier or hardware_tier()),
         provider=provider,
         settings=OpenAIChatModelSettings(openai_reasoning_effort="none", temperature=0.2),
     )

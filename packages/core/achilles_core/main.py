@@ -33,7 +33,10 @@ from achilles_core.mcp.manager import McpManager
 from achilles_core.platform import ensure_home
 from achilles_core.services.errors import DomainError
 from achilles_core.services.outbound_log import make_logger
+from achilles_core.services.privacy import WEB_SEARCH_KEY
+from achilles_core.services.rules import get_rules
 from achilles_core.services.scheduler import build_scheduler
+from achilles_core.services.store import read_setting
 from achilles_core.services.users import ensure_first_user
 
 STATIC = Path(__file__).parent / "static"
@@ -41,7 +44,7 @@ STATIC = Path(__file__).parent / "static"
 
 async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, DomainError)
-    return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+    return JSONResponse({"detail": str(exc)}, status_code=exc.status_code, headers=exc.headers)
 
 
 def create_app(
@@ -55,13 +58,17 @@ def create_app(
         engine = make_engine(settings.achilles_home)
         run_migrations(engine)
         with Session(engine) as session:
-            ensure_first_user(session, settings.user_name, settings.timezone)
+            user = ensure_first_user(session, settings.user_name, settings.timezone)
+            rules = get_rules(session, user.id)
+            web_search = read_setting(session, user.id, WEB_SEARCH_KEY)
+        if web_search is not None:
+            settings.web_search = web_search == "true"
         http_client = build_http_client(settings, make_logger(engine))
         app.state.engine = engine
         app.state.session_secret = session_secret(settings)
         app.state.limiter = LoginLimiter()
         app.state.http_client = http_client
-        app.state.model = model or build_model(settings, http_client)
+        app.state.model = model or build_model(settings, http_client, rules.model_tier)
         manager = mcp or McpManager.discover(settings)
         await manager.start()
         runtime = build_runtime(app.state.model, manager)
