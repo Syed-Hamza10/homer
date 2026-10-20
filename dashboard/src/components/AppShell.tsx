@@ -3,8 +3,12 @@ import { cn } from "@/lib/utils"
 
 const pages = [
   { to: "/", label: "Chat" },
+  { to: "/today", label: "Today" },
+  { to: "/inbox", label: "Inbox" },
+  { to: "/calendar", label: "Calendar" },
   { to: "/approvals", label: "Approvals" },
   { to: "/privacy", label: "Privacy" },
+  { to: "/settings", label: "Settings" },
 ]
 
 export function AppShell() {

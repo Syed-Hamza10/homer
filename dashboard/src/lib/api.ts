@@ -9,8 +9,8 @@ export class ApiError extends Error {
   }
 }
 
-const jsonInit = (body: unknown): RequestInit => ({
-  method: "POST",
+const jsonInit = (body: unknown, method = "POST"): RequestInit => ({
+  method,
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
 })
@@ -32,6 +32,11 @@ export async function post(url: string, body: unknown): Promise<void> {
 
 export async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await send(url, jsonInit(body))
+  return res.json() as Promise<T>
+}
+
+export async function putJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await send(url, jsonInit(body, "PUT"))
   return res.json() as Promise<T>
 }
 

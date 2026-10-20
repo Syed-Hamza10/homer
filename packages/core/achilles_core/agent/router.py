@@ -7,7 +7,9 @@ from pydantic_ai.usage import RunUsage
 
 from achilles_core.agent.toolsets import DEFAULT_TOOLSET, TOOLSETS
 
-COMMAND = re.compile(r"^/(brief|inbox|remind|approve|reject)\b\s*(.*)$", re.DOTALL)
+COMMAND = re.compile(
+    r"^/(brief|inbox|digest|slot|draft|followup|remind|approve|reject)\b\s*(.*)$", re.DOTALL
+)
 WORD = re.compile(r"[a-z+]+")
 
 CLASSIFY_PROMPT = (

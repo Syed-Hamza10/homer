@@ -37,6 +37,7 @@ def settings(tmp_path: Path) -> Settings:
         achilles_passphrase=SecretStr(PASSPHRASE),
         user_name="Tester",
         timezone="Europe/London",
+        scheduler_enabled=False,
         _env_file=None,
     )
 

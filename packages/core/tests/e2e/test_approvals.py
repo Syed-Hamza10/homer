@@ -4,8 +4,6 @@ from typing import Any
 import httpx
 import pytest
 
-from achilles_core.services.chat import NOT_YET_AVAILABLE
-
 pytestmark = pytest.mark.e2e
 Frames = list[tuple[str, dict[str, Any]]]
 Chat = Callable[[dict[str, Any]], Frames]
@@ -63,7 +61,7 @@ def test_approval_round_trip_over_http(
 
 
 def test_slash_commands(chat: Chat, create_approval: Callable[[str], int]) -> None:
-    assert token_text(chat({"message": "/brief"})) == NOT_YET_AVAILABLE
+    assert "Good morning" in token_text(chat({"message": "/brief"}))
     approval_id = create_approval("d-cmd")
     frames = chat({"message": f"/approve {approval_id}"})
     assert token_text(frames) == f"Approval #{approval_id} (mail_send): done."
