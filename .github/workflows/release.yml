@@ -1,0 +1,55 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: dashboard/pnpm-lock.yaml
+      - run: uv sync --all-packages
+      - run: uv run pytest -m "not e2e"
+      - run: cd dashboard && pnpm install --frozen-lockfile && pnpm build
+      - name: Check tag matches the package version
+        run: |
+          python - <<'PY'
+          import achilles_core, os
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          assert achilles_core.__version__ == tag, (achilles_core.__version__, tag)
+          PY
+      - run: uv build --all-packages --out-dir dist
+      - name: Verify the wheel contains the dashboard and manifest
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist/achilles_core-*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          assert "achilles_core/static/index.html" in names
+          assert "achilles_core/models/manifest.json" in names
+          print("wheel verified")
+          PY
+      - run: rm -f dist/achilles_eval-*.whl
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*.whl install.sh CLIENT_ONBOARDING.md PRIVACY.md

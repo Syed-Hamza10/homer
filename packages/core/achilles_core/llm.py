@@ -13,7 +13,9 @@ from achilles_net import Allowlist, AllowlistedClient
 from achilles_net.allowlist import host_key
 from achilles_net.client import LogFn, no_log
 
-MANIFEST = Path(__file__).resolve().parents[3] / "models" / "manifest.json"
+PACKAGED_MANIFEST = Path(__file__).parent / "models" / "manifest.json"
+REPO_MANIFEST = Path(__file__).resolve().parents[3] / "models" / "manifest.json"
+MANIFEST = PACKAGED_MANIFEST if PACKAGED_MANIFEST.exists() else REPO_MANIFEST
 
 
 class TierModels(TypedDict):

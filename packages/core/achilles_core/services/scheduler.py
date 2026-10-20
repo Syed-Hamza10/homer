@@ -11,6 +11,7 @@ from achilles_core.agent.runtime import Runtime
 from achilles_core.config import Settings
 from achilles_core.db.models import Reminder, User
 from achilles_core.mcp.manager import ExecuteFailed, ServerUnavailable
+from achilles_core.services import backup as backup_service
 from achilles_core.services import briefs, followups
 from achilles_core.services.calendar import refresh_calendar
 from achilles_core.services.inbox import label_rows, upsert_email
@@ -54,6 +55,12 @@ class Scheduler:
                 CronTrigger(hour=18, minute=0, timezone=timezone),
                 {},
                 "eod_digest",
+            ),
+            (
+                self.backup,
+                CronTrigger(hour=3, minute=0, timezone=timezone),
+                {},
+                "backup",
             ),
         )
         for job, trigger, options, job_id in jobs:
@@ -169,6 +176,10 @@ class Scheduler:
                 return
             rules = get_rules(session, user.id)
             await briefs.eod_digest(session, user, self.runtime.manager, rules, datetime.now(UTC))
+
+    async def backup(self) -> None:
+        path = backup_service.create_backup(self.settings.achilles_home)
+        log.info("backup_created", path=str(path))
 
 
 def build_scheduler(settings: Settings, engine: Engine, runtime: Runtime) -> Scheduler:

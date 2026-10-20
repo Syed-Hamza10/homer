@@ -3,7 +3,14 @@ import respx
 from pydantic import SecretStr
 
 from achilles_core.config import Settings
-from achilles_core.llm import build_http_client, build_model, chat_model_tag, load_manifest
+from achilles_core.llm import (
+    PACKAGED_MANIFEST,
+    REPO_MANIFEST,
+    build_http_client,
+    build_model,
+    chat_model_tag,
+    load_manifest,
+)
 from achilles_net import BlockedHostError, OutboundCall
 
 
@@ -17,6 +24,11 @@ def test_manifest_has_both_tiers() -> None:
     tiers = load_manifest()
     assert set(tiers) == {"supported", "degraded"}
     assert chat_model_tag("supported") == tiers["supported"]["chat"]
+
+
+def test_packaged_manifest_matches_the_repo_source() -> None:
+    assert PACKAGED_MANIFEST.exists()
+    assert PACKAGED_MANIFEST.read_text() == REPO_MANIFEST.read_text()
 
 
 def test_allowlist_contains_exactly_the_ollama_host() -> None:

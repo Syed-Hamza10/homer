@@ -1,10 +1,11 @@
+import os
 import secrets
 from pathlib import Path
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-HOME = Path("~/.achilles").expanduser()
+HOME = Path(os.environ.get("ACHILLES_HOME", "~/.achilles")).expanduser()
 
 
 class Settings(BaseSettings):

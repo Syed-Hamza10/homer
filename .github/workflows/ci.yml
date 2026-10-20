@@ -20,3 +20,32 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -m "not e2e"
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: dashboard/pnpm-lock.yaml
+      - run: cd dashboard && pnpm install --frozen-lockfile && pnpm build
+      - run: uv build --all-packages --out-dir dist
+      - name: Verify the wheel contains the dashboard and manifest
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist/achilles_core-*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          assert "achilles_core/static/index.html" in names
+          assert "achilles_core/models/manifest.json" in names
+          print("wheel verified")
+          PY
