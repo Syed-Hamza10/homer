@@ -171,6 +171,14 @@ async def test_scheduler_jobs_refresh_caches(
         assert session.get(Reminder, reminder_id).status == "due"
 
 
+async def test_scheduler_backup_writes_an_archive(
+    app: FastAPI, settings, logged_in: TestClient
+) -> None:
+    scheduler = Scheduler(settings, app.state.engine, app.state.runtime)
+    await scheduler.backup()
+    assert list((settings.achilles_home / "backups").glob("achilles-*.tar.gz"))
+
+
 def test_brief_text_includes_sources(app: FastAPI, logged_in: TestClient) -> None:
     with Session(app.state.engine) as session:
         user = first_user(session)

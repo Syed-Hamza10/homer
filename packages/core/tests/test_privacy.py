@@ -6,7 +6,11 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from achilles_core.db.models import OutboundLog
+from achilles_core.privacy_hosts import CORE_HOSTS, GOOGLE_HOSTS, SEARCH_HOSTS, privacy_markdown
 from achilles_core.services import approvals
+from achilles_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_TOKEN_URL
+from achilles_mcp_search.search import SEARCH_HOST
+from achilles_net.allowlist import host_key
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
 
@@ -89,6 +93,15 @@ def test_wipe_clears_local_data(
 def test_wipe_requires_confirmation(logged_in: TestClient, origin: dict[str, str]) -> None:
     response = logged_in.post("/api/privacy/wipe", json={"confirm": False}, headers=origin)
     assert response.status_code == 400
+
+
+def test_privacy_hosts_match_the_server_defaults() -> None:
+    assert host_key(GOOGLE_API_BASE) == GOOGLE_HOSTS[0]
+    assert host_key(GOOGLE_TOKEN_URL) == GOOGLE_HOSTS[1]
+    assert SEARCH_HOSTS[0] == SEARCH_HOST
+    text = privacy_markdown()
+    for host in (*CORE_HOSTS, *GOOGLE_HOSTS, *SEARCH_HOSTS):
+        assert host in text
 
 
 def test_privacy_requires_login(client: TestClient) -> None:

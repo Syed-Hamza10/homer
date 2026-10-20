@@ -1,12 +1,14 @@
+import os
 import platform
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Literal
 
 import psutil
 
 Tier = Literal["supported", "degraded"]
-HOME_DIRS = ("data", "credentials", "logs")
+HOME_DIRS = ("data", "credentials", "documents", "logs", "backups")
 
 
 def total_ram_gb() -> float:
@@ -30,3 +32,17 @@ def ensure_home(path: Path) -> None:
     for name in HOME_DIRS:
         (path / name).mkdir(mode=0o700, exist_ok=True)
         (path / name).chmod(0o700)
+
+
+def restart_service() -> None:
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.run(
+            ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/dev.achilles.server"],
+            check=True,
+        )
+        return
+    if system == "Linux":
+        subprocess.run(["systemctl", "--user", "restart", "achilles"], check=True)
+        return
+    raise RuntimeError(f"unsupported platform: {system}")
