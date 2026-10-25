@@ -55,3 +55,19 @@ async def test_missing_home_and_public_host_fail(tmp_path, settings: Settings) -
     checks = by_name(await run_checks(public))
     assert checks["Home is private (0700)"] == (False, f"{settings.achilles_home} missing")
     assert checks["Server bound to localhost"][0] is False
+
+
+@pytest.mark.respx(assert_all_called=False)
+async def test_quick_skips_ollama_and_hardware(
+    settings: Settings, respx_mock: respx.MockRouter
+) -> None:
+    ensure_home(settings.achilles_home)
+    route = respx_mock.get("http://127.0.0.1:11434/api/tags").respond(200, json={"models": []})
+    checks = by_name(await run_checks(settings, quick=True))
+    assert set(checks) == {
+        "Allowlist blocks other hosts",
+        "Home is private (0700)",
+        "Server bound to localhost",
+    }
+    assert all(ok for ok, _ in checks.values())
+    assert not route.called

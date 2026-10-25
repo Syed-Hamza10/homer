@@ -1,8 +1,5 @@
 import asyncio
-import shutil
 import subprocess
-import sys
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -23,8 +20,10 @@ from achilles_core.privacy_hosts import privacy_markdown
 from achilles_core.services.backup import create_backup
 from achilles_core.services.rules import get_rules, save_rules
 from achilles_core.services.users import first_user, forget_user
+from achilles_core.update import UpdateError
+from achilles_core.update import rollback as rollback_venv
+from achilles_core.update import update as update_venv
 
-REPO = "Syed-Hamza10/achilles"
 TIERS = ("supported", "degraded")
 
 app = typer.Typer(no_args_is_help=True)
@@ -52,8 +51,12 @@ def serve() -> None:
 
 
 @app.command()
-def doctor() -> None:
-    checks = asyncio.run(run_checks(Settings()))
+def doctor(
+    quick: Annotated[
+        bool, typer.Option("--quick", help="Skip the Ollama and hardware checks.")
+    ] = False,
+) -> None:
+    checks = asyncio.run(run_checks(Settings(), quick=quick))
     table = Table("Check", "Result", "Detail")
     for check in checks:
         table.add_row(check.name, "[green]ok" if check.ok else "[red]FAIL", check.detail)
@@ -109,43 +112,37 @@ def forget(
     Console().print(f"Deleted {summary}.")
 
 
+def restart_or_explain(done: str) -> None:
+    try:
+        restart_service()
+    except (OSError, subprocess.CalledProcessError):
+        Console().print(f"{done}; restart the Achilles service manually.")
+    else:
+        Console().print(f"{done} and restarted.")
+
+
 @app.command()
 def update(
     version: Annotated[str, typer.Option(help="Release tag, or 'latest'.")] = "latest",
 ) -> None:
-    gh = shutil.which("gh")
-    uv = shutil.which("uv")
-    if gh is None or uv is None:
-        raise typer.BadParameter("update needs `gh` and `uv`; re-run install.sh instead")
-    with tempfile.TemporaryDirectory(prefix="achilles-update-") as directory:
-        command = [gh, "release", "download"]
-        if version != "latest":
-            command.append(version)
-        command += ["-R", REPO, "-p", "*.whl", "-D", directory]
-        subprocess.run(command, check=True)
-        subprocess.run(
-            [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                sys.executable,
-                "--upgrade",
-                "--find-links",
-                directory,
-                "achilles-core",
-                "achilles-mcp-google",
-                "achilles-mcp-search",
-                "achilles-mcp-system",
-            ],
-            check=True,
-        )
+    home = Settings().achilles_home
     try:
-        restart_service()
-    except (OSError, subprocess.CalledProcessError):
-        Console().print("Updated; restart the Achilles service manually.")
-    else:
-        Console().print("Updated and restarted.")
+        update_venv(home, version)
+    except UpdateError as error:
+        Console().print(f"[red]Update aborted; the current install is untouched.[/red]\n{error}")
+        raise typer.Exit(code=1) from error
+    restart_or_explain(f"Updated to {version}; the previous environment is in {home / 'venv.prev'}")
+
+
+@app.command()
+def rollback() -> None:
+    home = Settings().achilles_home
+    try:
+        rollback_venv(home)
+    except UpdateError as error:
+        Console().print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+    restart_or_explain("Rolled back to the previous environment")
 
 
 @model.command("use")
