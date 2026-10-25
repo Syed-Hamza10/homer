@@ -1,11 +1,18 @@
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import structlog
 from sqlmodel import Session, select
 
 from achilles_core.db.models import DailyBrief, Reminder, User
-from achilles_core.mcp.manager import ExecuteFailed, McpManager, ServerUnavailable
+from achilles_core.mcp.manager import (
+    EXECUTOR_TOOL,
+    PROFILE_TOOL,
+    ExecuteFailed,
+    McpManager,
+    ServerUnavailable,
+)
 from achilles_core.services import approvals, followups
 from achilles_core.services.calendar import (
     describe_event,
@@ -20,6 +27,7 @@ log = structlog.get_logger(__name__)
 
 MORNING = "morning"
 DIGEST = "digest"
+SelfEmailStatus = Literal["off", "ok", "mismatch", "unknown"]
 
 
 def save_brief(
@@ -139,21 +147,45 @@ def digest_text(session: Session, user: User, now: datetime) -> str:
     return " ".join(parts)
 
 
+async def account_email(manager: McpManager) -> str | None:
+    try:
+        result = await manager.call("google", PROFILE_TOOL, {})
+    except (ExecuteFailed, ServerUnavailable):
+        return None
+    email = result.get("email") if isinstance(result, dict) else None
+    return str(email).strip().lower() if email else None
+
+
+def self_email_status(rules: ClientRules, account: str | None) -> SelfEmailStatus:
+    """Email-to-self is tier 2 only because it goes to the user's own mailbox, so the address
+    typed in Settings must match the connected account."""
+    if not rules.email_to_self or not rules.self_email:
+        return "off"
+    if account is None:
+        return "unknown"
+    return "ok" if rules.self_email.strip().lower() == account else "mismatch"
+
+
 async def send_to_self(
     manager: McpManager, rules: ClientRules, subject: str, body: str
 ) -> str | None:
     if not rules.email_to_self or not rules.self_email:
         return None
+    account = await account_email(manager)
+    status = self_email_status(rules, account)
+    if status != "ok":
+        log.warning("self_email_skipped", status=status)
+        return None
     draft = await manager.call(
         "google",
         "mail_draft",
-        {"to": rules.self_email, "subject": subject, "body": body},
+        {"to": account, "subject": subject, "body": body},
     )
     draft_id = draft.get("draft_id") if isinstance(draft, dict) else None
     if not draft_id:
         return None
     await manager.call(
-        "google", "execute", {"action": "mail_send", "payload": {"draft_id": draft_id}}
+        "google", EXECUTOR_TOOL, {"action": "mail_send", "payload": {"draft_id": draft_id}}
     )
     return str(draft_id)
 

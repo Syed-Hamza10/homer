@@ -51,6 +51,7 @@ REPLY_PROMPT = (
     "Use mail_search to find the email, mail_draft to write the reply and mail_send to send it."
 )
 SEND_FOLLOW_UP = "Send that draft now with mail_send."
+ACCOUNT_EMAIL = "jordan.reyes@example.test"
 Chat = Callable[[dict[str, Any]], Frames]
 
 
@@ -238,6 +239,28 @@ def test_reject_sends_nothing(stack: Stack, client: httpx.Client, chat: Chat) ->
     rejected = client.post(f"/api/approvals/{requested[0]['approval_id']}/reject").json()
     assert rejected["status"] == "rejected"
     assert stack.sent_count() == sent_before
+
+
+def set_self_email(client: httpx.Client, address: str, enabled: bool = True) -> None:
+    rules = client.get("/api/settings").json()
+    body = {**rules, "email_to_self": enabled, "self_email": address}
+    assert client.put("/api/settings", json=body).status_code == 200
+
+
+def test_brief_emails_self_only_to_the_account_address(stack: Stack, client: httpx.Client) -> None:
+    sent_before = stack.sent_count()
+    set_self_email(client, ACCOUNT_EMAIL.upper())
+    assert httpx.get(f"{stack.url}/api/health").json()["self_email"] == "ok"
+    brief = client.post("/api/today/brief").json()
+    assert "Good morning" in brief["content"]
+    assert stack.sent_count() == sent_before + 1
+
+    set_self_email(client, "someone.else@example.test")
+    assert httpx.get(f"{stack.url}/api/health").json()["self_email"] == "mismatch"
+    client.post("/api/today/digest").raise_for_status()
+    assert stack.sent_count() == sent_before + 1
+    set_self_email(client, "", enabled=False)
+    assert httpx.get(f"{stack.url}/api/health").json()["self_email"] == "off"
 
 
 def test_approvals_page_in_browser(page: Page, stack: Stack) -> None:

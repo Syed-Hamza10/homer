@@ -178,6 +178,10 @@ async def test_calendar_write_tools_need_approval(mcp: Client, sim: httpx.Client
     assert unknown["error"] == "invalid_argument"
 
 
+async def test_mail_profile_returns_the_account_address(mcp: Client) -> None:
+    assert await call(mcp, "mail_profile") == {"email": "jordan.reyes@example.test"}
+
+
 async def test_contacts_search(mcp: Client) -> None:
     found = await call(mcp, "contacts_search", query="keller")
     assert found["contacts"] == [{"name": "Tomas Keller", "email": "tomas.keller@example.test"}]

@@ -58,6 +58,8 @@ EVENTS = [
     },
 ]
 
+ACCOUNT_EMAIL = "tester@example.test"
+
 executed: list[dict[str, Any]] = []
 labeled: list[dict[str, Any]] = []
 drafted: list[dict[str, Any]] = []
@@ -148,6 +150,12 @@ def cal_create(summary: str, start: str, end: str) -> dict[str, Any]:
 def contacts_search(query: str) -> list[dict[str, Any]]:
     """Searches contacts by name or address."""
     return [{"name": "Ada Example", "email": "ada@example.test"}]
+
+
+@server.tool
+def mail_profile() -> dict[str, Any]:
+    """Returns the address of the connected mailbox."""
+    return {"email": ACCOUNT_EMAIL}
 
 
 @server.tool

@@ -79,6 +79,26 @@ def test_morning_brief_lands_on_today(logged_in: TestClient, origin: dict[str, s
     assert today["unread"] == 2
 
 
+def test_brief_emails_self_only_when_the_address_matches_the_account(
+    logged_in: TestClient, fake_google: ModuleType, origin: dict[str, str]
+) -> None:
+    rules = logged_in.get("/api/settings").json()
+    matching = {**rules, "email_to_self": True, "self_email": fake_google.ACCOUNT_EMAIL.upper()}
+    logged_in.put("/api/settings", json=matching, headers=origin)
+    assert logged_in.get("/api/health").json()["self_email"] == "ok"
+    logged_in.post("/api/today/brief", headers=origin)
+    assert fake_google.executed == [{"action": "mail_send", "payload": {"draft_id": "d1"}}]
+    assert fake_google.drafted[-1]["to"] == fake_google.ACCOUNT_EMAIL
+
+    other = {**rules, "email_to_self": True, "self_email": "someone.else@example.test"}
+    logged_in.put("/api/settings", json=other, headers=origin)
+    assert logged_in.get("/api/health").json()["self_email"] == "mismatch"
+    drafts_before = len(fake_google.drafted)
+    logged_in.post("/api/today/digest", headers=origin)
+    assert len(fake_google.executed) == 1
+    assert len(fake_google.drafted) == drafts_before
+
+
 def test_draft_reply(
     logged_in: TestClient, fake_google: ModuleType, origin: dict[str, str]
 ) -> None:

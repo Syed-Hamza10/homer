@@ -1,9 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { getJson, postJson, putJson } from "@/lib/api"
-import type { ClientRules, ModelOptions, SmokeResult } from "./types"
+import type { ClientRules, Health, ModelOptions, SmokeResult } from "./types"
 
 export const rulesKey = ["settings", "rules"]
 export const modelsKey = ["settings", "models"]
+export const healthKey = ["health"]
+
+export function useHealth() {
+  return useQuery({
+    queryKey: healthKey,
+    queryFn: () => getJson<Health>("/api/health"),
+    refetchInterval: 30000,
+  })
+}
 
 export function useRules() {
   return useQuery({
@@ -20,6 +29,7 @@ export function useSaveRules() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: rulesKey })
       await queryClient.invalidateQueries({ queryKey: modelsKey })
+      await queryClient.invalidateQueries({ queryKey: healthKey })
     },
   })
 }

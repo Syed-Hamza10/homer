@@ -35,6 +35,7 @@ TOOL_NAMES = [
     "cal_update",
     "cal_delete",
     "contacts_search",
+    "mail_profile",
     "execute",
 ]
 
@@ -335,6 +336,12 @@ class GoogleTools:
             for person in [result["person"]]
         ]
         return {"contacts": contacts}
+
+    @guarded
+    async def mail_profile(self) -> dict[str, Any]:
+        """Returns the address of the connected mailbox. Core use only, hidden from the model."""
+        profile = await self.client.get(f"{GMAIL}/profile")
+        return {"email": profile["emailAddress"]}
 
     @guarded
     async def execute(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:

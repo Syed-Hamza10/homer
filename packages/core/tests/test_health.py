@@ -13,6 +13,7 @@ def test_health_reports_ollama_ok(client: TestClient, respx_mock: respx.MockRout
         "ollama": "ok",
         "model": "test",
         "servers": {"google": "ok", "search": "down", "system": "ok"},
+        "self_email": "off",
     }
 
 
