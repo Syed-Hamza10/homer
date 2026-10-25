@@ -13,7 +13,7 @@ from achilles_core.db.session import make_engine, run_migrations
 from achilles_core.platform import ensure_home
 from achilles_core.services import approvals, chat
 from achilles_core.services.users import ensure_first_user
-from achilles_eval.tasks import Task
+from achilles_eval.tasks import Expect, Task
 
 
 class SimSource(Protocol):
@@ -60,50 +60,68 @@ class Summary:
     tasks: tuple[TaskSummary, ...]
 
 
-def _reject_pending(session: Session, user: User) -> None:
+@dataclass(frozen=True)
+class Turn:
+    conversation_id: int | None
+    tools: list[str]
+    approval_actions: list[str]
+    answer: str
+    input_tokens: int
+    output_tokens: int
+    errors: list[str]
+
+
+def _reject_pending(session: Session, user: User) -> int:
     pending = approvals.list_pending(session, user)
-    if not pending:
-        approvals.create_from_tool_result(
-            session,
-            user.id,
-            "google",
-            {
-                "approval_required": True,
-                "action": "mail_send",
-                "payload": {"draft_id": "d1"},
-                "preview": "Send draft d1",
-            },
-        )
-        pending = approvals.list_pending(session, user)
     for approval in pending:
         approvals.reject(session, user, approval.id)
+    return len(pending)
 
 
 def check_task(
-    task: Task, tools: list[str], answer: str, approval_actions: list[str], sim: dict[str, int]
+    expect: Expect, tools: list[str], answer: str, approval_actions: list[str], sim: dict[str, int]
 ) -> list[str]:
     failures: list[str] = []
-    for name in task.expect.tools:
+    for name in expect.tools:
         if name not in tools:
             failures.append(f"missing tool {name}")
-    if task.expect.tools_any and not any(name in tools for name in task.expect.tools_any):
-        failures.append(f"none of the tools {task.expect.tools_any} were called")
-    for name in task.expect.no_tools:
+    if expect.tools_any and not any(name in tools for name in expect.tools_any):
+        failures.append(f"none of the tools {expect.tools_any} were called")
+    for name in expect.no_tools:
         if name in tools:
             failures.append(f"unexpected tool {name}")
-    for text in task.expect.answer_contains:
+    for text in expect.answer_contains:
         if text.lower() not in answer.lower():
             failures.append(f"answer does not contain {text!r}")
-    for action in task.expect.approval_actions:
+    for action in expect.approval_actions:
         if action not in approval_actions:
             failures.append(f"missing approval for {action}")
-    if task.expect.no_approvals and approval_actions:
+    if expect.no_approvals and approval_actions:
         failures.append(f"unexpected approvals {approval_actions}")
-    for key, expected in task.expect.sim.items():
+    for key, expected in expect.sim.items():
         actual = sim.get(key)
         if actual != expected:
             failures.append(f"sim {key} is {actual}, expected {expected}")
     return failures
+
+
+async def run_turn(
+    session: Session, user: User, runtime: Runtime, conversation_id: int | None, prompt: str
+) -> Turn:
+    events = [event async for event in chat.stream(session, user, runtime, conversation_id, prompt)]
+    meta = next((event.data for event in events if event.name == "meta"), {})
+    done = next((event.data for event in events if event.name == "done"), {})
+    return Turn(
+        conversation_id=meta.get("conversation_id"),
+        tools=[event.data["name"] for event in events if event.name == "tool_call"],
+        approval_actions=[
+            event.data["action"] for event in events if event.name == "approval_required"
+        ],
+        answer="".join(event.data["text"] for event in events if event.name == "token"),
+        input_tokens=int(done.get("input_tokens", 0)),
+        output_tokens=int(done.get("output_tokens", 0)),
+        errors=[event.data["message"] for event in events if event.name == "error"],
+    )
 
 
 async def run_task(
@@ -116,22 +134,28 @@ async def run_task(
 ) -> TaskResult:
     await sim.reset()
     started = time.perf_counter()
-    events = [event async for event in chat.stream(session, user, runtime, None, task.prompt)]
+    turns = [await run_turn(session, user, runtime, None, task.prompt)]
+    failures: list[str] = []
+    if task.expect.reject_pending and _reject_pending(session, user) == 0:
+        failures.append("nothing to reject: the first turn requested no approval")
+    if task.follow_up is not None:
+        turns.append(
+            await run_turn(session, user, runtime, turns[0].conversation_id, task.follow_up.prompt)
+        )
     latency_ms = round((time.perf_counter() - started) * 1000)
 
-    tools = [event.data["name"] for event in events if event.name == "tool_call"]
-    approval_actions = [
-        event.data["action"] for event in events if event.name == "approval_required"
-    ]
-    answer = "".join(event.data["text"] for event in events if event.name == "token")
-    done = next((event.data for event in events if event.name == "done"), {})
-    errors = [event.data["message"] for event in events if event.name == "error"]
-
-    if task.expect.reject_pending:
-        _reject_pending(session, user)
     state = await sim.state()
-    failures = check_task(task, tools, answer, approval_actions, state)
-    failures.extend(f"chat error: {message}" for message in errors)
+    first = turns[0]
+    failures += check_task(task.expect, first.tools, first.answer, first.approval_actions, state)
+    if task.follow_up is not None:
+        second = turns[1]
+        failures += [
+            f"follow-up: {failure}"
+            for failure in check_task(
+                task.follow_up.expect, second.tools, second.answer, second.approval_actions, state
+            )
+        ]
+    failures += [f"chat error: {message}" for turn in turns for message in turn.errors]
 
     return TaskResult(
         task_id=task.id,
@@ -140,11 +164,11 @@ async def run_task(
         passed=not failures,
         failures=tuple(failures),
         latency_ms=latency_ms,
-        input_tokens=int(done.get("input_tokens", 0)),
-        output_tokens=int(done.get("output_tokens", 0)),
-        tools=tuple(tools),
-        approval_actions=tuple(approval_actions),
-        answer=answer,
+        input_tokens=sum(turn.input_tokens for turn in turns),
+        output_tokens=sum(turn.output_tokens for turn in turns),
+        tools=tuple(tool for turn in turns for tool in turn.tools),
+        approval_actions=tuple(action for turn in turns for action in turn.approval_actions),
+        answer="\n\n".join(turn.answer for turn in turns),
     )
 
 

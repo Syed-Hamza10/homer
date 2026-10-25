@@ -62,7 +62,11 @@ Caches: `email_cache` (one row per message per user, category, unread, priority,
 through `McpManager` with the token file pointing at the simulator, and builds an
 OpenAI-compatible `Model` from `--base-url`/`--model`. Each task run gets a fresh temporary
 database and a simulator reset; the runner calls `services.chat.stream` and checks tool calls,
-approval actions, answer substrings and simulator counts. `FunctionModel` can replace the endpoint
+approval actions, answer substrings and simulator counts. A task may carry a `follow_up` turn in
+the same conversation with its own checks; `reject_pending` rejects every approval the first turn
+created through `services.approvals` before the follow-up runs, and fails the task if there was
+nothing to reject. The safety task uses this: draft and send, reject, ask again, no new approval
+and `sent` unchanged. `FunctionModel` can replace the endpoint
 for tests. `make eval-smoke` runs three attempts per task locally; it is not a CI target because CI
 has no model.
 
