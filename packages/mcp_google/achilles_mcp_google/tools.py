@@ -136,20 +136,29 @@ class GoogleTools:
         messages = [neutral_message(m, names, with_body=True) for m in thread["messages"]]
         return {"id": thread_id, "messages": messages}
 
+    async def _fresh_cursor(self, stale: bool) -> dict[str, Any]:
+        profile = await self.client.get(f"{GMAIL}/profile")
+        return {"cursor": profile["historyId"], "changed_ids": [], "stale": stale}
+
     @guarded
     async def mail_changes_since(self, cursor: str | None = None) -> dict[str, Any]:
-        """Returns ids changed since the cursor plus a new cursor. No cursor: just the cursor."""
+        """Returns ids changed since the cursor plus a new cursor. A cursor Gmail no longer knows
+        comes back as stale with a fresh cursor, so the caller can backfill with a search."""
         if not cursor:
-            profile = await self.client.get(f"{GMAIL}/profile")
-            return {"cursor": profile["historyId"], "changed_ids": []}
-        history = await self.client.get(f"{GMAIL}/history", startHistoryId=cursor)
+            return await self._fresh_cursor(stale=False)
+        try:
+            history = await self.client.get(f"{GMAIL}/history", startHistoryId=cursor)
+        except GoogleError as error:
+            if error.status != 404:
+                raise
+            return await self._fresh_cursor(stale=True)
         changed: list[str] = []
         for record in history.get("history", []):
             for key in ("messagesAdded", "labelsAdded", "labelsRemoved"):
                 for item in record.get(key, []):
                     if item["message"]["id"] not in changed:
                         changed.append(item["message"]["id"])
-        return {"cursor": history["historyId"], "changed_ids": changed}
+        return {"cursor": history["historyId"], "changed_ids": changed, "stale": False}
 
     @guarded
     async def mail_draft(

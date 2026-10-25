@@ -86,6 +86,19 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
     assert (await call(mcp, "mail_changes_since", cursor=changes["cursor"]))["changed_ids"] == []
 
 
+async def test_stale_cursor_returns_a_fresh_cursor_and_no_gap(
+    mcp: Client, sim: httpx.Client
+) -> None:
+    old = (await call(mcp, "mail_changes_since"))["cursor"]
+    await call(mcp, "mail_label", message_id="msg_004", add=["Later"], remove=[])
+    sim.post("/_sim/expire-history").raise_for_status()
+    stale = await call(mcp, "mail_changes_since", cursor=old)
+    assert stale["stale"] is True and stale["changed_ids"] == []
+    assert int(stale["cursor"]) > int(old)
+    fresh = await call(mcp, "mail_changes_since", cursor=stale["cursor"])
+    assert fresh == {"cursor": stale["cursor"], "changed_ids": [], "stale": False}
+
+
 async def test_label_and_archive(mcp: Client, sim: httpx.Client) -> None:
     labelled = await call(mcp, "mail_label", message_id="msg_011", add=["Urgent"], remove=[])
     assert "Urgent" in labelled["labels"]

@@ -42,7 +42,11 @@ cursor is another row, through `services/store.py`.
 `Session(engine)` per job and calls the MCP manager like any service. Jobs: mail poll (3 min,
 `mail_changes_since`, label only changed messages), calendar poll (10 min), reminders (1 min, marks
 `due`), follow-up check (10 min), morning brief at 07:30, digest at 18:00 and a nightly backup at
-03:00 in the user's timezone. All have `misfire_grace_time=3600` and `coalesce=True`.
+03:00 in the user's timezone. All have `coalesce=True`; the brief and digest get the rest of their
+day as `misfire_grace_time` (a 07:30 brief missed during sleep runs once on wake, never twice), the
+other jobs one hour. When `mail_changes_since` reports a stale cursor (Gmail returned 404 for an
+old history id) the poll stores the fresh cursor and backfills the gap with
+`mail_search("newer_than:2d")` instead of dropping it.
 
 Caches: `email_cache` (one row per message per user, category, unread, priority, archived),
 `calendar_cache` (events for the next 14 days), `daily_briefs` (kind + local day, overwritten) and

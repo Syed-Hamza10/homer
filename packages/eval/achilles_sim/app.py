@@ -36,6 +36,11 @@ def create_app(seed_path: Path = DEFAULT_SEED) -> FastAPI:
         sim.reset()
         return sim.counts()
 
+    @app.post("/_sim/expire-history")
+    def expire_history(sim: Sim) -> dict[str, int]:
+        sim.mailbox.expire_history()
+        return sim.counts()
+
     @app.get("/_sim/state")
     def state(sim: Sim) -> dict[str, int]:
         return sim.counts()

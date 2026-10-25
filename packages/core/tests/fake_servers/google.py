@@ -96,7 +96,9 @@ def mail_thread(thread_id: str) -> list[dict[str, Any]]:
 @server.tool
 def mail_changes_since(cursor: str | None = None) -> dict[str, Any]:
     """Returns changed message ids since the cursor plus a new cursor."""
-    return {"cursor": "101", "changed_ids": list(MESSAGES) if cursor else []}
+    if cursor == "stale":
+        return {"cursor": "101", "changed_ids": [], "stale": True}
+    return {"cursor": "101", "changed_ids": list(MESSAGES) if cursor else [], "stale": False}
 
 
 @server.tool

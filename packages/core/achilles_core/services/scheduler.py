@@ -14,8 +14,8 @@ from achilles_core.mcp.manager import ExecuteFailed, ServerUnavailable
 from achilles_core.services import backup as backup_service
 from achilles_core.services import briefs, followups
 from achilles_core.services.calendar import refresh_calendar
-from achilles_core.services.inbox import label_rows, upsert_email
-from achilles_core.services.rules import get_rules
+from achilles_core.services.inbox import label_rows, normalise, upsert_email
+from achilles_core.services.rules import ClientRules, get_rules
 from achilles_core.services.store import read_setting, write_setting
 from achilles_core.services.users import first_user
 
@@ -23,6 +23,18 @@ log = structlog.get_logger(__name__)
 
 CURSOR_KEY = "gmail_cursor"
 CHANGED_LIMIT = 50
+BACKFILL_QUERY = "newer_than:2d"
+DEFAULT_GRACE = 3600
+DAY = 24 * 3600
+
+
+def rest_of_day(hour: int, minute: int) -> int:
+    """Grace for a daily job: a brief missed while the laptop slept runs on wake that day only."""
+    return DAY - hour * 3600 - minute * 60
+
+
+def daily(hour: int, minute: int, timezone: ZoneInfo) -> CronTrigger:
+    return CronTrigger(hour=hour, minute=minute, timezone=timezone)
 
 
 class Scheduler:
@@ -40,35 +52,20 @@ class Scheduler:
         timezone = ZoneInfo(user.timezone if user else self.settings.timezone)
         inner = AsyncIOScheduler(timezone=timezone)
         jobs = (
-            (self.poll_mail, "interval", {"minutes": 3}, "poll_mail"),
-            (self.poll_calendar, "interval", {"minutes": 10}, "poll_calendar"),
-            (self.check_reminders, "interval", {"minutes": 1}, "reminders"),
-            (self.check_followups, "interval", {"minutes": 10}, "follow_ups"),
-            (
-                self.morning_brief,
-                CronTrigger(hour=7, minute=30, timezone=timezone),
-                {},
-                "morning_brief",
-            ),
-            (
-                self.eod_digest,
-                CronTrigger(hour=18, minute=0, timezone=timezone),
-                {},
-                "eod_digest",
-            ),
-            (
-                self.backup,
-                CronTrigger(hour=3, minute=0, timezone=timezone),
-                {},
-                "backup",
-            ),
+            (self.poll_mail, "interval", {"minutes": 3}, DEFAULT_GRACE),
+            (self.poll_calendar, "interval", {"minutes": 10}, DEFAULT_GRACE),
+            (self.check_reminders, "interval", {"minutes": 1}, DEFAULT_GRACE),
+            (self.check_followups, "interval", {"minutes": 10}, DEFAULT_GRACE),
+            (self.morning_brief, daily(7, 30, timezone), {}, rest_of_day(7, 30)),
+            (self.eod_digest, daily(18, 0, timezone), {}, rest_of_day(18, 0)),
+            (self.backup, daily(3, 0, timezone), {}, DEFAULT_GRACE),
         )
-        for job, trigger, options, job_id in jobs:
+        for job, trigger, options, grace in jobs:
             inner.add_job(
                 self.guard(job),
                 trigger,
-                id=job_id,
-                misfire_grace_time=3600,
+                id=job.__name__,
+                misfire_grace_time=grace,
                 coalesce=True,
                 max_instances=1,
                 **options,
@@ -112,6 +109,10 @@ class Scheduler:
                     write_setting(session, user.id, CURSOR_KEY, "")
                 return
             write_setting(session, user.id, CURSOR_KEY, str(result["cursor"]))
+            if result.get("stale"):
+                log.warning("mail_cursor_stale")
+                await self.backfill_mail(session, user, rules)
+                return
             changed = []
             for message_id in result.get("changed_ids", [])[:CHANGED_LIMIT]:
                 try:
@@ -126,6 +127,23 @@ class Scheduler:
                     )
             if changed:
                 await label_rows(self.runtime.manager, changed)
+
+    async def backfill_mail(self, session: Session, user: User, rules: ClientRules) -> None:
+        try:
+            result = await self.runtime.manager.call(
+                "google", "mail_search", {"query": BACKFILL_QUERY, "max_results": CHANGED_LIMIT}
+            )
+        except (ExecuteFailed, ServerUnavailable):
+            log.exception("mail_backfill_failed")
+            return
+        now = datetime.now(UTC)
+        rows = [
+            upsert_email(session, user.id, message, rules, now)
+            for message in normalise(result)
+            if message.get("id")
+        ]
+        if rows:
+            await label_rows(self.runtime.manager, rows)
 
     async def poll_calendar(self) -> None:
         with Session(self.engine) as session:

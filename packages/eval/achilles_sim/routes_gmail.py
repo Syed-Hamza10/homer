@@ -114,8 +114,6 @@ def send_draft(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/history")
 def list_history(sim: Sim, startHistoryId: str, maxResults: int = 100) -> dict[str, Any]:
-    if int(startHistoryId) > sim.mailbox.history_id:
-        raise ApiError(404, "Requested entity was not found.")
     records = sim.mailbox.history_since(startHistoryId)[:maxResults]
     response: dict[str, Any] = {"historyId": str(sim.mailbox.history_id)}
     if records:

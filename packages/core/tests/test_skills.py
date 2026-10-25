@@ -9,7 +9,8 @@ from achilles_core.db.models import EmailCache, FollowUp, Reminder
 from achilles_core.mcp.manager import McpManager
 from achilles_core.services import briefs, calendar, followups
 from achilles_core.services.rules import get_rules
-from achilles_core.services.scheduler import Scheduler
+from achilles_core.services.scheduler import CURSOR_KEY, Scheduler
+from achilles_core.services.store import read_setting, write_setting
 from achilles_core.services.users import first_user
 
 
@@ -189,6 +190,41 @@ async def test_scheduler_jobs_refresh_caches(
     await scheduler.check_reminders()
     with Session(app.state.engine) as session:
         assert session.get(Reminder, reminder_id).status == "due"
+
+
+async def test_stale_cursor_backfills_from_a_search(
+    app: FastAPI, settings, logged_in: TestClient, fake_google: ModuleType, live_mcp: McpManager
+) -> None:
+    scheduler = Scheduler(settings, app.state.engine, SimpleNamespace(manager=live_mcp))
+    with Session(app.state.engine) as session:
+        user = first_user(session)
+        write_setting(session, user.id, CURSOR_KEY, "stale")
+    await scheduler.poll_mail()
+    with Session(app.state.engine) as session:
+        user = first_user(session)
+        assert read_setting(session, user.id, CURSOR_KEY) == "101"
+        cached = list(session.exec(select(EmailCache).where(EmailCache.user_id == user.id)))
+    assert {row.message_id for row in cached} == {"m1", "m2", "m3", "m4"}
+    assert len(fake_google.labeled) == 4
+
+
+async def test_daily_jobs_get_the_rest_of_the_day_as_grace(
+    app: FastAPI, settings, logged_in: TestClient
+) -> None:
+    scheduler = Scheduler(
+        settings.model_copy(update={"scheduler_enabled": True}),
+        app.state.engine,
+        app.state.runtime,
+    )
+    scheduler.start()
+    try:
+        jobs = {job.id: job for job in scheduler.inner.get_jobs()}
+        assert jobs["morning_brief"].misfire_grace_time == 16 * 3600 + 30 * 60
+        assert jobs["eod_digest"].misfire_grace_time == 6 * 3600
+        assert jobs["poll_mail"].misfire_grace_time == 3600
+        assert all(job.coalesce for job in jobs.values())
+    finally:
+        scheduler.stop()
 
 
 async def test_scheduler_backup_writes_an_archive(
