@@ -64,7 +64,8 @@ def write_fake_servers(home: Path) -> Path:
 
 
 def process_env(home: Path, port: int, bin_dir: Path | None = None, **extra: str) -> dict[str, str]:
-    """Env for `achilles serve`; bin_dir goes first on PATH so stand-in servers win there."""
+    """Env for `achilles serve`; bin_dir goes first on PATH so stand-in servers win there. The
+    scheduler is off unless a test asks for it, so background jobs never race the assertions."""
     (home / ".env").write_text(f"ACHILLES_PASSPHRASE={PASSPHRASE}\nOLLAMA_URL={OLLAMA_URL}\n")
     inherited = {k: v for k, v in os.environ.items() if k.lower() not in Settings.model_fields}
     path = inherited.get("PATH", "")
@@ -76,12 +77,13 @@ def process_env(home: Path, port: int, bin_dir: Path | None = None, **extra: str
         "ACHILLES_HOME": str(home),
         "HOST": "127.0.0.1",
         "PORT": str(port),
+        "SCHEDULER_ENABLED": "false",
         **extra,
     }
 
 
-def stand_in_env(home: Path, port: int) -> dict[str, str]:
-    return process_env(home, port, write_fake_servers(home))
+def stand_in_env(home: Path, port: int, **extra: str) -> dict[str, str]:
+    return process_env(home, port, write_fake_servers(home), **extra)
 
 
 def achilles_command(*args: str) -> list[str]:
