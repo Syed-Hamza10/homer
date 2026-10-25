@@ -34,6 +34,10 @@ def ensure_home(path: Path) -> None:
         (path / name).chmod(0o700)
 
 
+def tail_file(path: Path, lines: int, follow: bool) -> None:
+    subprocess.run(["tail", "-n", str(lines), *(["-f"] if follow else []), str(path)], check=True)
+
+
 def restart_service() -> None:
     system = platform.system()
     if system == "Darwin":

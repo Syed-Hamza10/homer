@@ -1,8 +1,5 @@
 import asyncio
-import shutil
 import subprocess
-import sys
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -18,13 +15,15 @@ from achilles_core.db.session import make_engine, run_migrations
 from achilles_core.doctor import run_checks
 from achilles_core.llm import load_manifest
 from achilles_core.mcp.manager import find_executable
-from achilles_core.platform import ensure_home, restart_service
+from achilles_core.platform import ensure_home, restart_service, tail_file
 from achilles_core.privacy_hosts import privacy_markdown
 from achilles_core.services.backup import create_backup
 from achilles_core.services.rules import get_rules, save_rules
 from achilles_core.services.users import first_user, forget_user
+from achilles_core.update import UpdateError
+from achilles_core.update import rollback as rollback_venv
+from achilles_core.update import update as update_venv
 
-REPO = "Syed-Hamza10/achilles"
 TIERS = ("supported", "degraded")
 
 app = typer.Typer(no_args_is_help=True)
@@ -52,8 +51,12 @@ def serve() -> None:
 
 
 @app.command()
-def doctor() -> None:
-    checks = asyncio.run(run_checks(Settings()))
+def doctor(
+    quick: Annotated[
+        bool, typer.Option("--quick", help="Skip the Ollama and hardware checks.")
+    ] = False,
+) -> None:
+    checks = asyncio.run(run_checks(Settings(), quick=quick))
     table = Table("Check", "Result", "Detail")
     for check in checks:
         table.add_row(check.name, "[green]ok" if check.ok else "[red]FAIL", check.detail)
@@ -62,9 +65,15 @@ def doctor() -> None:
 
 
 @app.command()
-def backup() -> None:
-    path = create_backup(Settings().achilles_home)
+def backup(
+    include_secrets: Annotated[
+        bool, typer.Option("--include-secrets", help="Also archive credentials/ and .env.")
+    ] = False,
+) -> None:
+    path = create_backup(Settings().achilles_home, include_secrets=include_secrets)
     Console().print(f"Backup written to {path}")
+    if not include_secrets:
+        Console().print("Secrets were left out; pass --include-secrets to archive them.")
 
 
 @app.command()
@@ -78,7 +87,7 @@ def logs(follow: Annotated[bool, typer.Option("--follow", "-f")] = False) -> Non
     path = Settings().achilles_home / "logs" / "achilles.log"
     if not path.exists():
         raise typer.BadParameter(f"{path} does not exist yet")
-    subprocess.run(["tail", "-n", "200", *(["-f"] if follow else []), str(path)], check=True)
+    tail_file(path, 200, follow)
 
 
 @app.command()
@@ -109,43 +118,37 @@ def forget(
     Console().print(f"Deleted {summary}.")
 
 
+def restart_or_explain(done: str) -> None:
+    try:
+        restart_service()
+    except (OSError, subprocess.CalledProcessError):
+        Console().print(f"{done}; restart the Achilles service manually.")
+    else:
+        Console().print(f"{done} and restarted.")
+
+
 @app.command()
 def update(
     version: Annotated[str, typer.Option(help="Release tag, or 'latest'.")] = "latest",
 ) -> None:
-    gh = shutil.which("gh")
-    uv = shutil.which("uv")
-    if gh is None or uv is None:
-        raise typer.BadParameter("update needs `gh` and `uv`; re-run install.sh instead")
-    with tempfile.TemporaryDirectory(prefix="achilles-update-") as directory:
-        command = [gh, "release", "download"]
-        if version != "latest":
-            command.append(version)
-        command += ["-R", REPO, "-p", "*.whl", "-D", directory]
-        subprocess.run(command, check=True)
-        subprocess.run(
-            [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                sys.executable,
-                "--upgrade",
-                "--find-links",
-                directory,
-                "achilles-core",
-                "achilles-mcp-google",
-                "achilles-mcp-search",
-                "achilles-mcp-system",
-            ],
-            check=True,
-        )
+    home = Settings().achilles_home
     try:
-        restart_service()
-    except (OSError, subprocess.CalledProcessError):
-        Console().print("Updated; restart the Achilles service manually.")
-    else:
-        Console().print("Updated and restarted.")
+        update_venv(home, version)
+    except UpdateError as error:
+        Console().print(f"[red]Update aborted; the current install is untouched.[/red]\n{error}")
+        raise typer.Exit(code=1) from error
+    restart_or_explain(f"Updated to {version}; the previous environment is in {home / 'venv.prev'}")
+
+
+@app.command()
+def rollback() -> None:
+    home = Settings().achilles_home
+    try:
+        rollback_venv(home)
+    except UpdateError as error:
+        Console().print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+    restart_or_explain("Rolled back to the previous environment")
 
 
 @model.command("use")
@@ -166,6 +169,20 @@ def model_use(choice: str) -> None:
         rules.model_tier = selected
         save_rules(session, user.id, rules)
     Console().print(f"Model tier set to {selected} ({choice}). Run `achilles restart` to load it.")
+
+
+@app.command("eval")
+def eval_(
+    smoke: Annotated[
+        bool, typer.Option("--smoke", help="Run the 10-task smoke suite, 3 runs each.")
+    ] = False,
+) -> None:
+    if not smoke:
+        raise typer.BadParameter("only --smoke is available; pass it")
+    executable = find_executable("achilles-eval")
+    if executable is None:
+        raise typer.BadParameter("achilles-eval is not installed; it ships with the dev workspace")
+    raise typer.Exit(code=subprocess.run([executable, "--runs", "3"], check=False).returncode)
 
 
 @setup.command("google")

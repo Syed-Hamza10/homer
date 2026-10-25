@@ -16,19 +16,21 @@ brew install gh            # Linux: see https://github.com/cli/cli#installation
 gh auth login
 ```
 
-Download the latest release into a directory:
+Download the latest release into a directory. The release holds the wheels, a `SHA256SUMS` file,
+the locked dependency set `requirements.lock`, and the installer:
 
 ```sh
-mkdir -p ~/achilles-release
-gh release download -R Syed-Hamza10/achilles -p '*.whl' -D ~/achilles-release
-gh release download -R Syed-Hamza10/achilles -p 'install.sh' -D ~/achilles-release
+mkdir -p ~/achilles-release && cd ~/achilles-release
+gh release download -R Syed-Hamza10/achilles -p '*.whl' -p SHA256SUMS -p requirements.lock -p install.sh
 ```
 
-If you do not have `gh`, run the installer with a token instead:
+If you do not have `gh`, the installer can download the release itself with a token:
 
 ```sh
 GITHUB_TOKEN=<token> bash install.sh
 ```
+
+The token is saved to `~/.achilles/github_token` (mode 0600) so `achilles update` can use it later.
 
 ## 2. Install
 
@@ -40,27 +42,32 @@ bash install.sh
 The installer:
 
 1. checks RAM and disk
-2. installs `uv` and Ollama if missing
+2. installs pinned versions of `uv` and Ollama if missing (the versions are at the top of the
+   script; the Ollama download is checked against its published checksum)
 3. configures Ollama with a 16k context (our launch agent or systemd drop-in, not brew services)
 4. creates `~/.achilles/{credentials,data,documents,logs,backups}` with mode 0700
 5. writes `~/.achilles/.env` and asks for a passphrase
-6. installs the release wheels into `~/.achilles/venv`
-7. pulls the model tags from `models/manifest.json`
-8. registers a launchd (macOS) or systemd user (Linux) service
-9. runs `achilles doctor`
+6. verifies every wheel against `SHA256SUMS` and refuses to continue on a mismatch
+7. installs the wheels into `~/.achilles/venv` with `requirements.lock` pinning every dependency
+8. pulls the model tags from `models/manifest.json`
+9. registers a launchd (macOS) or systemd user (Linux) service
+10. runs `achilles doctor`
 
 Useful options:
 
 ```sh
-bash install.sh --wheels-dir ./wheels      # install from local wheels
+bash install.sh --wheels-dir ./wheels      # install from local wheels (warns if unverified)
 bash install.sh --no-service               # install without registering the service
 bash install.sh --skip-ollama              # do not install or configure Ollama
 bash install.sh --dry-run --force          # check the machine, change nothing
+bash install.sh --render server-plist      # print a service definition without installing
+ACHILLES_PASSPHRASE=... bash install.sh    # unattended install, no prompt
 ```
 
 The passphrase is the only login. Store it in the client's password manager. It is written to
 `~/.achilles/.env` with mode 0600; the server compares it in constant time and rate-limits five
-failures per minute.
+failures per minute. Type it at the prompt, or set `ACHILLES_PASSPHRASE` in the environment for an
+unattended install. Avoid `--passphrase`: it stays in the shell history, and the installer warns.
 
 ## 3. First sign-in
 
@@ -116,22 +123,39 @@ ACHILLES=~/.achilles/venv/bin/achilles
 
 $ACHILLES restart          # restart the service
 $ACHILLES logs -f          # follow ~/.achilles/logs/achilles.log
-$ACHILLES backup           # write ~/.achilles/backups/achilles-<time>.tar.gz
-$ACHILLES update           # download the latest release and restart
+$ACHILLES backup           # write ~/.achilles/backups/achilles-<time>.tar.gz (no secrets)
+$ACHILLES backup --include-secrets   # also archive credentials/ and .env
+$ACHILLES update           # install the latest release next to the current one, then swap
+$ACHILLES rollback         # swap the previous release back
+$ACHILLES doctor --quick   # check the install only, skipping Ollama and hardware
 $ACHILLES model use supported   # or degraded, or a tag from models/manifest.json
 $ACHILLES privacy -o PRIVACY.md
 $ACHILLES forget --yes     # delete the local user and all data; credentials stay
 ```
 
 A nightly backup runs at 03:00 in the user's timezone. The newest 14 archives are kept. A backup
-contains a consistent SQLite snapshot, `credentials/` and `.env`; it is mode 0600. Copy it off the
-machine with the client's normal backup tooling.
+is a consistent SQLite snapshot, mode 0600. By default it leaves out `credentials/` (the Google
+token) and `.env` (the passphrase), so an archive copied off the machine carries no secrets.
+`achilles backup --include-secrets` adds them for a full migration to a new machine; treat that
+archive like a password.
 
-To restore, stop the service, unpack the archive into `~/.achilles`, and start it:
+To restore, stop the service, unpack the archive into `~/.achilles` (keep the existing
+`credentials/` and `.env` if the archive has none), and start it:
 
 ```sh
 ~/.achilles/venv/bin/achilles restart
 ```
+
+### Updates
+
+`achilles update` never changes the running install in place. It downloads the newest release
+(with `curl`, no `gh` needed; the token comes from `GITHUB_TOKEN` or `~/.achilles/github_token`), verifies the wheels
+against `SHA256SUMS`, installs them with the release's `requirements.lock` into
+`~/.achilles/venv.new`, and runs `achilles doctor --quick` from that new environment. Only when
+that passes does it rename `venv` to `venv.prev` and `venv.new` to `venv`, then restart the
+service. If anything fails it prints why and the current install is untouched.
+`achilles rollback` swaps `venv.prev` back and restarts; pass `--version vX.Y.Z` to `update` to
+install a specific release.
 
 ## 7. Data and privacy
 

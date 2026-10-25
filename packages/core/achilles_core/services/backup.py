@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 BACKUP_GLOB = "achilles-*.tar.gz"
+SECRETS = ("credentials", ".env")
 
 
 def snapshot_database(source: Path, target: Path) -> None:
@@ -20,7 +21,7 @@ def prune_backups(backups: Path, keep: int) -> list[Path]:
     return removed
 
 
-def create_backup(home: Path, keep: int = 14) -> Path:
+def create_backup(home: Path, keep: int = 14, include_secrets: bool = False) -> Path:
     backups = home / "backups"
     backups.mkdir(mode=0o700, parents=True, exist_ok=True)
     backups.chmod(0o700)
@@ -33,7 +34,7 @@ def create_backup(home: Path, keep: int = 14) -> Path:
             snapshot = Path(temporary) / "achilles.db"
             snapshot_database(database, snapshot)
             members.append((snapshot, "data/achilles.db"))
-        for name in ("credentials", ".env"):
+        for name in SECRETS if include_secrets else ():
             path = home / name
             if path.exists():
                 members.append((path, name))
