@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from sqlmodel import Session, select
 
 from achilles_core.agent.runtime import Runtime
-from achilles_core.api.deps import CurrentUser, RuntimeDep, SessionDep
+from achilles_core.api.deps import CurrentUser, RuntimeDep, SchedulerDep, SessionDep
 from achilles_core.api.schemas.reminders import ReminderOut
 from achilles_core.api.schemas.skills import (
     BriefOut,
@@ -44,7 +44,9 @@ async def _prime(user: User, session: Session, runtime: Runtime) -> None:
 
 
 @router.get("")
-async def today(user: CurrentUser, session: SessionDep, runtime: RuntimeDep) -> TodayOut:
+async def today(
+    user: CurrentUser, session: SessionDep, runtime: RuntimeDep, scheduler: SchedulerDep
+) -> TodayOut:
     await _prime(user, session, runtime)
     now = datetime.now(UTC)
     day = briefs.day_string(now, user.timezone)
@@ -62,6 +64,7 @@ async def today(user: CurrentUser, session: SessionDep, runtime: RuntimeDep) -> 
         follow_ups=[FollowUpOut.from_row(row) for row in active],
         unread=len([message for message in messages if message.unread]),
         pending_approvals=len(approvals.list_pending(session, user)),
+        health=scheduler.health,
     )
 
 

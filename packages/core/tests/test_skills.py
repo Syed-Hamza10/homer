@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 
+import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -168,7 +169,7 @@ async def test_scheduler_jobs_refresh_caches(
     app: FastAPI, settings, logged_in: TestClient, live_mcp: McpManager
 ) -> None:
     runtime = SimpleNamespace(manager=live_mcp)
-    scheduler = Scheduler(settings, app.state.engine, runtime)
+    scheduler = Scheduler(settings, app.state.engine, runtime, app.state.http_client)
     await scheduler.poll_mail()
     await scheduler.poll_mail()
     await scheduler.poll_calendar()
@@ -195,7 +196,9 @@ async def test_scheduler_jobs_refresh_caches(
 async def test_stale_cursor_backfills_from_a_search(
     app: FastAPI, settings, logged_in: TestClient, fake_google: ModuleType, live_mcp: McpManager
 ) -> None:
-    scheduler = Scheduler(settings, app.state.engine, SimpleNamespace(manager=live_mcp))
+    scheduler = Scheduler(
+        settings, app.state.engine, SimpleNamespace(manager=live_mcp), app.state.http_client
+    )
     with Session(app.state.engine) as session:
         user = first_user(session)
         write_setting(session, user.id, CURSOR_KEY, "stale")
@@ -215,22 +218,53 @@ async def test_daily_jobs_get_the_rest_of_the_day_as_grace(
         settings.model_copy(update={"scheduler_enabled": True}),
         app.state.engine,
         app.state.runtime,
+        app.state.http_client,
     )
     scheduler.start()
     try:
         jobs = {job.id: job for job in scheduler.inner.get_jobs()}
+        assert set(jobs) == {
+            "poll_mail",
+            "poll_calendar",
+            "check_reminders",
+            "check_followups",
+            "health_check",
+            "warm_up",
+            "morning_brief",
+            "eod_digest",
+            "backup",
+        }
         assert jobs["morning_brief"].misfire_grace_time == 16 * 3600 + 30 * 60
         assert jobs["eod_digest"].misfire_grace_time == 6 * 3600
         assert jobs["poll_mail"].misfire_grace_time == 3600
         assert all(job.coalesce for job in jobs.values())
+        assert str(jobs["warm_up"].trigger.timezone) == "Europe/London"
+        assert jobs["warm_up"].trigger.fields[5].expressions[0].first == 6
     finally:
         scheduler.stop()
+
+
+async def test_health_job_stores_a_report_for_today(
+    app: FastAPI, logged_in: TestClient, respx_mock: respx.MockRouter
+) -> None:
+    respx_mock.get("http://127.0.0.1:11434/api/tags").respond(200, json={"models": []})
+    assert logged_in.get("/api/today").json()["health"] is None
+    scheduler = app.state.scheduler
+    await scheduler.health_check()
+    assert scheduler.health.problems == ["server search", "model"]
+    health = logged_in.get("/api/today").json()["health"]
+    assert health["ollama"] == "ok" and health["model_pulled"] == "down"
+    assert health["servers"]["search"] == "down" and health["checked_at"]
+
+
+async def test_warm_up_runs_one_small_request(app: FastAPI, logged_in: TestClient) -> None:
+    await app.state.scheduler.warm_up()
 
 
 async def test_scheduler_backup_writes_an_archive(
     app: FastAPI, settings, logged_in: TestClient
 ) -> None:
-    scheduler = Scheduler(settings, app.state.engine, app.state.runtime)
+    scheduler = Scheduler(settings, app.state.engine, app.state.runtime, app.state.http_client)
     await scheduler.backup()
     assert list((settings.achilles_home / "backups").glob("achilles-*.tar.gz"))
 

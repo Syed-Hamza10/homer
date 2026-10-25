@@ -41,8 +41,11 @@ cursor is another row, through `services/store.py`.
 `Scheduler` starts in the lifespan when `SCHEDULER_ENABLED` is true. It opens its own
 `Session(engine)` per job and calls the MCP manager like any service. Jobs: mail poll (3 min,
 `mail_changes_since`, label only changed messages), calendar poll (10 min), reminders (1 min, marks
-`due`), follow-up check (10 min), morning brief at 07:30, digest at 18:00 and a nightly backup at
-03:00 in the user's timezone. All have `coalesce=True`; the brief and digest get the rest of their
+`due`), follow-up check (10 min), health check (10 min, first run at start; Ollama reachable, model
+tag pulled, each MCP server up, email-to-self address matches; the report is kept on the
+`Scheduler` and returned as `health` by `GET /api/today`), model warm-up at 06:45 (one PONG
+request so the 07:30 brief is not cold), morning brief at 07:30, digest at 18:00 and a nightly
+backup at 03:00 in the user's timezone. All have `coalesce=True`; the brief and digest get the rest of their
 day as `misfire_grace_time` (a 07:30 brief missed during sleep runs once on wake, never twice), the
 other jobs one hour. When `mail_changes_since` reports a stale cursor (Gmail returned 404 for an
 old history id) the poll stores the fresh cursor and backfills the gap with
@@ -135,7 +138,7 @@ this client, so anything else the app contacted would show up here.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/api/health` | – | `{status: "ok", version, ollama: "ok"\|"down", model, servers: {google, search, system: "ok"\|"down"}}` (public) |
+| GET | `/api/health` | – | `{status: "ok", version, ollama: "ok"\|"down", model, model_pulled, servers: {google, search, system: "ok"\|"down"}, self_email: "off"\|"ok"\|"mismatch"\|"unknown", checked_at}` (public, live check) |
 | POST | `/api/auth/login` | `{passphrase}` | 204 + cookie; 401 wrong; 429 after 5 failures in 60 s |
 | POST | `/api/auth/logout` | – | 204, cookie cleared |
 | GET | `/api/auth/me` | – | `{user_id, name}` |
@@ -150,7 +153,7 @@ this client, so anything else the app contacted would show up here.
 | PUT | `/api/privacy/web-search` | `{enabled}` | `{enabled, restart_required}` |
 | POST | `/api/privacy/wipe` | `{confirm}` | `{deleted: {table: count}}`; 400 without confirm |
 | GET | `/api/reminders` | – | `[{id, text, due_at, status, created_at}]` by due date |
-| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals}` |
+| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals, health}` (`health` is the scheduler's last report or null) |
 | POST | `/api/today/brief` | – | the morning `daily_briefs` row; runs the skill |
 | POST | `/api/today/digest` | – | the digest row; runs the skill |
 | GET | `/api/inbox` | – | cached `[{message_id, thread_id, sender, subject, snippet, category, labels, unread, priority, received_at}]` |

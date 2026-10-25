@@ -73,7 +73,7 @@ def create_app(
         await manager.start()
         runtime = build_runtime(app.state.model, manager)
         app.state.runtime = runtime
-        scheduler = build_scheduler(settings, engine, runtime)
+        scheduler = build_scheduler(settings, engine, runtime, http_client)
         scheduler.start()
         app.state.scheduler = scheduler
         yield

@@ -12,12 +12,14 @@ from achilles_core.config import Settings
 from achilles_core.db.models import Reminder, User
 from achilles_core.mcp.manager import ExecuteFailed, ServerUnavailable
 from achilles_core.services import backup as backup_service
-from achilles_core.services import briefs, followups
+from achilles_core.services import briefs, followups, models
+from achilles_core.services import health as health_service
 from achilles_core.services.calendar import refresh_calendar
 from achilles_core.services.inbox import label_rows, normalise, upsert_email
 from achilles_core.services.rules import ClientRules, get_rules
 from achilles_core.services.store import read_setting, write_setting
 from achilles_core.services.users import first_user
+from achilles_net import AllowlistedClient
 
 log = structlog.get_logger(__name__)
 
@@ -38,11 +40,15 @@ def daily(hour: int, minute: int, timezone: ZoneInfo) -> CronTrigger:
 
 
 class Scheduler:
-    def __init__(self, settings: Settings, engine: Engine, runtime: Runtime) -> None:
+    def __init__(
+        self, settings: Settings, engine: Engine, runtime: Runtime, client: AllowlistedClient
+    ) -> None:
         self.settings = settings
         self.engine = engine
         self.runtime = runtime
+        self.client = client
         self.inner: AsyncIOScheduler | None = None
+        self.health: health_service.HealthReport | None = None
 
     def start(self) -> None:
         if not self.settings.scheduler_enabled:
@@ -56,6 +62,13 @@ class Scheduler:
             (self.poll_calendar, "interval", {"minutes": 10}, DEFAULT_GRACE),
             (self.check_reminders, "interval", {"minutes": 1}, DEFAULT_GRACE),
             (self.check_followups, "interval", {"minutes": 10}, DEFAULT_GRACE),
+            (
+                self.health_check,
+                "interval",
+                {"minutes": 10, "next_run_time": datetime.now(timezone)},
+                DEFAULT_GRACE,
+            ),
+            (self.warm_up, daily(6, 45, timezone), {}, DEFAULT_GRACE),
             (self.morning_brief, daily(7, 30, timezone), {}, rest_of_day(7, 30)),
             (self.eod_digest, daily(18, 0, timezone), {}, rest_of_day(18, 0)),
             (self.backup, daily(3, 0, timezone), {}, DEFAULT_GRACE),
@@ -195,10 +208,31 @@ class Scheduler:
             rules = get_rules(session, user.id)
             await briefs.eod_digest(session, user, self.runtime.manager, rules, datetime.now(UTC))
 
+    async def health_check(self) -> None:
+        with Session(self.engine) as session:
+            user = self._user(session)
+            rules = get_rules(session, user.id) if user else ClientRules()
+        report = await health_service.check(
+            self.settings,
+            self.client,
+            self.runtime.model.model_name,
+            self.runtime.manager,
+            rules,
+        )
+        self.health = report
+        if report.problems:
+            log.warning("health_check_problems", problems=report.problems)
+
+    async def warm_up(self) -> None:
+        result = await models.smoke(self.runtime.model)
+        log.info("model_warmed", ok=result.ok, latency_ms=result.latency_ms, error=result.error)
+
     async def backup(self) -> None:
         path = backup_service.create_backup(self.settings.achilles_home)
         log.info("backup_created", path=str(path))
 
 
-def build_scheduler(settings: Settings, engine: Engine, runtime: Runtime) -> Scheduler:
-    return Scheduler(settings, engine, runtime)
+def build_scheduler(
+    settings: Settings, engine: Engine, runtime: Runtime, client: AllowlistedClient
+) -> Scheduler:
+    return Scheduler(settings, engine, runtime, client)

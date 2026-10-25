@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import type { Health } from "./types"
 import { useRunBrief, useRunDigest, useToday } from "./useToday"
 
 function clock(value: string): string {
@@ -8,6 +9,19 @@ function clock(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function healthLine(health: Health | null | undefined): string {
+  if (!health) return "No health check yet."
+  const parts = [
+    `Ollama ${health.ollama}`,
+    `model ${health.model_pulled === "ok" ? "pulled" : "missing"}`,
+    ...Object.entries(health.servers).map(
+      ([name, status]) => `${name} ${status}`,
+    ),
+  ]
+  if (health.self_email === "mismatch") parts.push("email-to-self paused")
+  return `${parts.join(" · ")} · checked ${clock(health.checked_at)}`
 }
 
 export function TodayPage() {
@@ -46,6 +60,10 @@ export function TodayPage() {
             </Button>
           </div>
         </section>
+
+        <p className="text-xs text-muted-foreground" data-testid="health-line">
+          {healthLine(data?.health)}
+        </p>
 
         {[brief.error, digest.error].filter(Boolean).map((error) => (
           <p key={String(error)} className="text-sm text-destructive">

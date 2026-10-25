@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from achilles_core.api.schemas.reminders import ReminderOut
 from achilles_core.db.models import CalendarEventCache, DailyBrief, EmailCache, FollowUp
+from achilles_core.services.health import HealthReport
 
 
 class EmailOut(BaseModel):
@@ -96,6 +97,7 @@ class TodayOut(BaseModel):
     follow_ups: list[FollowUpOut]
     unread: int
     pending_approvals: int
+    health: HealthReport | None
 
 
 class RefreshOut(BaseModel):
