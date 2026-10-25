@@ -29,3 +29,14 @@ export type SmokeResult = {
   error: string
   latency_ms: number
 }
+
+export type SelfEmailStatus = "off" | "ok" | "mismatch" | "unknown"
+
+export type Health = {
+  status: string
+  version: string
+  ollama: "ok" | "down"
+  model: string
+  servers: Record<string, "ok" | "down">
+  self_email: SelfEmailStatus
+}

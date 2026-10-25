@@ -1,3 +1,7 @@
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+
 import pytest
 import respx
 from pydantic import SecretStr
@@ -13,6 +17,16 @@ from achilles_core.llm import (
 )
 from achilles_net import BlockedHostError, OutboundCall
 
+HOOK_PATH = Path(__file__).resolve().parents[1] / "hatch_build.py"
+
+
+def load_build_hook() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("hatch_build", HOOK_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 def make_settings() -> Settings:
     return Settings(
@@ -26,9 +40,29 @@ def test_manifest_has_both_tiers() -> None:
     assert chat_model_tag("supported") == tiers["supported"]["chat"]
 
 
-def test_packaged_manifest_matches_the_repo_source() -> None:
-    assert PACKAGED_MANIFEST.exists()
-    assert PACKAGED_MANIFEST.read_text() == REPO_MANIFEST.read_text()
+def test_packaged_manifest_is_a_copy_of_the_repo_source() -> None:
+    assert REPO_MANIFEST.exists()
+    if PACKAGED_MANIFEST.exists():
+        assert PACKAGED_MANIFEST.read_text() == REPO_MANIFEST.read_text()
+
+
+def test_build_hook_copies_the_repo_manifest(tmp_path: Path) -> None:
+    hook = load_build_hook()
+    root = tmp_path / "packages" / "core"
+    root.mkdir(parents=True)
+    source = tmp_path / "models" / "manifest.json"
+    source.parent.mkdir()
+    source.write_text('{"tiers": {}}')
+
+    target = hook.copy_manifest(root)
+    assert target == root / "achilles_core" / "models" / "manifest.json"
+    assert target.read_text() == '{"tiers": {}}'
+
+    source.unlink()
+    assert hook.copy_manifest(root).read_text() == '{"tiers": {}}'
+    target.unlink()
+    with pytest.raises(FileNotFoundError):
+        hook.copy_manifest(root)
 
 
 def test_allowlist_contains_exactly_the_ollama_host() -> None:

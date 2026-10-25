@@ -61,7 +61,7 @@ async def create_follow_up(
     followup = await followups.create_followup(
         session, user, runtime.manager, rules, row.thread_id, body.days
     )
-    return FollowUpOut.from_row(followup)
+    return FollowUpOut.from_row(followup, rules)
 
 
 @router.post("/{message_id}/draft")

@@ -8,6 +8,7 @@ from achilles_core.auth import SESSION_COOKIE, LoginLimiter, Unauthenticated, re
 from achilles_core.config import Settings
 from achilles_core.db.models import User
 from achilles_core.db.session import get_session
+from achilles_core.services.scheduler import Scheduler
 from achilles_net import AllowlistedClient
 
 
@@ -17,6 +18,10 @@ def get_settings(request: Request) -> Settings:
 
 def get_runtime(request: Request) -> Runtime:
     return request.app.state.runtime
+
+
+def get_scheduler(request: Request) -> Scheduler:
+    return request.app.state.scheduler
 
 
 def get_http_client(request: Request) -> AllowlistedClient:
@@ -48,6 +53,7 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 SessionDep = Annotated[Session, Depends(get_session)]
 RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 HttpClientDep = Annotated[AllowlistedClient, Depends(get_http_client)]
+SchedulerDep = Annotated[Scheduler, Depends(get_scheduler)]
 LimiterDep = Annotated[LoginLimiter, Depends(get_limiter)]
 SecretDep = Annotated[str, Depends(get_secret)]
 CurrentUser = Annotated[User, Depends(current_user)]

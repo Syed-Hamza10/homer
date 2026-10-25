@@ -10,13 +10,21 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-import type { ClientRules, ModelTier } from "./types"
+import type { ClientRules, ModelTier, SelfEmailStatus } from "./types"
 import {
+  useHealth,
   useModelOptions,
   useRules,
   useSaveRules,
   useSmoke,
 } from "./useSettings"
+
+const selfEmailNotes: Partial<Record<SelfEmailStatus, string>> = {
+  mismatch:
+    "Paused: this address is not the connected Google account, so briefs are not emailed.",
+  unknown:
+    "Cannot check this address against the connected Google account right now.",
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -39,6 +47,8 @@ function RulesForm({ initial }: { initial: ClientRules }) {
   const save = useSaveRules()
   const options = useModelOptions()
   const smoke = useSmoke()
+  const health = useHealth()
+  const selfEmailNote = health.data && selfEmailNotes[health.data.self_email]
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -111,6 +121,11 @@ function RulesForm({ initial }: { initial: ClientRules }) {
         />
         Email the morning brief and digest to me
       </label>
+      {selfEmailNote && (
+        <p className="text-sm text-destructive" data-testid="self-email-note">
+          {selfEmailNote}
+        </p>
+      )}
       <Field label="Model tier">
         <select
           className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"

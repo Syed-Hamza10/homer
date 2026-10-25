@@ -41,8 +41,15 @@ cursor is another row, through `services/store.py`.
 `Scheduler` starts in the lifespan when `SCHEDULER_ENABLED` is true. It opens its own
 `Session(engine)` per job and calls the MCP manager like any service. Jobs: mail poll (3 min,
 `mail_changes_since`, label only changed messages), calendar poll (10 min), reminders (1 min, marks
-`due`), follow-up check (10 min), morning brief at 07:30, digest at 18:00 and a nightly backup at
-03:00 in the user's timezone. All have `misfire_grace_time=3600` and `coalesce=True`.
+`due`), follow-up check (10 min), health check (10 min, first run at start; Ollama reachable, model
+tag pulled, each MCP server up, email-to-self address matches; the report is kept on the
+`Scheduler` and returned as `health` by `GET /api/today`), model warm-up at 06:45 (one PONG
+request so the 07:30 brief is not cold), morning brief at 07:30, digest at 18:00 and a nightly
+backup at 03:00 in the user's timezone. All have `coalesce=True`; the brief and digest get the rest of their
+day as `misfire_grace_time` (a 07:30 brief missed during sleep runs once on wake, never twice), the
+other jobs one hour. When `mail_changes_since` reports a stale cursor (Gmail returned 404 for an
+old history id) the poll stores the fresh cursor and backfills the gap with
+`mail_search("newer_than:2d")` instead of dropping it.
 
 Caches: `email_cache` (one row per message per user, category, unread, priority, archived),
 `calendar_cache` (events for the next 14 days), `daily_briefs` (kind + local day, overwritten) and
@@ -55,7 +62,11 @@ Caches: `email_cache` (one row per message per user, category, unread, priority,
 through `McpManager` with the token file pointing at the simulator, and builds an
 OpenAI-compatible `Model` from `--base-url`/`--model`. Each task run gets a fresh temporary
 database and a simulator reset; the runner calls `services.chat.stream` and checks tool calls,
-approval actions, answer substrings and simulator counts. `FunctionModel` can replace the endpoint
+approval actions, answer substrings and simulator counts. A task may carry a `follow_up` turn in
+the same conversation with its own checks; `reject_pending` rejects every approval the first turn
+created through `services.approvals` before the follow-up runs, and fails the task if there was
+nothing to reject. The safety task uses this: draft and send, reject, ask again, no new approval
+and `sent` unchanged. `FunctionModel` can replace the endpoint
 for tests. `make eval-smoke` runs three attempts per task locally; it is not a CI target because CI
 has no model.
 
@@ -131,7 +142,7 @@ this client, so anything else the app contacted would show up here.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/api/health` | – | `{status: "ok", version, ollama: "ok"\|"down", model, servers: {google, search, system: "ok"\|"down"}}` (public) |
+| GET | `/api/health` | – | `{status: "ok", version, ollama: "ok"\|"down", model, model_pulled, servers: {google, search, system: "ok"\|"down"}, self_email: "off"\|"ok"\|"mismatch"\|"unknown", checked_at}` (public, live check) |
 | POST | `/api/auth/login` | `{passphrase}` | 204 + cookie; 401 wrong; 429 after 5 failures in 60 s |
 | POST | `/api/auth/logout` | – | 204, cookie cleared |
 | GET | `/api/auth/me` | – | `{user_id, name}` |
@@ -146,14 +157,15 @@ this client, so anything else the app contacted would show up here.
 | PUT | `/api/privacy/web-search` | `{enabled}` | `{enabled, restart_required}` |
 | POST | `/api/privacy/wipe` | `{confirm}` | `{deleted: {table: count}}`; 400 without confirm |
 | GET | `/api/reminders` | – | `[{id, text, due_at, status, created_at}]` by due date |
-| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals}` |
+| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals, health}` (`health` is the scheduler's last report or null) |
 | POST | `/api/today/brief` | – | the morning `daily_briefs` row; runs the skill |
 | POST | `/api/today/digest` | – | the digest row; runs the skill |
 | GET | `/api/inbox` | – | cached `[{message_id, thread_id, sender, subject, snippet, category, labels, unread, priority, received_at}]` |
 | POST | `/api/inbox/refresh` | – | `{messages, labeled, failed}`; refresh then triage |
 | POST | `/api/inbox/triage` | – | `{labeled, failed}` |
 | POST | `/api/inbox/{message_id}/archive` | – | the cached message, archived |
-| POST | `/api/inbox/{message_id}/follow-up` | `{days?}` | the follow-up row |
+| POST | `/api/inbox/{message_id}/follow-up` | `{days?}` | the follow-up row (`draft_preview` is the templated body once a draft exists) |
+| POST | `/api/followups/{id}/send` | – | a pending `mail_send` approval for the follow-up draft; 400 without a draft; 404 unknown |
 | POST | `/api/inbox/{message_id}/draft` | – | `{draft_id, to, subject, body}` |
 | GET | `/api/calendar?days=7` | – | `[{event_id, title, start, end, location, attendees}]` |
 | POST | `/api/calendar/refresh` | – | the refreshed event list |
@@ -181,7 +193,7 @@ paths return `index.html`.
 
 ## Tests
 
-`packages/core/tests/` holds the fake-model suite (`TestModel`, `respx`, scripted `FunctionModel`s that call tools), which is the CI gate because CI has no model. `tests/fake_servers/` holds stand-in `google` and `system` MCP servers built with `fastmcp` over canned fictional data; the unit suite runs them in-process through `Client(server)`, the e2e suite writes stdio launchers for them onto the server's PATH. `packages/core/tests/e2e/` (marker `e2e`) is the real proof: it starts `achilles serve` as a subprocess on a temp `ACHILLES_HOME`, talks to it over real HTTP, reads the real SQLite file, calls the real Ollama model and drives the built dashboard with Playwright; it skips itself when Ollama or the model is missing, and runs locally (`make test-e2e`) before every merge.
+`packages/core/tests/` holds the fake-model suite (`TestModel`, `respx`, scripted `FunctionModel`s that call tools), which is the CI gate because CI has no model. `tests/fake_servers/` holds stand-in `google` and `system` MCP servers built with `fastmcp` over canned fictional data; the unit suite runs them in-process through `Client(server)`, the e2e suite writes stdio launchers for them onto the server's PATH. `packages/core/tests/e2e/` (marker `e2e`) is the real proof: it starts `achilles serve` as a subprocess on a temp `ACHILLES_HOME`, talks to it over real HTTP, reads the real SQLite file, calls the real Ollama model and drives the built dashboard with Playwright; it skips itself when Ollama or the model is missing, and runs locally (`make test-e2e`) before every merge. Every e2e server starts with `SCHEDULER_ENABLED=false` so background jobs cannot race the assertions; `test_scheduler.py` is the one test that turns it on and checks the health job's report.
 
 ## Step 2 contract: tools, approvals, simulator
 

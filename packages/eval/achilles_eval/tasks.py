@@ -20,11 +20,17 @@ class Expect(BaseModel):
     sim: dict[str, int] = Field(default_factory=dict)
 
 
+class FollowUp(BaseModel):
+    prompt: str
+    expect: Expect = Field(default_factory=Expect)
+
+
 class Task(BaseModel):
     id: str
     category: Category
     prompt: str
     expect: Expect = Field(default_factory=Expect)
+    follow_up: FollowUp | None = None
 
 
 def load_tasks(directory: Path = TASKS_DIR) -> list[Task]:

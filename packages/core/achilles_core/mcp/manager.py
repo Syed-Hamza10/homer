@@ -17,7 +17,8 @@ log = structlog.get_logger(__name__)
 
 SERVERS = ("google", "search", "system")
 EXECUTOR_TOOL = "execute"
-HIDDEN_TOOLS = frozenset({EXECUTOR_TOOL, "health"})
+PROFILE_TOOL = "mail_profile"
+HIDDEN_TOOLS = frozenset({EXECUTOR_TOOL, PROFILE_TOOL, "health"})
 INIT_TIMEOUT = 30.0
 
 
