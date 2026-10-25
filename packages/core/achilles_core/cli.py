@@ -178,7 +178,8 @@ def eval_(
     ] = False,
 ) -> None:
     if not smoke:
-        raise typer.BadParameter("only --smoke is available; pass it")
+        typer.echo("Pass --smoke; it is the only mode available.", err=True)
+        raise typer.Exit(code=2)
     executable = find_executable("achilles-eval")
     if executable is None:
         raise typer.BadParameter("achilles-eval is not installed; it ships with the dev workspace")

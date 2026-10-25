@@ -18,6 +18,7 @@ test-all:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
+	command -v actionlint >/dev/null && actionlint || echo "actionlint not installed, skipping workflow lint"
 
 fmt:
 	uv run ruff format .
