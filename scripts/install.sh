@@ -13,6 +13,7 @@ ACHILLES_HOME="${ACHILLES_HOME:-$HOME/.achilles}"
 WHEELS_DIR=""
 TOKEN="${GITHUB_TOKEN:-${ACHILLES_GITHUB_TOKEN:-}}"
 PASSPHRASE="${ACHILLES_PASSPHRASE:-}"
+PASSPHRASE_FLAG=0
 NO_SERVICE=0
 SKIP_OLLAMA=0
 DRY_RUN=0
@@ -30,7 +31,8 @@ Usage: scripts/install.sh [options] (published as install.sh on each release)
   --home PATH       Achilles home (default: ~/.achilles)
   --wheels-dir DIR  Install from local wheels instead of a GitHub release
   --token TOKEN     GitHub token for the private release
-  --passphrase P    Initial passphrase (otherwise prompts)
+  --passphrase P    Initial passphrase (discouraged: lands in shell history; prefer
+                    ACHILLES_PASSPHRASE in the environment or the interactive prompt)
   --no-service      Do not register a launchd/systemd service
   --skip-ollama     Do not install or configure Ollama
   --dry-run         Check the machine and print the plan; change nothing
@@ -48,7 +50,7 @@ while [ $# -gt 0 ]; do
     --home) ACHILLES_HOME="$2"; shift 2 ;;
     --wheels-dir) WHEELS_DIR="$2"; shift 2 ;;
     --token) TOKEN="$2"; shift 2 ;;
-    --passphrase) PASSPHRASE="$2"; shift 2 ;;
+    --passphrase) PASSPHRASE="$2"; PASSPHRASE_FLAG=1; shift 2 ;;
     --no-service) NO_SERVICE=1; shift ;;
     --skip-ollama) SKIP_OLLAMA=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -59,6 +61,10 @@ while [ $# -gt 0 ]; do
 done
 
 export ACHILLES_HOME
+
+if [ "$PASSPHRASE_FLAG" = "1" ]; then
+  warn "--passphrase is saved in your shell history; next time set ACHILLES_PASSPHRASE or use the prompt"
+fi
 
 OS="$(uname -s)"
 case "$OS" in
@@ -140,7 +146,7 @@ command -v uv >/dev/null 2>&1 || die "uv is not on PATH after installation"
 ENV_FILE="$ACHILLES_HOME/.env"
 if [ ! -f "$ENV_FILE" ]; then
   if [ -z "$PASSPHRASE" ]; then
-    [ -t 0 ] || die "pass --passphrase or set ACHILLES_PASSPHRASE"
+    [ -t 0 ] || die "set ACHILLES_PASSPHRASE in the environment, or run interactively to be prompted"
     read -rsp "Choose a passphrase: " PASSPHRASE; echo
     read -rsp "Repeat the passphrase: " CONFIRM; echo
     [ "$PASSPHRASE" = "$CONFIRM" ] || die "passphrases do not match"

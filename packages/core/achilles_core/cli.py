@@ -65,9 +65,15 @@ def doctor(
 
 
 @app.command()
-def backup() -> None:
-    path = create_backup(Settings().achilles_home)
+def backup(
+    include_secrets: Annotated[
+        bool, typer.Option("--include-secrets", help="Also archive credentials/ and .env.")
+    ] = False,
+) -> None:
+    path = create_backup(Settings().achilles_home, include_secrets=include_secrets)
     Console().print(f"Backup written to {path}")
+    if not include_secrets:
+        Console().print("Secrets were left out; pass --include-secrets to archive them.")
 
 
 @app.command()

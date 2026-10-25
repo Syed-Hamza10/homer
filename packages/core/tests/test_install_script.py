@@ -74,6 +74,13 @@ def test_install_script_dry_run_changes_nothing(tmp_path: Path) -> None:
 
 
 @needs_bash
+def test_install_script_warns_about_the_passphrase_flag(tmp_path: Path) -> None:
+    _, result = run_installer(tmp_path, "--dry-run", "--passphrase", "p")
+    assert result.returncode == 0, result.stderr
+    assert "shell history" in result.stderr
+
+
+@needs_bash
 @needs_uv
 def test_install_script_refuses_a_checksum_mismatch(tmp_path: Path) -> None:
     release = tmp_path / "release"

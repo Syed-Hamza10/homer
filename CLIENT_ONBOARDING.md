@@ -60,7 +60,8 @@ bash install.sh --dry-run --force          # check the machine, change nothing
 
 The passphrase is the only login. Store it in the client's password manager. It is written to
 `~/.achilles/.env` with mode 0600; the server compares it in constant time and rate-limits five
-failures per minute.
+failures per minute. Type it at the prompt, or set `ACHILLES_PASSPHRASE` in the environment for an
+unattended install. Avoid `--passphrase`: it stays in the shell history, and the installer warns.
 
 ## 3. First sign-in
 
@@ -116,7 +117,8 @@ ACHILLES=~/.achilles/venv/bin/achilles
 
 $ACHILLES restart          # restart the service
 $ACHILLES logs -f          # follow ~/.achilles/logs/achilles.log
-$ACHILLES backup           # write ~/.achilles/backups/achilles-<time>.tar.gz
+$ACHILLES backup           # write ~/.achilles/backups/achilles-<time>.tar.gz (no secrets)
+$ACHILLES backup --include-secrets   # also archive credentials/ and .env
 $ACHILLES update           # download the latest release and restart
 $ACHILLES model use supported   # or degraded, or a tag from models/manifest.json
 $ACHILLES privacy -o PRIVACY.md
@@ -124,10 +126,13 @@ $ACHILLES forget --yes     # delete the local user and all data; credentials sta
 ```
 
 A nightly backup runs at 03:00 in the user's timezone. The newest 14 archives are kept. A backup
-contains a consistent SQLite snapshot, `credentials/` and `.env`; it is mode 0600. Copy it off the
-machine with the client's normal backup tooling.
+is a consistent SQLite snapshot, mode 0600. By default it leaves out `credentials/` (the Google
+token) and `.env` (the passphrase), so an archive copied off the machine carries no secrets.
+`achilles backup --include-secrets` adds them for a full migration to a new machine; treat that
+archive like a password.
 
-To restore, stop the service, unpack the archive into `~/.achilles`, and start it:
+To restore, stop the service, unpack the archive into `~/.achilles` (keep the existing
+`credentials/` and `.env` if the archive has none), and start it:
 
 ```sh
 ~/.achilles/venv/bin/achilles restart

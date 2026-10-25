@@ -1,3 +1,4 @@
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,18 @@ def test_backup_command_writes_a_file(home: Path) -> None:
     result = runner.invoke(app, ["backup"])
     assert result.exit_code == 0, result.output
     assert "Backup written" in result.output
+    assert "--include-secrets" in result.output
     assert list((home / "backups").glob("achilles-*.tar.gz"))
+
+
+def test_backup_command_can_include_secrets(home: Path) -> None:
+    (home / ".env").write_text("ACHILLES_PASSPHRASE=test-pass\n")
+    result = runner.invoke(app, ["backup", "--include-secrets"])
+    assert result.exit_code == 0, result.output
+    assert "--include-secrets" not in result.output
+    archive = next((home / "backups").glob("achilles-*.tar.gz"))
+    with tarfile.open(archive) as tar:
+        assert ".env" in tar.getnames()
 
 
 def test_privacy_command_prints_the_hosts(home: Path) -> None:
