@@ -18,7 +18,7 @@ from achilles_core.db.session import make_engine, run_migrations
 from achilles_core.doctor import run_checks
 from achilles_core.llm import load_manifest
 from achilles_core.mcp.manager import find_executable
-from achilles_core.platform import ensure_home, restart_service
+from achilles_core.platform import ensure_home, restart_service, tail_file
 from achilles_core.privacy_hosts import privacy_markdown
 from achilles_core.services.backup import create_backup
 from achilles_core.services.rules import get_rules, save_rules
@@ -78,7 +78,7 @@ def logs(follow: Annotated[bool, typer.Option("--follow", "-f")] = False) -> Non
     path = Settings().achilles_home / "logs" / "achilles.log"
     if not path.exists():
         raise typer.BadParameter(f"{path} does not exist yet")
-    subprocess.run(["tail", "-n", "200", *(["-f"] if follow else []), str(path)], check=True)
+    tail_file(path, 200, follow)
 
 
 @app.command()

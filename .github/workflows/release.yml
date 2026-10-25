@@ -52,4 +52,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            dist/*.whl install.sh CLIENT_ONBOARDING.md PRIVACY.md
+            dist/*.whl scripts/install.sh CLIENT_ONBOARDING.md PRIVACY.md

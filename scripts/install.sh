@@ -18,7 +18,7 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: install.sh [options]
+Usage: scripts/install.sh [options] (published as install.sh on each release)
 
   --version TAG     Release tag to install (default: latest)
   --home PATH       Achilles home (default: ~/.achilles)

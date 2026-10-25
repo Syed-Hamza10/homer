@@ -84,3 +84,4 @@ One line each. Newest at the bottom.
 - 2026-10-20: `achilles update` uses `gh release download` and `uv pip install` into the current interpreter. Reason: the repo is private and `gh` already carries the client's auth; no second updater service.
 - 2026-10-20: `PRIVACY.md` is generated from `achilles_core/privacy_hosts.py`, and a test checks the Google and search constants against the server defaults. Reason: the document and the code must not drift.
 - 2026-10-20: The installer requires 16 GB RAM and 30 GB disk unless `--force` is given. Reason: the supported model tier is 7.7 GB resident and the machine also builds/keeps backups.
+- 2026-10-25: `install.sh` lives in `scripts/` and is published as the `install.sh` release asset; `achilles logs` shells out to `tail` through `platform.tail_file`. Reason: plan §7 and rule 6 keep OS-specific code in `platform.py` and `scripts/`.

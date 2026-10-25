@@ -67,7 +67,7 @@ next start, and reported as `restart_required`.
 
 ## Install, release and operations (step 6)
 
-`install.sh` is the only client-facing entry point. It installs `uv` and Ollama, configures Ollama
+`scripts/install.sh` is the only client-facing entry point. It installs `uv` and Ollama, configures Ollama
 with our launch agent (macOS) or a systemd drop-in (Linux), creates `~/.achilles` and its
 subdirectories, writes `.env`, installs the release wheels into `~/.achilles/venv`, pulls the model
 tags from the packaged `models/manifest.json`, registers a launchd/systemd **user** service for
