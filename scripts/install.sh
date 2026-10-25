@@ -79,7 +79,7 @@ else
 fi
 RAM_GB=$((RAM_BYTES / 1073741824))
 DISK_PATH="$ACHILLES_HOME"
-[ -d "$DISK_PATH" ] || DISK_PATH="$(dirname "$ACHILLES_HOME")"
+while [ ! -d "$DISK_PATH" ]; do DISK_PATH="$(dirname "$DISK_PATH")"; done
 FREE_BYTES="$(df -Pk "$DISK_PATH" | awk 'NR==2 {print $4 * 1024}')"
 FREE_GB=$((FREE_BYTES / 1073741824))
 
