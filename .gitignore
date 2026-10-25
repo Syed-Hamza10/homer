@@ -12,10 +12,11 @@ build/
 .ruff_cache/
 .mypy_cache/
 
-# Node
+# Generated at build time
 node_modules/
 dashboard/dist/
 packages/core/achilles_core/static/
+packages/core/achilles_core/models/manifest.json
 
 # Secrets and local data
 .env

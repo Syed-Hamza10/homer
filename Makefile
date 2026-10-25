@@ -23,7 +23,7 @@ fmt:
 	uv run ruff format .
 	uv run ruff check --fix .
 
-build:
+build: manifest
 	cd dashboard && pnpm install --frozen-lockfile && pnpm build
 
 manifest:
