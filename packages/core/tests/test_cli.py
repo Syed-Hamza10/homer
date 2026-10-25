@@ -1,10 +1,12 @@
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlmodel import Session
 from typer.testing import CliRunner
 
+from achilles_core import cli
 from achilles_core.cli import app
 from achilles_core.db.session import make_engine, run_migrations
 from achilles_core.llm import chat_model_tag
@@ -99,3 +101,23 @@ def test_forget_requires_confirmation(home: Path) -> None:
     result = runner.invoke(app, ["forget"])
     assert result.exit_code == 1
     assert "Pass --yes" in result.output
+
+
+def test_eval_requires_the_smoke_flag(home: Path) -> None:
+    result = runner.invoke(app, ["eval"])
+    assert result.exit_code == 2
+    assert "--smoke" in result.output
+
+
+def test_eval_smoke_wraps_achilles_eval(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool) -> SimpleNamespace:
+        calls.append(command)
+        return SimpleNamespace(returncode=3)
+
+    monkeypatch.setattr(cli, "find_executable", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    result = runner.invoke(app, ["eval", "--smoke"])
+    assert result.exit_code == 3
+    assert calls == [["/fake/bin/achilles-eval", "--runs", "3"]]

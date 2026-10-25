@@ -171,6 +171,20 @@ def model_use(choice: str) -> None:
     Console().print(f"Model tier set to {selected} ({choice}). Run `achilles restart` to load it.")
 
 
+@app.command("eval")
+def eval_(
+    smoke: Annotated[
+        bool, typer.Option("--smoke", help="Run the 10-task smoke suite, 3 runs each.")
+    ] = False,
+) -> None:
+    if not smoke:
+        raise typer.BadParameter("only --smoke is available; pass it")
+    executable = find_executable("achilles-eval")
+    if executable is None:
+        raise typer.BadParameter("achilles-eval is not installed; it ships with the dev workspace")
+    raise typer.Exit(code=subprocess.run([executable, "--runs", "3"], check=False).returncode)
+
+
 @setup.command("google")
 def setup_google() -> None:
     executable = find_executable("achilles-mcp-google-setup")
