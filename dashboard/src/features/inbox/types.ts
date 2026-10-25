@@ -32,4 +32,5 @@ export type FollowUp = {
   due_at: string
   status: string
   draft_id: string | null
+  draft_preview: string | null
 }

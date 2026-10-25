@@ -132,15 +132,38 @@ async def test_followup_drafts_after_due(
         user = first_user(session)
         rules = get_rules(session, user.id)
         followup = session.get(FollowUp, created["id"])
-        result = await followups.check_followups(
-            session, user, live_mcp, rules, followup.due_at + timedelta(hours=1)
-        )
+        followup.due_at = datetime.now(UTC) - timedelta(hours=1)
+        session.add(followup)
+        session.commit()
+        result = await followups.check_followups(session, user, live_mcp, rules)
         assert result["drafted"] == 1
         session.refresh(followup)
         assert followup.status == "drafted"
         assert followup.draft_id == "d1"
     assert fake_google.drafted[-1]["to"] == "ada@example.test"
     assert fake_google.drafted[-1]["thread_id"] == "t3"
+
+    shown = logged_in.get("/api/today").json()["follow_ups"]
+    assert shown[0]["draft_id"] == "d1"
+    assert shown[0]["draft_preview"].startswith('Hi Ada,\n\nJust following up on "Proposal')
+    approval = logged_in.post(f"/api/followups/{created['id']}/send", headers=origin).json()
+    assert approval["action"] == "mail_send" and approval["status"] == "pending"
+    assert approval["payload"] == {"draft_id": "d1"}
+    assert fake_google.executed == []
+    approved = logged_in.post(f"/api/approvals/{approval['id']}/approve", headers=origin).json()
+    assert approved["status"] == "done"
+    assert fake_google.executed == [{"action": "mail_send", "payload": {"draft_id": "d1"}}]
+
+
+def test_follow_up_without_a_draft_cannot_be_sent(
+    logged_in: TestClient, origin: dict[str, str]
+) -> None:
+    logged_in.post("/api/inbox/refresh", headers=origin)
+    created = logged_in.post("/api/inbox/m3/follow-up", json={"days": 3}, headers=origin).json()
+    assert created["draft_preview"] is None
+    response = logged_in.post(f"/api/followups/{created['id']}/send", headers=origin)
+    assert response.status_code == 400
+    assert logged_in.post("/api/followups/999/send", headers=origin).status_code == 404
 
 
 async def test_followup_closes_when_reply_arrives(

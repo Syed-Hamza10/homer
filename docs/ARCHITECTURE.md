@@ -160,7 +160,8 @@ this client, so anything else the app contacted would show up here.
 | POST | `/api/inbox/refresh` | – | `{messages, labeled, failed}`; refresh then triage |
 | POST | `/api/inbox/triage` | – | `{labeled, failed}` |
 | POST | `/api/inbox/{message_id}/archive` | – | the cached message, archived |
-| POST | `/api/inbox/{message_id}/follow-up` | `{days?}` | the follow-up row |
+| POST | `/api/inbox/{message_id}/follow-up` | `{days?}` | the follow-up row (`draft_preview` is the templated body once a draft exists) |
+| POST | `/api/followups/{id}/send` | – | a pending `mail_send` approval for the follow-up draft; 400 without a draft; 404 unknown |
 | POST | `/api/inbox/{message_id}/draft` | – | `{draft_id, to, subject, body}` |
 | GET | `/api/calendar?days=7` | – | `[{event_id, title, start, end, location, attendees}]` |
 | POST | `/api/calendar/refresh` | – | the refreshed event list |

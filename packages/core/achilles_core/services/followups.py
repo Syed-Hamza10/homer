@@ -5,9 +5,10 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
-from achilles_core.db.models import FollowUp, User, utcnow
+from achilles_core.db.models import Approval, FollowUp, User, utcnow
 from achilles_core.mcp.manager import ExecuteFailed, McpManager, ServerUnavailable
-from achilles_core.services.errors import NotFound
+from achilles_core.services import approvals
+from achilles_core.services.errors import DomainError, NotFound
 from achilles_core.services.inbox import sender_email
 from achilles_core.services.rules import ClientRules
 
@@ -180,6 +181,20 @@ def get_followup(session: Session, user: User, followup_id: int) -> FollowUp:
     if followup is None or followup.user_id != user.id:
         raise NotFound(f"follow-up {followup_id} not found")
     return followup
+
+
+async def request_send(
+    session: Session, user: User, manager: McpManager, followup_id: int
+) -> Approval:
+    """Asks the google server for the mail_send approval of the follow-up draft and stores it, so
+    the normal approval flow decides whether the draft goes out."""
+    followup = get_followup(session, user, followup_id)
+    if not followup.draft_id:
+        raise DomainError(f"follow-up {followup_id} has no draft yet")
+    result = await manager.call("google", "mail_send", {"draft_id": followup.draft_id})
+    if not approvals.is_approval_object(result):
+        raise DomainError(f"draft {followup.draft_id} cannot be sent: {result}")
+    return approvals.create_from_tool_result(session, user.id, "google", result)
 
 
 def close_followup(session: Session, user: User, followup_id: int) -> FollowUp:

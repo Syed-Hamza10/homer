@@ -1,8 +1,14 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import type { Health } from "./types"
-import { useRunBrief, useRunDigest, useToday } from "./useToday"
+import { Link } from "react-router"
+import type { FollowUp, Health } from "./types"
+import {
+  useRunBrief,
+  useRunDigest,
+  useSendFollowUp,
+  useToday,
+} from "./useToday"
 
 function clock(value: string): string {
   return new Date(value).toLocaleTimeString([], {
@@ -22,6 +28,52 @@ function healthLine(health: Health | null | undefined): string {
   ]
   if (health.self_email === "mismatch") parts.push("email-to-self paused")
   return `${parts.join(" · ")} · checked ${clock(health.checked_at)}`
+}
+
+function FollowUpItem({ followup }: { followup: FollowUp }) {
+  const send = useSendFollowUp()
+  return (
+    <li
+      className="flex flex-col gap-1 border-t py-2"
+      data-testid={`followup-${followup.id}`}
+    >
+      <span>{followup.subject}</span>
+      <span className="text-xs text-muted-foreground">
+        {followup.contact} · due{" "}
+        {new Date(followup.due_at).toLocaleDateString()} · {followup.status}
+      </span>
+      {followup.draft_preview && (
+        <p className="rounded-md bg-muted p-2 text-xs whitespace-pre-wrap">
+          {followup.draft_preview}
+        </p>
+      )}
+      {followup.draft_id && !send.data && (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={send.isPending}
+            onClick={() => send.mutate(followup.id)}
+          >
+            Send
+          </Button>
+          {send.error && (
+            <span className="text-xs text-destructive">
+              {send.error.message}
+            </span>
+          )}
+        </div>
+      )}
+      {send.data && (
+        <span className="text-xs text-muted-foreground">
+          Approval #{send.data.id} requested ·{" "}
+          <Link to="/approvals" className="underline">
+            decide on Approvals
+          </Link>
+        </span>
+      )}
+    </li>
+  )
 }
 
 export function TodayPage() {
@@ -142,15 +194,7 @@ export function TodayPage() {
           {data?.follow_ups.length ? (
             <ul className="flex flex-col gap-1 text-sm">
               {data.follow_ups.map((followup) => (
-                <li key={followup.id} className="flex flex-col border-t py-2">
-                  <span>{followup.subject}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {followup.contact} · due{" "}
-                    {new Date(followup.due_at).toLocaleDateString()} ·{" "}
-                    {followup.status}
-                    {followup.draft_id ? ` · draft ${followup.draft_id}` : ""}
-                  </span>
-                </li>
+                <FollowUpItem key={followup.id} followup={followup} />
               ))}
             </ul>
           ) : (

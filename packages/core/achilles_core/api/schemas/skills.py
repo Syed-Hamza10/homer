@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field
 
 from achilles_core.api.schemas.reminders import ReminderOut
 from achilles_core.db.models import CalendarEventCache, DailyBrief, EmailCache, FollowUp
+from achilles_core.services.followups import draft_body
 from achilles_core.services.health import HealthReport
+from achilles_core.services.rules import ClientRules
 
 
 class EmailOut(BaseModel):
@@ -64,9 +66,10 @@ class FollowUpOut(BaseModel):
     due_at: datetime
     status: str
     draft_id: str | None
+    draft_preview: str | None
 
     @classmethod
-    def from_row(cls, row: FollowUp) -> "FollowUpOut":
+    def from_row(cls, row: FollowUp, rules: ClientRules) -> "FollowUpOut":
         return cls(
             id=row.id,
             thread_id=row.thread_id,
@@ -75,6 +78,7 @@ class FollowUpOut(BaseModel):
             due_at=row.due_at,
             status=row.status,
             draft_id=row.draft_id,
+            draft_preview=draft_body(row, rules) if row.draft_id else None,
         )
 
 
