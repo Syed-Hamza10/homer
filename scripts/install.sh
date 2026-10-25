@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+UV_VERSION="0.13.1"
+OLLAMA_VERSION="0.40.5"
+UV_INSTALLER="https://astral.sh/uv/${UV_VERSION}/install.sh"
+OLLAMA_RELEASE="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}"
+OLLAMA_INSTALLER="https://ollama.com/install.sh"
+
 REPO="Syed-Hamza10/achilles"
 VERSION="${ACHILLES_VERSION:-latest}"
 ACHILLES_HOME="${ACHILLES_HOME:-$HOME/.achilles}"
@@ -30,6 +36,9 @@ Usage: scripts/install.sh [options] (published as install.sh on each release)
   --dry-run         Check the machine and print the plan; change nothing
   --force           Continue when RAM or disk is below the recommendation
   -h, --help        Show this help
+
+Pinned: uv $UV_VERSION, Ollama $OLLAMA_VERSION. Release wheels are verified against SHA256SUMS
+and installed with the release's requirements.lock as constraints.
 EOF
 }
 
@@ -88,23 +97,42 @@ if [ "$DRY_RUN" = "1" ]; then
   cat <<EOF
 
 Dry run only. The installer would:
-  1. install uv if missing
-  2. install Ollama if missing and configure it with a 16k context
+  1. install uv $UV_VERSION if missing (from $UV_INSTALLER)
+  2. install Ollama $OLLAMA_VERSION if missing, verified against its sha256sum.txt, and configure it with a 16k context
   3. create $ACHILLES_HOME/{credentials,data,documents,logs,backups,venv} with mode 0700
-  4. install the release wheels into $ACHILLES_HOME/venv
-  5. write $ACHILLES_HOME/.env and pull the manifest models
-  6. register and start the Achilles service (unless --no-service)
-  7. run achilles doctor and print http://127.0.0.1:8000
+  4. download the release wheels, SHA256SUMS and requirements.lock, and verify every wheel against SHA256SUMS
+  5. install the verified wheels into $ACHILLES_HOME/venv with requirements.lock as constraints
+  6. write $ACHILLES_HOME/.env and pull the manifest models
+  7. register and start the Achilles service (unless --no-service)
+  8. run achilles doctor and print http://127.0.0.1:8000
 EOF
   exit 0
 fi
+
+sha256_check() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$1" && sha256sum -c --ignore-missing --quiet "$2")
+  else
+    (cd "$1" && shasum -a 256 -c --ignore-missing --quiet "$2")
+  fi
+}
+
+verify_wheels() {
+  local dir="$1" sums="$1/SHA256SUMS" wheel
+  for wheel in "$dir"/*.whl; do
+    grep -q " \*\{0,1\}$(basename "$wheel")\$" "$sums" \
+      || die "$(basename "$wheel") is not listed in SHA256SUMS"
+  done
+  sha256_check "$dir" SHA256SUMS || die "checksum mismatch: refusing to install the wheels"
+  log "Verified $(ls "$dir"/*.whl | wc -l | tr -d ' ') wheels against SHA256SUMS"
+}
 
 mkdir -p "$ACHILLES_HOME"/{credentials,data,documents,logs,backups}
 chmod 700 "$ACHILLES_HOME" "$ACHILLES_HOME"/{credentials,data,documents,logs,backups}
 
 if ! command -v uv >/dev/null 2>&1; then
-  log "Installing uv"
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+  log "Installing uv $UV_VERSION"
+  curl -LsSf "$UV_INSTALLER" | sh
   export PATH="$HOME/.local/bin:$PATH"
 fi
 command -v uv >/dev/null 2>&1 || die "uv is not on PATH after installation"
@@ -131,14 +159,31 @@ else
   log "Keeping existing $ENV_FILE"
 fi
 
+if [ -n "$TOKEN" ]; then
+  printf '%s\n' "$TOKEN" >"$ACHILLES_HOME/github_token"
+  chmod 600 "$ACHILLES_HOME/github_token"
+  log "Saved the GitHub token to $ACHILLES_HOME/github_token for achilles update"
+fi
+
+install_ollama_darwin() {
+  local tmp
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "$tmp/ollama-darwin.tgz" "$OLLAMA_RELEASE/ollama-darwin.tgz"
+  curl -fsSL -o "$tmp/sha256sum.txt" "$OLLAMA_RELEASE/sha256sum.txt"
+  sha256_check "$tmp" sha256sum.txt || die "Ollama $OLLAMA_VERSION checksum mismatch"
+  mkdir -p "$ACHILLES_HOME/bin"
+  tar -xzf "$tmp/ollama-darwin.tgz" -C "$ACHILLES_HOME/bin"
+  rm -rf "$tmp"
+  export PATH="$ACHILLES_HOME/bin:$PATH"
+}
+
 if [ "$SKIP_OLLAMA" = "0" ]; then
   if ! command -v ollama >/dev/null 2>&1; then
-    log "Installing Ollama"
+    log "Installing Ollama $OLLAMA_VERSION"
     if [ "$OS" = "Darwin" ]; then
-      command -v brew >/dev/null 2>&1 || die "install Homebrew first, or install Ollama manually"
-      brew install ollama
+      install_ollama_darwin
     else
-      curl -fsSL https://ollama.com/install.sh | sh
+      curl -fsSL "$OLLAMA_INSTALLER" | OLLAMA_VERSION="$OLLAMA_VERSION" sh
     fi
   fi
   OLLAMA_BIN="$(command -v ollama || true)"
@@ -206,6 +251,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
+wanted_release_file() {
+  case "$1" in
+    *.whl|SHA256SUMS|requirements.lock) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+download_release_with_token() {
+  local api json
+  if [ "$VERSION" = "latest" ]; then
+    api="https://api.github.com/repos/$REPO/releases/latest"
+  else
+    api="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
+  fi
+  json="$(curl -fsSL -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $TOKEN" "$api")"
+  printf '%s\n' "$json" | awk -F'"' '
+    /"url": "https:\/\/api.github.com\/repos\/.*\/releases\/assets\/[0-9]+"/ { url = $4 }
+    /"name": / && url != "" { print url, $4; url = "" }
+  ' | while read -r url name; do
+    wanted_release_file "$name" || continue
+    curl -fsSL -H "Accept: application/octet-stream" -H "Authorization: Bearer $TOKEN" \
+      -o "$WHEELS/$name" "$url"
+  done
+}
+
 if [ -n "$WHEELS_DIR" ]; then
   WHEELS="$WHEELS_DIR"
   log "Using local wheels from $WHEELS"
@@ -214,37 +284,37 @@ else
   WHEELS="$TMP_WHEELS"
   if command -v gh >/dev/null 2>&1; then
     log "Downloading release $VERSION with gh"
+    set -- -R "$REPO" -D "$WHEELS" -p '*.whl' -p SHA256SUMS -p requirements.lock
     if [ "$VERSION" = "latest" ]; then
-      gh release download -R "$REPO" -p '*.whl' -D "$WHEELS"
+      gh release download "$@"
     else
-      gh release download "$VERSION" -R "$REPO" -p '*.whl' -D "$WHEELS"
+      gh release download "$VERSION" "$@"
     fi
   elif [ -n "$TOKEN" ]; then
     log "Downloading release $VERSION with a token"
-    if [ "$VERSION" = "latest" ]; then
-      API="https://api.github.com/repos/$REPO/releases/latest"
-    else
-      API="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
-    fi
-    JSON="$(curl -fsSL -H "Accept: application/vnd.github+json" \
-      -H "Authorization: Bearer $TOKEN" "$API")"
-    URLS="$(printf '%s' "$JSON" \
-      | grep -o '"browser_download_url": *"[^"]*\.whl"' \
-      | sed 's/.*"\(https[^"]*\)"/\1/')"
-    [ -n "$URLS" ] || die "no wheels in release $VERSION"
-    while IFS= read -r url; do
-      [ -n "$url" ] || continue
-      curl -fsSL -H "Authorization: Bearer $TOKEN" \
-        -o "$WHEELS/$(basename "$url")" "$url"
-    done <<EOF
-$URLS
-EOF
+    download_release_with_token
   else
     die "this is a private repo: install gh, or pass --token / set GITHUB_TOKEN"
   fi
 fi
 
 ls "$WHEELS"/achilles_core-*.whl >/dev/null 2>&1 || die "no achilles_core wheel in $WHEELS"
+if [ -f "$WHEELS/SHA256SUMS" ]; then
+  verify_wheels "$WHEELS"
+elif [ -n "$WHEELS_DIR" ]; then
+  warn "no SHA256SUMS in $WHEELS; local wheels are installed unverified"
+else
+  die "release $VERSION has no SHA256SUMS; refusing to install unverified wheels"
+fi
+
+CONSTRAINTS=()
+if [ -f "$WHEELS/requirements.lock" ]; then
+  CONSTRAINTS=(-c "$WHEELS/requirements.lock")
+elif [ -z "$WHEELS_DIR" ]; then
+  die "release $VERSION has no requirements.lock"
+else
+  warn "no requirements.lock in $WHEELS; dependencies are not pinned"
+fi
 
 VENV="$ACHILLES_HOME/venv"
 if [ ! -x "$VENV/bin/python" ]; then
@@ -253,6 +323,7 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 log "Installing Achilles"
 uv pip install --python "$VENV/bin/python" --upgrade --find-links "$WHEELS" \
+  ${CONSTRAINTS[@]+"${CONSTRAINTS[@]}"} \
   achilles-core achilles-mcp-google achilles-mcp-search achilles-mcp-system
 
 if [ "$SKIP_OLLAMA" = "0" ]; then
@@ -286,7 +357,7 @@ if [ "$NO_SERVICE" = "0" ]; then
   <key>EnvironmentVariables</key>
   <dict>
     <key>ACHILLES_HOME</key><string>$ACHILLES_HOME</string>
-    <key>PATH</key><string>$VENV/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$VENV/bin:$ACHILLES_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>WorkingDirectory</key><string>$ACHILLES_HOME</string>
   <key>RunAtLoad</key><true/>
