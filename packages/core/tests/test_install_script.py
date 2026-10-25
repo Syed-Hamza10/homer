@@ -102,3 +102,63 @@ def test_install_script_refuses_an_unlisted_wheel(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "is not listed in SHA256SUMS" in result.stderr
     assert not (home / "venv").exists()
+
+
+def render(tmp_path: Path, name: str) -> str:
+    _, result = run_installer(tmp_path, "--render", name)
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+OLLAMA_ENV = {
+    "OLLAMA_CONTEXT_LENGTH": "16384",
+    "OLLAMA_KEEP_ALIVE": "30m",
+    "OLLAMA_FLASH_ATTENTION": "1",
+    "OLLAMA_KV_CACHE_TYPE": "q8_0",
+}
+
+
+@needs_bash
+def test_ollama_launch_agent_carries_the_environment(tmp_path: Path) -> None:
+    plist = render(tmp_path, "ollama-plist")
+    assert "<string>dev.achilles.ollama</string>" in plist
+    assert "<key>KeepAlive</key><true/>" in plist
+    assert "<key>RunAtLoad</key><true/>" in plist
+    for key, value in OLLAMA_ENV.items():
+        assert f"<key>{key}</key><string>{value}</string>" in plist
+
+
+@needs_bash
+def test_ollama_systemd_dropin_carries_the_environment(tmp_path: Path) -> None:
+    dropin = render(tmp_path, "ollama-dropin")
+    assert dropin.startswith("[Service]\n")
+    for key, value in OLLAMA_ENV.items():
+        assert f'Environment="{key}={value}"' in dropin
+
+
+@needs_bash
+def test_server_launch_agent_restarts_and_points_at_the_venv(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    plist = render(tmp_path, "server-plist")
+    assert "<string>dev.achilles.server</string>" in plist
+    assert f"<string>{home}/venv/bin/achilles</string><string>serve</string>" in plist
+    assert f"<key>ACHILLES_HOME</key><string>{home}</string>" in plist
+    assert "<key>KeepAlive</key><true/>" in plist
+    assert "<key>RunAtLoad</key><true/>" in plist
+
+
+@needs_bash
+def test_server_systemd_unit_restarts_and_points_at_the_venv(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    unit = render(tmp_path, "server-unit")
+    assert f"ExecStart={home}/venv/bin/achilles serve" in unit
+    assert f"Environment=ACHILLES_HOME={home}" in unit
+    assert "Restart=always" in unit
+    assert "WantedBy=default.target" in unit
+
+
+@needs_bash
+def test_render_rejects_an_unknown_service(tmp_path: Path) -> None:
+    _, result = run_installer(tmp_path, "--render", "nope")
+    assert result.returncode == 1
+    assert "unknown service definition" in result.stderr

@@ -18,6 +18,7 @@ NO_SERVICE=0
 SKIP_OLLAMA=0
 DRY_RUN=0
 FORCE=0
+RENDER=""
 
 log() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -37,6 +38,8 @@ Usage: scripts/install.sh [options] (published as install.sh on each release)
   --skip-ollama     Do not install or configure Ollama
   --dry-run         Check the machine and print the plan; change nothing
   --force           Continue when RAM or disk is below the recommendation
+  --render NAME     Print a service definition and exit
+                    (ollama-plist, ollama-dropin, server-plist, server-unit)
   -h, --help        Show this help
 
 Pinned: uv $UV_VERSION, Ollama $OLLAMA_VERSION. Release wheels are verified against SHA256SUMS
@@ -55,12 +58,108 @@ while [ $# -gt 0 ]; do
     --skip-ollama) SKIP_OLLAMA=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --force) FORCE=1; shift ;;
+    --render) RENDER="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
 
 export ACHILLES_HOME
+
+VENV="$ACHILLES_HOME/venv"
+LABEL="dev.achilles.server"
+OLLAMA_BIN="${OLLAMA_BIN:-ollama}"
+
+render_ollama_plist() {
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.achilles.ollama</string>
+  <key>ProgramArguments</key>
+  <array><string>$OLLAMA_BIN</string><string>serve</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_CONTEXT_LENGTH</key><string>16384</string>
+    <key>OLLAMA_KEEP_ALIVE</key><string>30m</string>
+    <key>OLLAMA_FLASH_ATTENTION</key><string>1</string>
+    <key>OLLAMA_KV_CACHE_TYPE</key><string>q8_0</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$ACHILLES_HOME/logs/ollama.log</string>
+  <key>StandardErrorPath</key><string>$ACHILLES_HOME/logs/ollama.err.log</string>
+</dict>
+</plist>
+EOF
+}
+
+render_ollama_dropin() {
+  cat <<EOF
+[Service]
+Environment="OLLAMA_CONTEXT_LENGTH=16384"
+Environment="OLLAMA_KEEP_ALIVE=30m"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
+EOF
+}
+
+render_server_plist() {
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>$VENV/bin/achilles</string><string>serve</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ACHILLES_HOME</key><string>$ACHILLES_HOME</string>
+    <key>PATH</key><string>$VENV/bin:$ACHILLES_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>WorkingDirectory</key><string>$ACHILLES_HOME</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$ACHILLES_HOME/logs/achilles.log</string>
+  <key>StandardErrorPath</key><string>$ACHILLES_HOME/logs/achilles.err.log</string>
+</dict>
+</plist>
+EOF
+}
+
+render_server_unit() {
+  cat <<EOF
+[Unit]
+Description=Achilles local assistant
+After=network-online.target
+
+[Service]
+WorkingDirectory=$ACHILLES_HOME
+Environment=ACHILLES_HOME=$ACHILLES_HOME
+Environment=PATH=$VENV/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=$VENV/bin/achilles serve
+Restart=always
+RestartSec=3
+StandardOutput=append:$ACHILLES_HOME/logs/achilles.log
+StandardError=append:$ACHILLES_HOME/logs/achilles.err.log
+
+[Install]
+WantedBy=default.target
+EOF
+}
+
+if [ -n "$RENDER" ]; then
+  case "$RENDER" in
+    ollama-plist) render_ollama_plist ;;
+    ollama-dropin) render_ollama_dropin ;;
+    server-plist) render_server_plist ;;
+    server-unit) render_server_unit ;;
+    *) die "unknown service definition: $RENDER" ;;
+  esac
+  exit 0
+fi
 
 if [ "$PASSPHRASE_FLAG" = "1" ]; then
   warn "--passphrase is saved in your shell history; next time set ACHILLES_PASSPHRASE or use the prompt"
@@ -198,40 +297,13 @@ if [ "$SKIP_OLLAMA" = "0" ]; then
   if [ "$OS" = "Darwin" ]; then
     PLIST="$HOME/Library/LaunchAgents/dev.achilles.ollama.plist"
     mkdir -p "$HOME/Library/LaunchAgents"
-    cat >"$PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>dev.achilles.ollama</string>
-  <key>ProgramArguments</key>
-  <array><string>$OLLAMA_BIN</string><string>serve</string></array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>OLLAMA_CONTEXT_LENGTH</key><string>16384</string>
-    <key>OLLAMA_KEEP_ALIVE</key><string>30m</string>
-    <key>OLLAMA_FLASH_ATTENTION</key><string>1</string>
-    <key>OLLAMA_KV_CACHE_TYPE</key><string>q8_0</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$ACHILLES_HOME/logs/ollama.log</string>
-  <key>StandardErrorPath</key><string>$ACHILLES_HOME/logs/ollama.err.log</string>
-</dict>
-</plist>
-EOF
+    render_ollama_plist >"$PLIST"
     launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
   else
     if command -v systemctl >/dev/null 2>&1; then
       sudo mkdir -p /etc/systemd/system/ollama.service.d
-      sudo tee /etc/systemd/system/ollama.service.d/achilles.conf >/dev/null <<EOF
-[Service]
-Environment="OLLAMA_CONTEXT_LENGTH=16384"
-Environment="OLLAMA_KEEP_ALIVE=30m"
-Environment="OLLAMA_FLASH_ATTENTION=1"
-Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
-EOF
+      render_ollama_dropin | sudo tee /etc/systemd/system/ollama.service.d/achilles.conf >/dev/null
       sudo systemctl daemon-reload
       sudo systemctl enable --now ollama
       sudo systemctl restart ollama
@@ -322,7 +394,6 @@ else
   warn "no requirements.lock in $WHEELS; dependencies are not pinned"
 fi
 
-VENV="$ACHILLES_HOME/venv"
 if [ ! -x "$VENV/bin/python" ]; then
   log "Creating the Python environment"
   uv venv --python 3.12 "$VENV"
@@ -341,7 +412,6 @@ if [ "$SKIP_OLLAMA" = "0" ]; then
 fi
 
 if [ "$OS" = "Darwin" ]; then
-  LABEL="dev.achilles.server"
   PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 else
   UNIT_DIR="$HOME/.config/systemd/user"
@@ -352,50 +422,13 @@ if [ "$NO_SERVICE" = "0" ]; then
   log "Registering the Achilles service"
   if [ "$OS" = "Darwin" ]; then
     mkdir -p "$HOME/Library/LaunchAgents"
-    cat >"$PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key>
-  <array><string>$VENV/bin/achilles</string><string>serve</string></array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>ACHILLES_HOME</key><string>$ACHILLES_HOME</string>
-    <key>PATH</key><string>$VENV/bin:$ACHILLES_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-  </dict>
-  <key>WorkingDirectory</key><string>$ACHILLES_HOME</string>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$ACHILLES_HOME/logs/achilles.log</string>
-  <key>StandardErrorPath</key><string>$ACHILLES_HOME/logs/achilles.err.log</string>
-</dict>
-</plist>
-EOF
+    render_server_plist >"$PLIST"
     launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
   else
     mkdir -p "$UNIT_DIR"
-    cat >"$UNIT" <<EOF
-[Unit]
-Description=Achilles local assistant
-After=network-online.target
-
-[Service]
-WorkingDirectory=$ACHILLES_HOME
-Environment=ACHILLES_HOME=$ACHILLES_HOME
-Environment=PATH=$VENV/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=$VENV/bin/achilles serve
-Restart=on-failure
-RestartSec=3
-StandardOutput=append:$ACHILLES_HOME/logs/achilles.log
-StandardError=append:$ACHILLES_HOME/logs/achilles.err.log
-
-[Install]
-WantedBy=default.target
-EOF
+    render_server_unit >"$UNIT"
     systemctl --user daemon-reload || warn "systemctl --user is unavailable"
     systemctl --user enable --now achilles || warn "could not start the user service"
     loginctl enable-linger "$USER" >/dev/null 2>&1 || true
