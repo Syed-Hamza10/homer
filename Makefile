@@ -23,11 +23,11 @@ fmt:
 	uv run ruff format .
 	uv run ruff check --fix .
 
-build:
+build: manifest
 	cd dashboard && pnpm install --frozen-lockfile && pnpm build
 
 manifest:
-	cp models/manifest.json packages/core/achilles_core/models/manifest.json
+	mkdir -p packages/core/achilles_core/models && cp models/manifest.json packages/core/achilles_core/models/manifest.json
 
 eval-smoke:
 	uv run achilles-eval --runs 3 $(ARGS)

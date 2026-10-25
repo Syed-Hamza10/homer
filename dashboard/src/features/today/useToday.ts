@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { getJson, postJson } from "@/lib/api"
+import { approvalsKey } from "@/features/approvals/useApprovals"
+import type { Approval } from "@/features/approvals/types"
 import type { Brief, Today } from "./types"
 
 export const todayKey = ["today"]
@@ -28,4 +30,16 @@ export function useRunBrief() {
 
 export function useRunDigest() {
   return useGenerate("/api/today/digest")
+}
+
+export function useSendFollowUp() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) =>
+      postJson<Approval>(`/api/followups/${id}/send`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: todayKey })
+      await queryClient.invalidateQueries({ queryKey: approvalsKey })
+    },
+  })
 }

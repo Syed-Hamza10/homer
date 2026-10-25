@@ -108,6 +108,20 @@ def test_draft_send_and_history(client: TestClient) -> None:
     assert "history" not in empty
 
 
+def test_expired_history_returns_404_for_old_cursors(client: TestClient) -> None:
+    old = client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]
+    client.post(f"{GMAIL}/messages/msg_001/modify", json={"addLabelIds": ["INBOX"]}, headers=AUTH)
+    before = client.get(f"{GMAIL}/history", params={"startHistoryId": old}, headers=AUTH)
+    assert before.status_code == 200 and before.json()["history"]
+
+    client.post("/_sim/expire-history")
+    stale = client.get(f"{GMAIL}/history", params={"startHistoryId": old}, headers=AUTH)
+    assert stale.status_code == 404
+    fresh = client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]
+    current = client.get(f"{GMAIL}/history", params={"startHistoryId": fresh}, headers=AUTH)
+    assert current.status_code == 200 and "history" not in current.json()
+
+
 def test_calendar_crud_and_free_busy(client: TestClient) -> None:
     now = datetime.now(UTC)
     monday = (now - timedelta(days=now.weekday())).replace(

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 
+import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -9,7 +10,8 @@ from achilles_core.db.models import EmailCache, FollowUp, Reminder
 from achilles_core.mcp.manager import McpManager
 from achilles_core.services import briefs, calendar, followups
 from achilles_core.services.rules import get_rules
-from achilles_core.services.scheduler import Scheduler
+from achilles_core.services.scheduler import CURSOR_KEY, Scheduler
+from achilles_core.services.store import read_setting, write_setting
 from achilles_core.services.users import first_user
 
 
@@ -79,6 +81,26 @@ def test_morning_brief_lands_on_today(logged_in: TestClient, origin: dict[str, s
     assert today["unread"] == 2
 
 
+def test_brief_emails_self_only_when_the_address_matches_the_account(
+    logged_in: TestClient, fake_google: ModuleType, origin: dict[str, str]
+) -> None:
+    rules = logged_in.get("/api/settings").json()
+    matching = {**rules, "email_to_self": True, "self_email": fake_google.ACCOUNT_EMAIL.upper()}
+    logged_in.put("/api/settings", json=matching, headers=origin)
+    assert logged_in.get("/api/health").json()["self_email"] == "ok"
+    logged_in.post("/api/today/brief", headers=origin)
+    assert fake_google.executed == [{"action": "mail_send", "payload": {"draft_id": "d1"}}]
+    assert fake_google.drafted[-1]["to"] == fake_google.ACCOUNT_EMAIL
+
+    other = {**rules, "email_to_self": True, "self_email": "someone.else@example.test"}
+    logged_in.put("/api/settings", json=other, headers=origin)
+    assert logged_in.get("/api/health").json()["self_email"] == "mismatch"
+    drafts_before = len(fake_google.drafted)
+    logged_in.post("/api/today/digest", headers=origin)
+    assert len(fake_google.executed) == 1
+    assert len(fake_google.drafted) == drafts_before
+
+
 def test_draft_reply(
     logged_in: TestClient, fake_google: ModuleType, origin: dict[str, str]
 ) -> None:
@@ -110,15 +132,38 @@ async def test_followup_drafts_after_due(
         user = first_user(session)
         rules = get_rules(session, user.id)
         followup = session.get(FollowUp, created["id"])
-        result = await followups.check_followups(
-            session, user, live_mcp, rules, followup.due_at + timedelta(hours=1)
-        )
+        followup.due_at = datetime.now(UTC) - timedelta(hours=1)
+        session.add(followup)
+        session.commit()
+        result = await followups.check_followups(session, user, live_mcp, rules)
         assert result["drafted"] == 1
         session.refresh(followup)
         assert followup.status == "drafted"
         assert followup.draft_id == "d1"
     assert fake_google.drafted[-1]["to"] == "ada@example.test"
     assert fake_google.drafted[-1]["thread_id"] == "t3"
+
+    shown = logged_in.get("/api/today").json()["follow_ups"]
+    assert shown[0]["draft_id"] == "d1"
+    assert shown[0]["draft_preview"].startswith('Hi Ada,\n\nJust following up on "Proposal')
+    approval = logged_in.post(f"/api/followups/{created['id']}/send", headers=origin).json()
+    assert approval["action"] == "mail_send" and approval["status"] == "pending"
+    assert approval["payload"] == {"draft_id": "d1"}
+    assert fake_google.executed == []
+    approved = logged_in.post(f"/api/approvals/{approval['id']}/approve", headers=origin).json()
+    assert approved["status"] == "done"
+    assert fake_google.executed == [{"action": "mail_send", "payload": {"draft_id": "d1"}}]
+
+
+def test_follow_up_without_a_draft_cannot_be_sent(
+    logged_in: TestClient, origin: dict[str, str]
+) -> None:
+    logged_in.post("/api/inbox/refresh", headers=origin)
+    created = logged_in.post("/api/inbox/m3/follow-up", json={"days": 3}, headers=origin).json()
+    assert created["draft_preview"] is None
+    response = logged_in.post(f"/api/followups/{created['id']}/send", headers=origin)
+    assert response.status_code == 400
+    assert logged_in.post("/api/followups/999/send", headers=origin).status_code == 404
 
 
 async def test_followup_closes_when_reply_arrives(
@@ -147,7 +192,7 @@ async def test_scheduler_jobs_refresh_caches(
     app: FastAPI, settings, logged_in: TestClient, live_mcp: McpManager
 ) -> None:
     runtime = SimpleNamespace(manager=live_mcp)
-    scheduler = Scheduler(settings, app.state.engine, runtime)
+    scheduler = Scheduler(settings, app.state.engine, runtime, app.state.http_client)
     await scheduler.poll_mail()
     await scheduler.poll_mail()
     await scheduler.poll_calendar()
@@ -171,10 +216,78 @@ async def test_scheduler_jobs_refresh_caches(
         assert session.get(Reminder, reminder_id).status == "due"
 
 
+async def test_stale_cursor_backfills_from_a_search(
+    app: FastAPI, settings, logged_in: TestClient, fake_google: ModuleType, live_mcp: McpManager
+) -> None:
+    scheduler = Scheduler(
+        settings, app.state.engine, SimpleNamespace(manager=live_mcp), app.state.http_client
+    )
+    with Session(app.state.engine) as session:
+        user = first_user(session)
+        write_setting(session, user.id, CURSOR_KEY, "stale")
+    await scheduler.poll_mail()
+    with Session(app.state.engine) as session:
+        user = first_user(session)
+        assert read_setting(session, user.id, CURSOR_KEY) == "101"
+        cached = list(session.exec(select(EmailCache).where(EmailCache.user_id == user.id)))
+    assert {row.message_id for row in cached} == {"m1", "m2", "m3", "m4"}
+    assert len(fake_google.labeled) == 4
+
+
+async def test_daily_jobs_get_the_rest_of_the_day_as_grace(
+    app: FastAPI, settings, logged_in: TestClient
+) -> None:
+    scheduler = Scheduler(
+        settings.model_copy(update={"scheduler_enabled": True}),
+        app.state.engine,
+        app.state.runtime,
+        app.state.http_client,
+    )
+    scheduler.start()
+    try:
+        jobs = {job.id: job for job in scheduler.inner.get_jobs()}
+        assert set(jobs) == {
+            "poll_mail",
+            "poll_calendar",
+            "check_reminders",
+            "check_followups",
+            "health_check",
+            "warm_up",
+            "morning_brief",
+            "eod_digest",
+            "backup",
+        }
+        assert jobs["morning_brief"].misfire_grace_time == 16 * 3600 + 30 * 60
+        assert jobs["eod_digest"].misfire_grace_time == 6 * 3600
+        assert jobs["poll_mail"].misfire_grace_time == 3600
+        assert all(job.coalesce for job in jobs.values())
+        assert str(jobs["warm_up"].trigger.timezone) == "Europe/London"
+        assert jobs["warm_up"].trigger.fields[5].expressions[0].first == 6
+    finally:
+        scheduler.stop()
+
+
+async def test_health_job_stores_a_report_for_today(
+    app: FastAPI, logged_in: TestClient, respx_mock: respx.MockRouter
+) -> None:
+    respx_mock.get("http://127.0.0.1:11434/api/tags").respond(200, json={"models": []})
+    assert logged_in.get("/api/today").json()["health"] is None
+    scheduler = app.state.scheduler
+    await scheduler.health_check()
+    assert scheduler.health.problems == ["server search", "model"]
+    health = logged_in.get("/api/today").json()["health"]
+    assert health["ollama"] == "ok" and health["model_pulled"] == "down"
+    assert health["servers"]["search"] == "down" and health["checked_at"]
+
+
+async def test_warm_up_runs_one_small_request(app: FastAPI, logged_in: TestClient) -> None:
+    await app.state.scheduler.warm_up()
+
+
 async def test_scheduler_backup_writes_an_archive(
     app: FastAPI, settings, logged_in: TestClient
 ) -> None:
-    scheduler = Scheduler(settings, app.state.engine, app.state.runtime)
+    scheduler = Scheduler(settings, app.state.engine, app.state.runtime, app.state.http_client)
     await scheduler.backup()
     assert list((settings.achilles_home / "backups").glob("achilles-*.tar.gz"))
 

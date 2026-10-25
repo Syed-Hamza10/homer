@@ -1,13 +1,9 @@
 from typing import Literal
 
-from pydantic import BaseModel
-
-Status = Literal["ok", "down"]
+from achilles_core.services.health import HealthReport
 
 
-class HealthResponse(BaseModel):
+class HealthResponse(HealthReport):
     status: Literal["ok"]
     version: str
-    ollama: Status
     model: str
-    servers: dict[str, Status]

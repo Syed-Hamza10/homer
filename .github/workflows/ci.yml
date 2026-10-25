@@ -41,7 +41,7 @@ jobs:
       - run: uv build --all-packages --out-dir dist
       - name: Verify the wheel contains the dashboard and manifest
         run: |
-          python - <<'PY'
+          uv run python - <<'PY'
           import glob, zipfile
           wheel = glob.glob("dist/achilles_core-*.whl")[0]
           names = zipfile.ZipFile(wheel).namelist()

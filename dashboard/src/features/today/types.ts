@@ -25,6 +25,15 @@ export type FollowUp = {
   due_at: string
   status: string
   draft_id: string | null
+  draft_preview: string | null
+}
+
+export type Health = {
+  ollama: "ok" | "down"
+  model_pulled: "ok" | "down"
+  servers: Record<string, "ok" | "down">
+  self_email: "off" | "ok" | "mismatch" | "unknown"
+  checked_at: string
 }
 
 export type Today = {
@@ -36,4 +45,5 @@ export type Today = {
   follow_ups: FollowUp[]
   unread: number
   pending_approvals: number
+  health: Health | null
 }

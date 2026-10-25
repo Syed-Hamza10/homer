@@ -18,7 +18,7 @@ def make_home(tmp_path: Path) -> Path:
     return home
 
 
-def test_backup_copies_database_credentials_and_env(tmp_path: Path) -> None:
+def test_backup_leaves_secrets_out_by_default(tmp_path: Path) -> None:
     home = make_home(tmp_path)
     path = create_backup(home)
 
@@ -26,9 +26,20 @@ def test_backup_copies_database_credentials_and_env(tmp_path: Path) -> None:
     assert path.stat().st_mode & 0o777 == 0o600
     with tarfile.open(path) as archive:
         names = set(archive.getnames())
-        assert {"data/achilles.db", "credentials/google_token.json", ".env"} <= names
+        assert "data/achilles.db" in names
+        assert not names & {"credentials", "credentials/google_token.json", ".env"}
         extracted = archive.extractfile("data/achilles.db")
         assert extracted is not None
+
+
+def test_backup_includes_secrets_on_request(tmp_path: Path) -> None:
+    home = make_home(tmp_path)
+    path = create_backup(home, include_secrets=True)
+
+    assert path.stat().st_mode & 0o777 == 0o600
+    with tarfile.open(path) as archive:
+        names = set(archive.getnames())
+        assert {"data/achilles.db", "credentials/google_token.json", ".env"} <= names
 
 
 def test_prune_keeps_the_newest_backups(tmp_path: Path) -> None:

@@ -12,7 +12,9 @@ def test_dashboard_login_and_chat(unlocked: Page, prompt: str) -> None:
     page = unlocked
     page.get_by_placeholder("Message Achilles").fill(prompt)
     page.get_by_placeholder("Message Achilles").press("Enter")
-    expect(page.get_by_text(re.compile(r"^\W*PONG\W*$"))).to_be_visible(timeout=REPLY_TIMEOUT)
+    reply = page.get_by_test_id("message-assistant").last
+    expect(reply).to_have_text(re.compile(r"^\W*PONG\W*$"), timeout=REPLY_TIMEOUT)
+    expect(page.get_by_test_id("message-assistant")).to_have_count(1)
 
     status = page.get_by_text("Tokens processed locally")
     expect(status).to_have_text(

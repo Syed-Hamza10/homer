@@ -10,7 +10,7 @@ the installer end to end:
 ```sh
 make build
 uv build --all-packages --out-dir dist
-./install.sh --wheels-dir dist --dry-run --force
+bash scripts/install.sh --wheels-dir dist --dry-run --force
 ```
 
 ## Running the tests

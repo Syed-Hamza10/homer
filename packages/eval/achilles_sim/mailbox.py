@@ -24,6 +24,7 @@ class Mailbox:
     def __init__(self, seed: dict[str, Any], now: datetime) -> None:
         self.owner: str = seed["owner"]["email"]
         self.history_id: int = seed["history_id"]
+        self.history_floor: int = 0
         self.history: list[dict[str, Any]] = []
         self.labels: dict[str, dict[str, Any]] = {
             name: {"id": name, "name": name, "type": "system"} for name in SYSTEM_LABELS
@@ -198,4 +199,11 @@ class Mailbox:
         return self.render(message, "minimal")
 
     def history_since(self, start: str) -> list[dict[str, Any]]:
+        if not self.history_floor <= int(start) <= self.history_id:
+            raise ApiError(404, "Requested entity was not found.")
         return [record for record in self.history if int(record["id"]) > int(start)]
+
+    def expire_history(self) -> None:
+        """Forgets every history record, as Gmail does after about a week."""
+        self.history_floor = self.history_id
+        self.history = []

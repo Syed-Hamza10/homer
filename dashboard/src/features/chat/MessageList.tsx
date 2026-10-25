@@ -10,13 +10,22 @@ type Props = {
   activity: ActivityItem[]
 }
 
+function draftStart(messages: Message[], user: string): number {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message.role === "user" && message.content === user) return index
+  }
+  return -1
+}
+
 export function MessageList({ messages, draft, activity }: Props) {
   const end = useRef<HTMLDivElement>(null)
-  const last = messages.at(-1)
-  const showDraftUser =
-    draft && !(last?.role === "user" && last.content === draft.user)
+  const start = draft ? draftStart(messages, draft.user) : -1
+  const stored = draft && start >= 0 ? messages.slice(0, start + 1) : messages
+  const last = stored.at(-1)
+  const showDraftUser = draft && start < 0
   const answered = !draft && activity.length > 0 && last?.role === "assistant"
-  const shown = answered ? messages.slice(0, -1) : messages
+  const shown = answered ? stored.slice(0, -1) : stored
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })
