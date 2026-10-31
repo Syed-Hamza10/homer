@@ -56,6 +56,11 @@ REPLY_PROMPT = (
 )
 SEND_FOLLOW_UP = "Send that draft now with mail_send."
 ACCOUNT_EMAIL = "jordan.reyes@example.test"
+AMBIGUOUS_PROMPT = "Email Sara and tell her the invoice is approved"
+SARAS = {
+    "Sara Whitfield": "sara.whitfield@example.test",
+    "Sara Mbeki": "sara.mbeki@example.test",
+}
 INVOICE_MESSAGE = "aed89caf9a7af277"
 PROPOSAL_MESSAGE = "81b178b5ebec82bd"
 REVIEW_DECK_MESSAGE = "5cc2f1f78a46377d"
@@ -299,6 +304,27 @@ def test_send_carries_the_draft_id_that_mail_draft_returned(
         assert "draft_id_substituted" in (stack.home / "server.log").read_text()
     print("draft handoff:", {"returned": returned, "sent_with": sent_draft_ids(frames)})
     client.post(f"/api/approvals/{requested['approval_id']}/reject").raise_for_status()
+
+
+def test_ambiguous_contact_becomes_a_question(
+    stack: Stack, client: httpx.Client, chat: Chat
+) -> None:
+    sent_before = stack.sent_count()
+    frames = chat({"message": AMBIGUOUS_PROMPT})
+    assert frames[-1][0] == "done", frames
+    said, requested = answer(frames), of(frames, "approval_required")
+    print(
+        "ambiguous contact:",
+        {"tools": tool_calls(frames), "approvals": len(requested), "said": said},
+    )
+    if requested:
+        preview = requested[0]["preview"]
+        named = [name for name in SARAS if name in AMBIGUOUS_PROMPT]
+        assert any(name in preview or SARAS[name] in preview for name in named), preview
+        client.post(f"/api/approvals/{requested[0]['approval_id']}/reject").raise_for_status()
+    else:
+        assert "which" in said.lower() and "sara" in said.lower(), said
+    assert stack.sent_count() == sent_before
 
 
 def set_self_email(client: httpx.Client, address: str, enabled: bool = True) -> None:

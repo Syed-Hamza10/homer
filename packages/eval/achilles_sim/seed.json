@@ -11,7 +11,9 @@
     {"id": "c2", "given": "Tomas", "family": "Keller", "email": "tomas.keller@example.test"},
     {"id": "c3", "given": "Priya", "family": "Natarajan", "email": "priya.natarajan@example.test"},
     {"id": "c4", "given": "Samuel", "family": "Okafor", "email": "samuel.okafor@example.test"},
-    {"id": "c5", "given": "Elena", "family": "Marchetti", "email": "elena.marchetti@example.test"}
+    {"id": "c5", "given": "Elena", "family": "Marchetti", "email": "elena.marchetti@example.test"},
+    {"id": "c6", "given": "Sara", "family": "Whitfield", "email": "sara.whitfield@example.test"},
+    {"id": "c7", "given": "Sara", "family": "Mbeki", "email": "sara.mbeki@example.test"}
   ],
   "messages": [
     {

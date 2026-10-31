@@ -65,3 +65,21 @@ def test_privacy_page_lists_hosts(unlocked: Page, server: str) -> None:
         re.compile(r"Tokens processed locally: [\d,]+ · Spent on inference: \$0\.00")
     )
     expect(page.get_by_role("cell", name="127.0.0.1:11434")).to_be_visible()
+
+
+def test_settings_page_saves_the_timezone(unlocked: Page, server: str) -> None:
+    page = unlocked
+    page.get_by_role("link", name="Settings").click()
+    expect(page).to_have_url(f"{server}/settings")
+    field = page.get_by_placeholder("Europe/London")
+    expect(field).to_have_value(re.compile(r"\S"))
+    original = field.input_value()
+    field.fill("Europe/Paris")
+    page.get_by_role("button", name="Save").click()
+    expect(page.get_by_text("Saved.")).to_be_visible()
+    page.reload()
+    field = page.get_by_placeholder("Europe/London")
+    expect(field).to_have_value("Europe/Paris")
+    field.fill(original)
+    page.get_by_role("button", name="Save").click()
+    expect(page.get_by_text("Saved.")).to_be_visible()

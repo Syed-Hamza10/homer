@@ -44,7 +44,7 @@ def test_seed_counts(client: TestClient) -> None:
     counts = client.get("/_sim/state").json()
     assert counts["messages"] == 12
     assert counts["events"] == 6
-    assert counts["contacts"] == 5
+    assert counts["contacts"] == 7
 
 
 def test_search_and_full_message(client: TestClient) -> None:
