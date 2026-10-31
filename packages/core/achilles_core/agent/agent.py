@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -18,9 +18,18 @@ class Deps:
     session: Session
 
 
+def describe(day: datetime) -> str:
+    return day.strftime("%A %Y-%m-%d")
+
+
 def render_prompt(deps: Deps, now: datetime) -> str:
     return TEMPLATE.format(
-        user_name=deps.user_name, timezone=deps.timezone, now=now.strftime("%A %d %B %Y, %H:%M")
+        user_name=deps.user_name,
+        timezone=deps.timezone,
+        now=now.strftime("%A %d %B %Y, %H:%M"),
+        today=describe(now),
+        tomorrow=describe(now + timedelta(days=1)),
+        yesterday=describe(now - timedelta(days=1)),
     )
 
 
