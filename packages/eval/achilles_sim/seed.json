@@ -15,84 +15,84 @@
   ],
   "messages": [
     {
-      "id": "msg_001", "thread_id": "thr_001", "days_ago": 6, "hour": 9,
+      "id": "5995acc9cb4b7eee", "thread_id": "dbe626c57687283a", "days_ago": 6, "hour": 9,
       "from": "Maya Lindqvist <maya.lindqvist@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Kickoff for the Northwind website redesign",
       "labels": ["INBOX", "Label_1"],
       "body": "Hi Jordan,\n\nThanks for the call yesterday. Attached is the brief for the redesign. Can we lock the kickoff for next week?\n\nBest,\nMaya"
     },
     {
-      "id": "msg_002", "thread_id": "thr_001", "days_ago": 6, "hour": 14,
+      "id": "c1c5afb09a9eb792", "thread_id": "dbe626c57687283a", "days_ago": 6, "hour": 14,
       "from": "jordan.reyes@example.test", "to": "Maya Lindqvist <maya.lindqvist@example.test>",
       "subject": "Re: Kickoff for the Northwind website redesign",
       "labels": ["SENT", "Label_1"],
       "body": "Hi Maya,\n\nWorks for me. I will send a few slots tomorrow.\n\nJordan"
     },
     {
-      "id": "msg_003", "thread_id": "thr_001", "days_ago": 1, "hour": 10,
+      "id": "518115189b45f53b", "thread_id": "dbe626c57687283a", "days_ago": 1, "hour": 10,
       "from": "Maya Lindqvist <maya.lindqvist@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Re: Kickoff for the Northwind website redesign",
       "labels": ["INBOX", "UNREAD", "Label_1"],
       "html": "<html><body><p>Hi Jordan,</p><p>Any update on the <b>kickoff slots</b>? Thursday or Friday afternoon would suit us.</p><p>Maya</p></body></html>"
     },
     {
-      "id": "msg_004", "thread_id": "thr_002", "days_ago": 5, "hour": 11,
+      "id": "aed89caf9a7af277", "thread_id": "8273f4fcf6b11f03", "days_ago": 5, "hour": 11,
       "from": "Tomas Keller <tomas.keller@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Invoice 2026-041 for September",
       "labels": ["INBOX", "Label_2"],
       "body": "Hello Jordan,\n\nPlease find invoice 2026-041 for the September retainer. Payment terms are 30 days.\n\nRegards,\nTomas"
     },
     {
-      "id": "msg_005", "thread_id": "thr_002", "days_ago": 2, "hour": 16,
+      "id": "9f7cc84df6434ef3", "thread_id": "8273f4fcf6b11f03", "days_ago": 2, "hour": 16,
       "from": "Tomas Keller <tomas.keller@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Re: Invoice 2026-041 for September",
       "labels": ["INBOX", "UNREAD", "Label_2"],
       "body": "Hello Jordan,\n\nA gentle reminder about invoice 2026-041. Let me know if anything is missing.\n\nTomas"
     },
     {
-      "id": "msg_006", "thread_id": "thr_003", "days_ago": 4, "hour": 8,
+      "id": "620075251098d19d", "thread_id": "62d7eea155313e9f", "days_ago": 4, "hour": 8,
       "from": "Priya Natarajan <priya.natarajan@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Weekend support for the launch",
       "labels": ["INBOX", "Label_1"],
       "body": "Hi Jordan,\n\nOur launch is on Saturday. Does your service guide cover weekend support, and what are the response times?\n\nThanks,\nPriya"
     },
     {
-      "id": "msg_007", "thread_id": "thr_003", "days_ago": 4, "hour": 12,
+      "id": "3d3ed6a8f26810fc", "thread_id": "62d7eea155313e9f", "days_ago": 4, "hour": 12,
       "from": "jordan.reyes@example.test", "to": "Priya Natarajan <priya.natarajan@example.test>",
       "subject": "Re: Weekend support for the launch",
       "labels": ["SENT", "Label_1"],
       "body": "Hi Priya,\n\nYes, weekend support is included for launches. I will send the details.\n\nJordan"
     },
     {
-      "id": "msg_008", "thread_id": "thr_003", "days_ago": 3, "hour": 9,
+      "id": "7e7ab20a02ed69c9", "thread_id": "62d7eea155313e9f", "days_ago": 3, "hour": 9,
       "from": "Priya Natarajan <priya.natarajan@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Re: Weekend support for the launch",
       "labels": ["INBOX", "Label_1", "Label_3"],
       "body": "Great, thank you. Looking forward to the details.\n\nPriya"
     },
     {
-      "id": "msg_009", "thread_id": "thr_004", "days_ago": 2, "hour": 7,
+      "id": "81b178b5ebec82bd", "thread_id": "5378fcbd5bd7dbed", "days_ago": 2, "hour": 7,
       "from": "Samuel Okafor <samuel.okafor@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Partnership proposal",
       "labels": ["INBOX", "UNREAD"],
       "html": "<html><head><style>p{color:red}</style></head><body><h1>Proposal</h1><p>Hi Jordan, I run a small agency and would like to explore a partnership. Could we talk this week?</p><script>alert(1)</script><p>Samuel</p></body></html>"
     },
     {
-      "id": "msg_010", "thread_id": "thr_004", "days_ago": 1, "hour": 15,
+      "id": "4c1968b0e4c06eb3", "thread_id": "5378fcbd5bd7dbed", "days_ago": 1, "hour": 15,
       "from": "jordan.reyes@example.test", "to": "Samuel Okafor <samuel.okafor@example.test>",
       "subject": "Re: Partnership proposal",
       "labels": ["SENT"],
       "body": "Hi Samuel,\n\nHappy to talk. Does Wednesday work?\n\nJordan"
     },
     {
-      "id": "msg_011", "thread_id": "thr_005", "days_ago": 0, "hour": 8,
+      "id": "5cc2f1f78a46377d", "thread_id": "f9623318d52f5445", "days_ago": 0, "hour": 8,
       "from": "Elena Marchetti <elena.marchetti@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Quarterly review deck",
       "labels": ["INBOX", "UNREAD", "IMPORTANT"],
       "body": "Hi Jordan,\n\nThe quarterly review deck is ready for your comments. Could you review it before Friday?\n\nElena"
     },
     {
-      "id": "msg_012", "thread_id": "thr_005", "days_ago": 0, "hour": 9,
+      "id": "902e8975b84bfaa7", "thread_id": "f9623318d52f5445", "days_ago": 0, "hour": 9,
       "from": "Elena Marchetti <elena.marchetti@example.test>", "to": "jordan.reyes@example.test",
       "subject": "Re: Quarterly review deck",
       "labels": ["INBOX", "UNREAD", "IMPORTANT"],

@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.models import Model
+from structlog.testing import capture_logs
 
 from achilles_core.agent.toolsets import TOOLSETS
 
@@ -82,6 +83,84 @@ class TestApprovalFlow:
         for tools in seen_tools:
             assert "execute" not in tools and "health" not in tools
             assert set(tools) == set(TOOLSETS["mail"]) & FAKE_TOOLS
+
+
+DRAFT_ARGS = {"to": "ada@example.test", "subject": "Re: Invoice 42", "body": "Paid today."}
+HISTORY_DRAFT_ID = "r-8412837461928374612"
+
+
+class TestDraftIdHandoff:
+    @pytest.fixture
+    def model(self, scripted: Scripted, steps: list[Any]) -> Model:
+        return scripted("mail", steps, [])
+
+    @pytest.mark.parametrize(
+        "steps",
+        [[[("mail_draft", DRAFT_ARGS)], [("mail_send", {"draft_id": "1"})], "Asked to send."]],
+    )
+    def test_guessed_id_is_replaced_by_the_only_draft_of_the_run(
+        self, logged_in: TestClient, post_chat: PostChat
+    ) -> None:
+        with capture_logs() as logs:
+            frames = post_chat({"message": "Reply to Ada that the invoice is paid and send it"})
+        guessed = [c["args"] for c in of(frames, "tool_call") if c["name"] == "mail_send"]
+        assert guessed == [{"draft_id": "1"}]
+        requested = of(frames, "approval_required")
+        assert [a["preview"] for a in requested] == ["Send draft d1"]
+        assert logged_in.get("/api/approvals").json()[0]["payload"] == {"draft_id": "d1"}
+        assert {"event": "draft_id_substituted", "given": "1", "draft_id": "d1"}.items() <= next(
+            entry for entry in logs if entry["event"] == "draft_id_substituted"
+        ).items()
+
+    @pytest.mark.parametrize(
+        "steps",
+        [[[("mail_draft", DRAFT_ARGS)], [("mail_send", {"draft_id": "d1"})], "Asked to send."]],
+    )
+    def test_real_id_passes_unchanged(self, logged_in: TestClient, post_chat: PostChat) -> None:
+        with capture_logs() as logs:
+            frames = post_chat({"message": "Reply to Ada and send it"})
+        assert [a["preview"] for a in of(frames, "approval_required")] == ["Send draft d1"]
+        assert not [entry for entry in logs if entry["event"] == "draft_id_substituted"]
+
+    @pytest.mark.parametrize(
+        "steps",
+        [
+            [
+                [("mail_draft", DRAFT_ARGS), ("mail_draft", {**DRAFT_ARGS, "subject": "Lunch"})],
+                [("mail_send", {"draft_id": "1"})],
+                "Which one?",
+            ]
+        ],
+    )
+    def test_guess_among_several_drafts_is_refused_without_calling_the_server(
+        self, logged_in: TestClient, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "Draft two replies and send the first"})
+        assert of(frames, "approval_required") == []
+        sent = next(r for r in of(frames, "tool_result") if r["name"] == "mail_send")
+        assert '"error": "unknown_draft_id"' in sent["summary"]
+        assert '"known_draft_ids": ["d1", "d2"]' in sent["summary"]
+        assert logged_in.get("/api/approvals").json() == []
+
+    @pytest.mark.parametrize(
+        "steps",
+        [
+            [
+                f"Draft {HISTORY_DRAFT_ID} is ready. Shall I send it?",
+                [("mail_send", {"draft_id": "1"})],
+                "Asked to send.",
+            ]
+        ],
+    )
+    def test_draft_mentioned_earlier_in_the_conversation_is_known(
+        self, logged_in: TestClient, post_chat: PostChat
+    ) -> None:
+        first = post_chat({"message": "Draft a reply to Ada"})
+        conversation_id = first[0][1]["conversation_id"]
+        frames = post_chat({"conversation_id": conversation_id, "message": "Yes, send it"})
+        assert [a["preview"] for a in of(frames, "approval_required")] == [
+            f"Send draft {HISTORY_DRAFT_ID}"
+        ]
 
 
 class TestTier2WithoutUntrustedContent:

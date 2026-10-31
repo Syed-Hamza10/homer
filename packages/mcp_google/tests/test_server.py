@@ -16,6 +16,12 @@ from achilles_net import BlockedHostError
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 Spawn = Callable[..., Client]
+KICKOFF_THREAD = "dbe626c57687283a"
+KICKOFF_MESSAGES = ["5995acc9cb4b7eee", "c1c5afb09a9eb792", "518115189b45f53b"]
+INVOICE_MESSAGE = "aed89caf9a7af277"
+INVOICE_REMINDER = "9f7cc84df6434ef3"
+PROPOSAL_MESSAGE = "81b178b5ebec82bd"
+REVIEW_DECK_MESSAGE = "5cc2f1f78a46377d"
 
 
 async def call(mcp: Client, name: str, **arguments: Any) -> dict[str, Any]:
@@ -51,10 +57,10 @@ async def test_mail_search_wraps_bodies(mcp: Client, sim: httpx.Client) -> None:
     assert "kickoff slots" in newest["body"] and "<b>" not in newest["body"]
     assert "Clients" in newest["labels"]
     assert newest["metadata"]["label_ids"] and newest["metadata"]["history_id"]
-    one = await call(mcp, "mail_get", message_id="msg_009")
+    one = await call(mcp, "mail_get", message_id=PROPOSAL_MESSAGE)
     assert "alert(1)" not in one["body"] and "Proposal" in one["body"]
-    thread = await call(mcp, "mail_thread", thread_id="thr_001")
-    assert [m["id"] for m in thread["messages"]] == ["msg_001", "msg_002", "msg_003"]
+    thread = await call(mcp, "mail_thread", thread_id=KICKOFF_THREAD)
+    assert [m["id"] for m in thread["messages"]] == KICKOFF_MESSAGES
 
 
 async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: httpx.Client) -> None:
@@ -66,9 +72,9 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
         to="maya.lindqvist@example.test",
         subject="Re: Kickoff for the Northwind website redesign",
         body="Thursday 14:00 works for us.",
-        thread_id="thr_001",
+        thread_id=KICKOFF_THREAD,
     )
-    assert draft["draft_id"] and draft["thread_id"] == "thr_001"
+    assert draft["draft_id"] and draft["thread_id"] == KICKOFF_THREAD
     pending = await call(mcp, "mail_send", draft_id=draft["draft_id"])
     assert pending["approval_required"] is True
     assert pending["action"] == "mail_send"
@@ -77,7 +83,7 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
     assert "Thursday 14:00" in pending["preview"]
     assert sim.get("/_sim/state").json()["sent"] == before["sent"]
     done = await call(mcp, "execute", action="mail_send", payload=pending["payload"])
-    assert done["sent"] is True and done["thread_id"] == "thr_001"
+    assert done["sent"] is True and done["thread_id"] == KICKOFF_THREAD
     after = sim.get("/_sim/state").json()
     assert after["sent"] == before["sent"] + 1 and after["drafts"] == 0
     changes = await call(mcp, "mail_changes_since", cursor=cursor)
@@ -86,11 +92,27 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
     assert (await call(mcp, "mail_changes_since", cursor=changes["cursor"]))["changed_ids"] == []
 
 
+async def test_send_with_unknown_draft_id_lists_recent_drafts(
+    mcp: Client, sim: httpx.Client
+) -> None:
+    ids = []
+    for to, subject in [("a@example.test", "First"), ("b@example.test", "Second")]:
+        ids.append((await call(mcp, "mail_draft", to=to, subject=subject, body="x"))["draft_id"])
+    missing = await call(mcp, "mail_send", draft_id="1")
+    assert missing["error"] == "draft_not_found" and missing["draft_id"] == "1"
+    assert missing["drafts"] == [
+        {"draft_id": ids[1], "subject": "Second", "to": "b@example.test"},
+        {"draft_id": ids[0], "subject": "First", "to": "a@example.test"},
+    ]
+    assert sim.get("/_sim/state").json()["sent"] == 3
+    assert (await call(mcp, "mail_send", draft_id=ids[0]))["approval_required"] is True
+
+
 async def test_stale_cursor_returns_a_fresh_cursor_and_no_gap(
     mcp: Client, sim: httpx.Client
 ) -> None:
     old = (await call(mcp, "mail_changes_since"))["cursor"]
-    await call(mcp, "mail_label", message_id="msg_004", add=["Later"], remove=[])
+    await call(mcp, "mail_label", message_id=INVOICE_MESSAGE, add=["Later"], remove=[])
     sim.post("/_sim/expire-history").raise_for_status()
     stale = await call(mcp, "mail_changes_since", cursor=old)
     assert stale["stale"] is True and stale["changed_ids"] == []
@@ -100,9 +122,11 @@ async def test_stale_cursor_returns_a_fresh_cursor_and_no_gap(
 
 
 async def test_label_and_archive(mcp: Client, sim: httpx.Client) -> None:
-    labelled = await call(mcp, "mail_label", message_id="msg_011", add=["Urgent"], remove=[])
+    labelled = await call(
+        mcp, "mail_label", message_id=REVIEW_DECK_MESSAGE, add=["Urgent"], remove=[]
+    )
     assert "Urgent" in labelled["labels"]
-    archived = await call(mcp, "mail_archive", message_id="msg_011")
+    archived = await call(mcp, "mail_archive", message_id=REVIEW_DECK_MESSAGE)
     assert "INBOX" not in archived["labels"] and "Urgent" in archived["labels"]
 
 
@@ -112,10 +136,12 @@ async def test_execute_runs_approved_label_and_archive(mcp: Client, sim: httpx.C
         mcp,
         "execute",
         action="mail_label",
-        payload={"message_id": "msg_005", "add": ["Follow up"], "remove": ["Invoices"]},
+        payload={"message_id": INVOICE_REMINDER, "add": ["Follow up"], "remove": ["Invoices"]},
     )
     assert "Follow up" in labelled["labels"] and "Invoices" not in labelled["labels"]
-    archived = await call(mcp, "execute", action="mail_archive", payload={"message_id": "msg_005"})
+    archived = await call(
+        mcp, "execute", action="mail_archive", payload={"message_id": INVOICE_REMINDER}
+    )
     assert "INBOX" not in archived["labels"] and "Follow up" in archived["labels"]
     assert sim.get("/_sim/state").json()["labels"] == labels_before
 

@@ -21,7 +21,12 @@ from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
 from achilles_core.agent.agent import Deps
-from achilles_core.agent.gate import APPROVAL_METADATA_KEY, ApprovalGate, RunState
+from achilles_core.agent.gate import (
+    APPROVAL_METADATA_KEY,
+    ApprovalGate,
+    RunState,
+    mentioned_draft_ids,
+)
 from achilles_core.agent.router import Command, classify, parse_command
 from achilles_core.agent.runtime import Runtime
 from achilles_core.db.models import Conversation, Message, TokenCounter, User, utcnow
@@ -165,7 +170,7 @@ async def run_agent(
     deps: Deps,
     outcome: Outcome,
 ) -> AsyncIterator[ChatEvent]:
-    state = RunState()
+    state = RunState(draft_ids=mentioned_draft_ids(history, prompt))
     gate = ApprovalGate(wrapped=runtime.toolsets[toolset_name], state=state)
     async with runtime.agent.run_stream_events(
         prompt, deps=deps, message_history=history, toolsets=[gate]

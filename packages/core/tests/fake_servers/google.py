@@ -105,7 +105,7 @@ def mail_changes_since(cursor: str | None = None) -> dict[str, Any]:
 def mail_draft(to: str, subject: str, body: str, thread_id: str | None = None) -> dict[str, Any]:
     """Creates a draft and returns its draft_id. Nothing is sent."""
     drafted.append({"to": to, "subject": subject, "body": body, "thread_id": thread_id})
-    return {"draft_id": "d1", "to": to, "subject": subject}
+    return {"draft_id": f"d{len(drafted)}", "to": to, "subject": subject}
 
 
 @server.tool

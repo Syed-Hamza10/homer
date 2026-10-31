@@ -100,9 +100,18 @@ def create_draft(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
     return sim.mailbox.create_draft(message["raw"], message.get("threadId"), sim.now)
 
 
+@router.get("/drafts")
+def list_drafts(sim: Sim, maxResults: int = 100) -> dict[str, Any]:
+    drafts = sim.mailbox.list_drafts()[:maxResults]
+    response: dict[str, Any] = {"resultSizeEstimate": len(drafts)}
+    if drafts:
+        response["drafts"] = drafts
+    return response
+
+
 @router.get("/drafts/{draft_id}")
-def get_draft(sim: Sim, draft_id: str) -> dict[str, Any]:
-    return sim.mailbox.draft(draft_id)
+def get_draft(sim: Sim, draft_id: str, format: str = "full") -> dict[str, Any]:
+    return sim.mailbox.draft(draft_id, format)
 
 
 @router.post("/drafts/send")

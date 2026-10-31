@@ -1,4 +1,5 @@
 import base64
+import secrets
 from datetime import UTC, datetime, timedelta
 from email import message_from_bytes, policy
 from email.utils import format_datetime, parsedate_to_datetime
@@ -10,6 +11,21 @@ from achilles_sim.query import matches
 SYSTEM_LABELS = ["INBOX", "SENT", "DRAFT", "UNREAD", "IMPORTANT", "STARRED", "SPAM", "TRASH"]
 HEADER_NAMES = ["From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"]
 SNIPPET_LENGTH = 100
+DRAFT_ID_DIGITS = 19
+
+
+def gmail_id() -> str:
+    """16 lowercase hex characters, the shape of Gmail message and thread ids."""
+    return secrets.token_hex(8)
+
+
+def gmail_draft_id() -> str:
+    return f"r-{secrets.randbelow(10**DRAFT_ID_DIGITS):0{DRAFT_ID_DIGITS}d}"
+
+
+def label_number(label_id: str) -> int:
+    _, _, number = label_id.partition("_")
+    return int(number) if number.isdigit() else 0
 
 
 def b64url(text: str) -> str:
@@ -33,7 +49,7 @@ class Mailbox:
             self.labels[label["id"]] = {**label, "type": "user"}
         self.messages: dict[str, dict[str, Any]] = {}
         self.drafts: dict[str, str] = {}
-        self.counter = 0
+        self.label_counter = max((label_number(label["id"]) for label in seed["labels"]), default=0)
         for item in seed["messages"]:
             self.messages[item["id"]] = self._seeded(item, now)
 
@@ -79,10 +95,6 @@ class Mailbox:
             "mimeType": mime_type,
             "body": body,
         }
-
-    def _next_id(self, prefix: str) -> str:
-        self.counter += 1
-        return f"{prefix}_{self.counter:04d}"
 
     def _bump(self, record: dict[str, Any]) -> None:
         self.history_id += 1
@@ -135,7 +147,8 @@ class Mailbox:
         return message
 
     def create_label(self, name: str) -> dict[str, Any]:
-        label = {"id": self._next_id("Label"), "name": name, "type": "user"}
+        self.label_counter += 1
+        label = {"id": f"Label_{self.label_counter}", "name": name, "type": "user"}
         self.labels[label["id"]] = label
         return label
 
@@ -150,10 +163,10 @@ class Mailbox:
         mime_type = part.get_content_type() if part is not None else "text/plain"
         if sent_at is None:
             sent_at = parsedate_to_datetime(headers["Date"])
-        message_id = self._next_id("msg")
+        message_id = gmail_id()
         message = self._stored(
             message_id,
-            thread_id or self._next_id("thr"),
+            thread_id or gmail_id(),
             labels,
             headers,
             mime_type,
@@ -180,14 +193,21 @@ class Mailbox:
 
     def create_draft(self, raw: str, thread_id: str | None, now: datetime) -> dict[str, Any]:
         message = self._from_raw(raw, thread_id, ["DRAFT"], now)
-        draft_id = self._next_id("r")
+        draft_id = gmail_draft_id()
         self.drafts[draft_id] = message["id"]
         return {"id": draft_id, "message": self.render(message, "minimal")}
 
-    def draft(self, draft_id: str) -> dict[str, Any]:
+    def draft(self, draft_id: str, fmt: str = "full") -> dict[str, Any]:
         if draft_id not in self.drafts:
             raise ApiError(404, "Requested entity was not found.")
-        return {"id": draft_id, "message": self.render(self.get(self.drafts[draft_id]))}
+        return {"id": draft_id, "message": self.render(self.get(self.drafts[draft_id]), fmt)}
+
+    def list_drafts(self) -> list[dict[str, Any]]:
+        """Newest first, as Gmail lists them."""
+        return [
+            {"id": draft_id, "message": self.render(self.get(message_id), "minimal")}
+            for draft_id, message_id in reversed(self.drafts.items())
+        ]
 
     def send_draft(self, draft_id: str, now: datetime) -> dict[str, Any]:
         message = self.get(self.drafts.pop(draft_id, ""))

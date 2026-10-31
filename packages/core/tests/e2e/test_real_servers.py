@@ -1,6 +1,7 @@
 """The real stack: achilles serve, the real MCP servers, the Google simulator and the live model."""
 
 import json
+import re
 import sqlite3
 import subprocess
 import time
@@ -55,6 +56,9 @@ REPLY_PROMPT = (
 )
 SEND_FOLLOW_UP = "Send that draft now with mail_send."
 ACCOUNT_EMAIL = "jordan.reyes@example.test"
+INVOICE_MESSAGE = "aed89caf9a7af277"
+PROPOSAL_MESSAGE = "81b178b5ebec82bd"
+REVIEW_DECK_MESSAGE = "5cc2f1f78a46377d"
 Chat = Callable[[dict[str, Any]], Frames]
 
 
@@ -182,19 +186,26 @@ def answer(frames: Frames) -> str:
     return "".join(data["text"] for data in of(frames, "token"))
 
 
-def request_send(chat: Chat, name: str, text: str) -> tuple[list[str], list[dict[str, Any]]]:
+def request_send(chat: Chat, name: str, text: str) -> Frames:
     """Asks the model to draft and send; allows one follow-up if it only drafted."""
     frames = chat({"message": REPLY_PROMPT.format(name=name, text=text)})
     assert frames[-1][0] == "done", frames
-    calls, requested = tool_calls(frames), of(frames, "approval_required")
-    if not requested:
+    if not of(frames, "approval_required"):
         conversation_id = frames[0][1]["conversation_id"]
-        frames = chat({"conversation_id": conversation_id, "message": SEND_FOLLOW_UP})
-        assert frames[-1][0] == "done", frames
-        calls += tool_calls(frames)
-        requested = of(frames, "approval_required")
-    assert requested, (calls, answer(frames))
-    return calls, requested
+        follow_up = chat({"conversation_id": conversation_id, "message": SEND_FOLLOW_UP})
+        assert follow_up[-1][0] == "done", follow_up
+        frames += follow_up
+    assert of(frames, "approval_required"), (tool_calls(frames), answer(frames))
+    return frames
+
+
+def returned_draft_ids(frames: Frames) -> list[str]:
+    results = [r["summary"] for r in of(frames, "tool_result") if r["name"] == "mail_draft"]
+    return [json.loads(summary)["draft_id"] for summary in results]
+
+
+def sent_draft_ids(frames: Frames) -> list[str]:
+    return [c["args"].get("draft_id") for c in of(frames, "tool_call") if c["name"] == "mail_send"]
 
 
 @pytest.fixture(scope="session")
@@ -249,7 +260,8 @@ def test_calendar_question(chat: Chat) -> None:
 
 def test_draft_reply_needs_approval(stack: Stack, client: httpx.Client, chat: Chat) -> None:
     sent_before = stack.sent_count()
-    calls, requested = request_send(chat, "Maya", "I'll confirm by Friday")
+    frames = request_send(chat, "Maya", "I'll confirm by Friday")
+    calls, requested = tool_calls(frames), of(frames, "approval_required")
     assert "mail_draft" in calls, calls
     assert "mail_search" in calls or "mail_thread" in calls, calls
     assert requested[0]["action"] == "mail_send"
@@ -265,10 +277,28 @@ def test_draft_reply_needs_approval(stack: Stack, client: httpx.Client, chat: Ch
 
 def test_reject_sends_nothing(stack: Stack, client: httpx.Client, chat: Chat) -> None:
     sent_before = stack.sent_count()
-    _, requested = request_send(chat, "Tomas", "the invoice is paid")
+    requested = of(request_send(chat, "Tomas", "the invoice is paid"), "approval_required")
     rejected = client.post(f"/api/approvals/{requested[0]['approval_id']}/reject").json()
     assert rejected["status"] == "rejected"
     assert stack.sent_count() == sent_before
+
+
+def test_send_carries_the_draft_id_that_mail_draft_returned(
+    stack: Stack, client: httpx.Client, chat: Chat
+) -> None:
+    frames = request_send(chat, "Priya", "the weekend cover is sorted")
+    returned = returned_draft_ids(frames)
+    assert returned and all(re.fullmatch(r"r-\d{19}", d) for d in returned), returned
+    requested = of(frames, "approval_required")[0]
+    pending = client.get("/api/approvals").json()
+    approval = next(a for a in pending if a["id"] == requested["approval_id"])
+    draft_id = approval["payload"]["draft_id"]
+    assert draft_id in returned, (draft_id, returned, sent_draft_ids(frames))
+    assert stack.gmail(f"/drafts/{draft_id}")["id"] == draft_id
+    if any(given not in returned for given in sent_draft_ids(frames)):
+        assert "draft_id_substituted" in (stack.home / "server.log").read_text()
+    print("draft handoff:", {"returned": returned, "sent_with": sent_draft_ids(frames)})
+    client.post(f"/api/approvals/{requested['approval_id']}/reject").raise_for_status()
 
 
 def set_self_email(client: httpx.Client, address: str, enabled: bool = True) -> None:
@@ -296,9 +326,9 @@ def test_brief_emails_self_only_to_the_account_address(stack: Stack, client: htt
 def test_inbox_command_labels_the_simulator_mailbox(stack: Stack, chat: Chat) -> None:
     frames = chat({"message": "/inbox"})
     assert "messages in the inbox cache" in answer(frames), frames
-    assert "Invoices" in stack.label_names("msg_004")
-    assert "Clients" in stack.label_names("msg_009")
-    assert "To review" in stack.label_names("msg_011")
+    assert "Invoices" in stack.label_names(INVOICE_MESSAGE)
+    assert "Clients" in stack.label_names(PROPOSAL_MESSAGE)
+    assert "To review" in stack.label_names(REVIEW_DECK_MESSAGE)
 
 
 def test_brief_command_stores_a_daily_brief(stack: Stack, chat: Chat, client: httpx.Client) -> None:
@@ -319,7 +349,7 @@ def test_unanswered_follow_up_drafts_and_sends_through_approval(
     page: Page, stack: Stack, client: httpx.Client, chat: Chat
 ) -> None:
     client.post("/api/inbox/refresh").raise_for_status()
-    created = client.post("/api/inbox/msg_009/follow-up", json={"days": 1}).json()
+    created = client.post(f"/api/inbox/{PROPOSAL_MESSAGE}/follow-up", json={"days": 1}).json()
     assert created["status"] == "open" and created["subject"] == "Partnership proposal"
     stack.make_due(created["id"])
     drafts_before = stack.counts()["drafts"]
