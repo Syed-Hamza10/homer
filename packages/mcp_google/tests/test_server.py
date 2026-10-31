@@ -86,6 +86,22 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
     assert (await call(mcp, "mail_changes_since", cursor=changes["cursor"]))["changed_ids"] == []
 
 
+async def test_send_with_unknown_draft_id_lists_recent_drafts(
+    mcp: Client, sim: httpx.Client
+) -> None:
+    ids = []
+    for to, subject in [("a@example.test", "First"), ("b@example.test", "Second")]:
+        ids.append((await call(mcp, "mail_draft", to=to, subject=subject, body="x"))["draft_id"])
+    missing = await call(mcp, "mail_send", draft_id="1")
+    assert missing["error"] == "draft_not_found" and missing["draft_id"] == "1"
+    assert missing["drafts"] == [
+        {"draft_id": ids[1], "subject": "Second", "to": "b@example.test"},
+        {"draft_id": ids[0], "subject": "First", "to": "a@example.test"},
+    ]
+    assert sim.get("/_sim/state").json()["sent"] == 3
+    assert (await call(mcp, "mail_send", draft_id=ids[0]))["approval_required"] is True
+
+
 async def test_stale_cursor_returns_a_fresh_cursor_and_no_gap(
     mcp: Client, sim: httpx.Client
 ) -> None:

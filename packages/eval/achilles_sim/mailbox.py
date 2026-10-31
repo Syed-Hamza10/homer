@@ -184,10 +184,17 @@ class Mailbox:
         self.drafts[draft_id] = message["id"]
         return {"id": draft_id, "message": self.render(message, "minimal")}
 
-    def draft(self, draft_id: str) -> dict[str, Any]:
+    def draft(self, draft_id: str, fmt: str = "full") -> dict[str, Any]:
         if draft_id not in self.drafts:
             raise ApiError(404, "Requested entity was not found.")
-        return {"id": draft_id, "message": self.render(self.get(self.drafts[draft_id]))}
+        return {"id": draft_id, "message": self.render(self.get(self.drafts[draft_id]), fmt)}
+
+    def list_drafts(self) -> list[dict[str, Any]]:
+        """Newest first, as Gmail lists them."""
+        return [
+            {"id": draft_id, "message": self.render(self.get(message_id), "minimal")}
+            for draft_id, message_id in reversed(self.drafts.items())
+        ]
 
     def send_draft(self, draft_id: str, now: datetime) -> dict[str, Any]:
         message = self.get(self.drafts.pop(draft_id, ""))

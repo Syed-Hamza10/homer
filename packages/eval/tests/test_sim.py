@@ -108,6 +108,26 @@ def test_draft_send_and_history(client: TestClient) -> None:
     assert "history" not in empty
 
 
+def test_drafts_list_newest_first(client: TestClient) -> None:
+    assert client.get(f"{GMAIL}/drafts", headers=AUTH).json() == {"resultSizeEstimate": 0}
+    first = client.post(
+        f"{GMAIL}/drafts",
+        json={"message": {"raw": raw_draft("a@example.test", "One", "x")}},
+        headers=AUTH,
+    ).json()
+    second = client.post(
+        f"{GMAIL}/drafts",
+        json={"message": {"raw": raw_draft("b@example.test", "Two", "y")}},
+        headers=AUTH,
+    ).json()
+    listing = client.get(f"{GMAIL}/drafts", params={"maxResults": 1}, headers=AUTH).json()
+    assert [d["id"] for d in listing["drafts"]] == [second["id"]]
+    assert "payload" not in listing["drafts"][0]["message"]
+    meta = client.get(f"{GMAIL}/drafts/{first['id']}", params={"format": "metadata"}, headers=AUTH)
+    assert "body" not in meta.json()["message"]["payload"]
+    assert client.get(f"{GMAIL}/drafts/nope", headers=AUTH).status_code == 404
+
+
 def test_expired_history_returns_404_for_old_cursors(client: TestClient) -> None:
     old = client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]
     client.post(f"{GMAIL}/messages/msg_001/modify", json={"addLabelIds": ["INBOX"]}, headers=AUTH)

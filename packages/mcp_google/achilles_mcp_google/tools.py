@@ -18,6 +18,7 @@ FREE_BUSY = "/calendar/v3/freeBusy"
 PEOPLE = "/v1/people:searchContacts"
 MAX_RESULTS = 25
 PREVIEW_BODY_CHARS = 300
+RECENT_DRAFTS = 5
 TIER_1 = {"mail_send", "cal_create", "cal_update", "cal_delete"}
 TOOL_NAMES = [
     "health",
@@ -164,7 +165,8 @@ class GoogleTools:
     async def mail_draft(
         self, to: str, subject: str, body: str, thread_id: str | None = None
     ) -> dict[str, Any]:
-        """Creates a draft email, optionally as a reply in an existing thread. Nothing is sent."""
+        """Creates a draft email, optionally as a reply in an existing thread, and sends nothing.
+        Returns draft_id; pass it unchanged to mail_send."""
         reply_to = None
         if thread_id:
             thread = await self.client.get(f"{GMAIL}/threads/{thread_id}", format="metadata")
@@ -179,10 +181,34 @@ class GoogleTools:
             "metadata": {"message_id": draft["message"]["id"]},
         }
 
+    async def _recent_drafts(self) -> list[dict[str, Any]]:
+        listing = await self.client.get(f"{GMAIL}/drafts", maxResults=RECENT_DRAFTS)
+        drafts = []
+        for item in listing.get("drafts", []):
+            draft = await self.client.get(f"{GMAIL}/drafts/{item['id']}", format="metadata")
+            headers = headers_of(draft["message"])
+            drafts.append(
+                {
+                    "draft_id": item["id"],
+                    "subject": headers.get("subject", ""),
+                    "to": headers.get("to", ""),
+                }
+            )
+        return drafts
+
     @guarded
     async def mail_send(self, draft_id: str) -> dict[str, Any]:
         """Asks the user to approve sending an existing draft. Never sends by itself."""
-        draft = await self.client.get(f"{GMAIL}/drafts/{draft_id}", format="full")
+        try:
+            draft = await self.client.get(f"{GMAIL}/drafts/{draft_id}", format="full")
+        except GoogleError as error:
+            if error.status != 404:
+                raise
+            return {
+                "error": "draft_not_found",
+                "draft_id": draft_id,
+                "drafts": await self._recent_drafts(),
+            }
         message = neutral_message(draft["message"], {}, with_body=True)
         body = message["body"].removeprefix("<untrusted>").removesuffix("</untrusted>")
         preview = (
