@@ -9,6 +9,7 @@ export type ClientRules = {
   email_to_self: boolean
   self_email: string
   model_tier: ModelTier | null
+  timezone: string
 }
 
 export type TierOption = {

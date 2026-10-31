@@ -43,3 +43,13 @@ def test_settings_read_env_file(tmp_path: Path, monkeypatch) -> None:  # noqa: A
     settings = Settings(_env_file=tmp_path / ".env")
     assert settings.achilles_passphrase.get_secret_value() == "from-file"
     assert settings.port == 8123
+
+
+def test_timezone_falls_back_to_the_system_then_utc(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.delenv("TIMEZONE", raising=False)
+    monkeypatch.setattr("achilles_core.config.system_timezone", lambda: "Europe/Paris")
+    assert Settings(achilles_passphrase=SecretStr("p"), _env_file=None).timezone == "Europe/Paris"
+    monkeypatch.setattr("achilles_core.config.system_timezone", lambda: None)
+    assert Settings(achilles_passphrase=SecretStr("p"), _env_file=None).timezone == "UTC"
+    monkeypatch.setenv("TIMEZONE", "Asia/Karachi")
+    assert Settings(achilles_passphrase=SecretStr("p"), _env_file=None).timezone == "Asia/Karachi"

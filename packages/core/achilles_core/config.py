@@ -2,8 +2,10 @@ import os
 import secrets
 from pathlib import Path
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from achilles_core.platform import system_timezone
 
 HOME = Path(os.environ.get("ACHILLES_HOME", "~/.achilles")).expanduser()
 
@@ -21,7 +23,7 @@ class Settings(BaseSettings):
     port: int = 8000
     extra_origins: list[str] = []
     user_name: str = "there"
-    timezone: str = "UTC"
+    timezone: str = Field(default_factory=lambda: system_timezone() or "UTC")
     scheduler_enabled: bool = True
 
     @field_validator("achilles_home")

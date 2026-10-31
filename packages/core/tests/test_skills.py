@@ -44,7 +44,9 @@ def test_calendar_and_slots(logged_in: TestClient, origin: dict[str, str]) -> No
 
 
 def test_settings_round_trip(logged_in: TestClient, origin: dict[str, str]) -> None:
+    assert logged_in.get("/api/settings").json()["timezone"] == "Europe/London"
     body = {
+        "timezone": "Europe/Paris",
         "signature": "Jordan",
         "tone": "warm and direct",
         "business_hours": "08:30-16:30",
@@ -58,6 +60,9 @@ def test_settings_round_trip(logged_in: TestClient, origin: dict[str, str]) -> N
     assert logged_in.get("/api/settings").json() == body
     bad = logged_in.put("/api/settings", json={**body, "business_hours": "9-5"}, headers=origin)
     assert bad.status_code == 422
+    bad = logged_in.put("/api/settings", json={**body, "timezone": "Mars/Olympus"}, headers=origin)
+    assert bad.status_code == 422
+    assert logged_in.get("/api/settings").json()["timezone"] == "Europe/Paris"
 
 
 def test_model_options_and_smoke(logged_in: TestClient, origin: dict[str, str]) -> None:

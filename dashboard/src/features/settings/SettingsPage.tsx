@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { TimezoneSelect } from "./TimezoneSelect"
 import type { ClientRules, ModelTier, SelfEmailStatus } from "./types"
 import {
   useHealth,
@@ -44,6 +45,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
   const [selfEmail, setSelfEmail] = useState(initial.self_email)
   const [emailToSelf, setEmailToSelf] = useState(initial.email_to_self)
   const [modelTier, setModelTier] = useState(initial.model_tier ?? "")
+  const [timezone, setTimezone] = useState(initial.timezone)
   const save = useSaveRules()
   const options = useModelOptions()
   const smoke = useSmoke()
@@ -64,6 +66,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
       email_to_self: emailToSelf,
       self_email: selfEmail,
       model_tier: modelTier ? (modelTier as ModelTier) : null,
+      timezone,
     })
   }
 
@@ -88,6 +91,9 @@ function RulesForm({ initial }: { initial: ClientRules }) {
             /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(hours) ? undefined : true
           }
         />
+      </Field>
+      <Field label="Timezone">
+        <TimezoneSelect value={timezone} onChange={setTimezone} />
       </Field>
       <Field label="Default follow-up delay (days)">
         <Input
@@ -143,7 +149,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
         </select>
       </Field>
       <p className="text-xs text-muted-foreground">
-        A changed model tier takes effect after Achilles restarts.
+        A changed model tier or timezone takes effect after Achilles restarts.
       </p>
       <div className="flex items-center gap-2">
         <Button
