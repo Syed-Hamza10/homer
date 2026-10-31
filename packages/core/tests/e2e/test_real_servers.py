@@ -55,6 +55,9 @@ REPLY_PROMPT = (
 )
 SEND_FOLLOW_UP = "Send that draft now with mail_send."
 ACCOUNT_EMAIL = "jordan.reyes@example.test"
+INVOICE_MESSAGE = "aed89caf9a7af277"
+PROPOSAL_MESSAGE = "81b178b5ebec82bd"
+REVIEW_DECK_MESSAGE = "5cc2f1f78a46377d"
 Chat = Callable[[dict[str, Any]], Frames]
 
 
@@ -296,9 +299,9 @@ def test_brief_emails_self_only_to_the_account_address(stack: Stack, client: htt
 def test_inbox_command_labels_the_simulator_mailbox(stack: Stack, chat: Chat) -> None:
     frames = chat({"message": "/inbox"})
     assert "messages in the inbox cache" in answer(frames), frames
-    assert "Invoices" in stack.label_names("msg_004")
-    assert "Clients" in stack.label_names("msg_009")
-    assert "To review" in stack.label_names("msg_011")
+    assert "Invoices" in stack.label_names(INVOICE_MESSAGE)
+    assert "Clients" in stack.label_names(PROPOSAL_MESSAGE)
+    assert "To review" in stack.label_names(REVIEW_DECK_MESSAGE)
 
 
 def test_brief_command_stores_a_daily_brief(stack: Stack, chat: Chat, client: httpx.Client) -> None:
@@ -319,7 +322,7 @@ def test_unanswered_follow_up_drafts_and_sends_through_approval(
     page: Page, stack: Stack, client: httpx.Client, chat: Chat
 ) -> None:
     client.post("/api/inbox/refresh").raise_for_status()
-    created = client.post("/api/inbox/msg_009/follow-up", json={"days": 1}).json()
+    created = client.post(f"/api/inbox/{PROPOSAL_MESSAGE}/follow-up", json={"days": 1}).json()
     assert created["status"] == "open" and created["subject"] == "Partnership proposal"
     stack.make_due(created["id"])
     drafts_before = stack.counts()["drafts"]

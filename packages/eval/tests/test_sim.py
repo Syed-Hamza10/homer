@@ -1,4 +1,5 @@
 import base64
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
@@ -12,6 +13,8 @@ from achilles_sim.state import KNOWN_TOKEN
 AUTH = {"Authorization": f"Bearer {KNOWN_TOKEN}"}
 GMAIL = "/gmail/v1/users/me"
 CAL = "/calendar/v3/calendars/primary/events"
+KICKOFF_THREAD = "dbe626c57687283a"
+KICKOFF_MESSAGES = ["5995acc9cb4b7eee", "c1c5afb09a9eb792", "518115189b45f53b"]
 
 
 @pytest.fixture
@@ -47,13 +50,17 @@ def test_seed_counts(client: TestClient) -> None:
 def test_search_and_full_message(client: TestClient) -> None:
     listing = client.get(f"{GMAIL}/messages", params={"q": "from:maya is:unread"}, headers=AUTH)
     ids = [m["id"] for m in listing.json()["messages"]]
-    assert ids == ["msg_003"]
-    full = client.get(f"{GMAIL}/messages/msg_003", params={"format": "full"}, headers=AUTH).json()
+    assert ids == [KICKOFF_MESSAGES[2]]
+    full = client.get(
+        f"{GMAIL}/messages/{KICKOFF_MESSAGES[2]}", params={"format": "full"}, headers=AUTH
+    ).json()
     headers = {h["name"]: h["value"] for h in full["payload"]["headers"]}
     assert headers["Subject"].startswith("Re: Kickoff")
     assert full["payload"]["mimeType"] == "text/html"
     assert "data" in full["payload"]["body"]
-    meta = client.get(f"{GMAIL}/messages/msg_003", params={"format": "metadata"}, headers=AUTH)
+    meta = client.get(
+        f"{GMAIL}/messages/{KICKOFF_MESSAGES[2]}", params={"format": "metadata"}, headers=AUTH
+    )
     assert "body" not in meta.json()["payload"]
 
 
@@ -67,10 +74,10 @@ def test_pagination(client: TestClient) -> None:
 
 
 def test_thread_and_modify(client: TestClient) -> None:
-    thread = client.get(f"{GMAIL}/threads/thr_001", headers=AUTH).json()
-    assert [m["id"] for m in thread["messages"]] == ["msg_001", "msg_002", "msg_003"]
+    thread = client.get(f"{GMAIL}/threads/{KICKOFF_THREAD}", headers=AUTH).json()
+    assert [m["id"] for m in thread["messages"]] == KICKOFF_MESSAGES
     modified = client.post(
-        f"{GMAIL}/messages/msg_003/modify",
+        f"{GMAIL}/messages/{KICKOFF_MESSAGES[2]}/modify",
         json={"removeLabelIds": ["INBOX", "UNREAD"], "addLabelIds": ["Label_3"]},
         headers=AUTH,
     ).json()
@@ -90,12 +97,12 @@ def test_draft_send_and_history(client: TestClient) -> None:
     start = client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]
     raw = raw_draft("maya.lindqvist@example.test", "Re: Kickoff", "Thursday 14:00 works.")
     draft = client.post(
-        f"{GMAIL}/drafts", json={"message": {"raw": raw, "threadId": "thr_001"}}, headers=AUTH
+        f"{GMAIL}/drafts", json={"message": {"raw": raw, "threadId": KICKOFF_THREAD}}, headers=AUTH
     ).json()
     assert draft["message"]["labelIds"] == ["DRAFT"]
     assert client.get("/_sim/state").json()["drafts"] == 1
     sent = client.post(f"{GMAIL}/drafts/send", json={"id": draft["id"]}, headers=AUTH).json()
-    assert sent["labelIds"] == ["SENT"] and sent["threadId"] == "thr_001"
+    assert sent["labelIds"] == ["SENT"] and sent["threadId"] == KICKOFF_THREAD
     counts = client.get("/_sim/state").json()
     assert counts["drafts"] == 0 and counts["sent"] == 4
     history = client.get(f"{GMAIL}/history", params={"startHistoryId": start}, headers=AUTH).json()
@@ -106,6 +113,20 @@ def test_draft_send_and_history(client: TestClient) -> None:
         f"{GMAIL}/history", params={"startHistoryId": history["historyId"]}, headers=AUTH
     ).json()
     assert "history" not in empty
+
+
+def test_generated_ids_have_gmail_shapes(client: TestClient) -> None:
+    raw = raw_draft("maya.lindqvist@example.test", "Shapes", "x")
+    draft = client.post(f"{GMAIL}/drafts", json={"message": {"raw": raw}}, headers=AUTH).json()
+    assert re.fullmatch(r"r-\d{19}", draft["id"])
+    assert re.fullmatch(r"[0-9a-f]{16}", draft["message"]["id"])
+    assert re.fullmatch(r"[0-9a-f]{16}", draft["message"]["threadId"])
+    label = client.post(f"{GMAIL}/labels", json={"name": "Shapes"}, headers=AUTH).json()
+    assert label["id"] == "Label_4"
+    history = [int(client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"])]
+    client.post(f"{GMAIL}/drafts/send", json={"id": draft["id"]}, headers=AUTH).raise_for_status()
+    history.append(int(client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]))
+    assert history[1] > history[0]
 
 
 def test_drafts_list_newest_first(client: TestClient) -> None:
@@ -130,7 +151,11 @@ def test_drafts_list_newest_first(client: TestClient) -> None:
 
 def test_expired_history_returns_404_for_old_cursors(client: TestClient) -> None:
     old = client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]
-    client.post(f"{GMAIL}/messages/msg_001/modify", json={"addLabelIds": ["INBOX"]}, headers=AUTH)
+    client.post(
+        f"{GMAIL}/messages/{KICKOFF_MESSAGES[0]}/modify",
+        json={"addLabelIds": ["INBOX"]},
+        headers=AUTH,
+    )
     before = client.get(f"{GMAIL}/history", params={"startHistoryId": old}, headers=AUTH)
     assert before.status_code == 200 and before.json()["history"]
 
