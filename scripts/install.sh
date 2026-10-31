@@ -182,7 +182,20 @@ while [ ! -d "$DISK_PATH" ]; do DISK_PATH="$(dirname "$DISK_PATH")"; done
 FREE_BYTES="$(df -Pk "$DISK_PATH" | awk 'NR==2 {print $4 * 1024}')"
 FREE_GB=$((FREE_BYTES / 1073741824))
 
-log "platform: $OS, RAM: ${RAM_GB} GB, free disk: ${FREE_GB} GB"
+zoneinfo_name() { readlink /etc/localtime 2>/dev/null | sed -n 's#.*zoneinfo/##p'; }
+
+detect_timezone() {
+  local tz=""
+  if [ "$OS" = "Linux" ]; then
+    command -v timedatectl >/dev/null 2>&1 && tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+    [ -n "$tz" ] || { [ -f /etc/timezone ] && tz="$(tr -d '[:space:]' </etc/timezone)"; }
+  fi
+  [ -n "$tz" ] || tz="$(zoneinfo_name)"
+  printf '%s' "${tz:-UTC}"
+}
+TIMEZONE="$(detect_timezone)"
+
+log "platform: $OS, RAM: ${RAM_GB} GB, free disk: ${FREE_GB} GB, timezone: $TIMEZONE"
 if [ "$RAM_GB" -lt 16 ]; then
   if [ "$FORCE" = "1" ]; then
     warn "16 GB RAM is recommended for the supported model tier"
@@ -207,7 +220,7 @@ Dry run only. The installer would:
   3. create $ACHILLES_HOME/{credentials,data,documents,logs,backups,venv} with mode 0700
   4. download the release wheels, SHA256SUMS and requirements.lock, and verify every wheel against SHA256SUMS
   5. install the verified wheels into $ACHILLES_HOME/venv with requirements.lock as constraints
-  6. write $ACHILLES_HOME/.env and pull the manifest models
+  6. write $ACHILLES_HOME/.env with TIMEZONE=$TIMEZONE and pull the manifest models
   7. register and start the Achilles service (unless --no-service)
   8. run achilles doctor and print http://127.0.0.1:8000
 EOF
@@ -257,11 +270,15 @@ ACHILLES_HOME="$ACHILLES_HOME"
 ACHILLES_PASSPHRASE="$ESCAPED"
 WEB_SEARCH=true
 SCHEDULER_ENABLED=true
+TIMEZONE=$TIMEZONE
 EOF
   chmod 600 "$ENV_FILE"
   log "Wrote $ENV_FILE"
-else
+elif grep -q '^TIMEZONE=' "$ENV_FILE"; then
   log "Keeping existing $ENV_FILE"
+else
+  printf 'TIMEZONE=%s\n' "$TIMEZONE" >>"$ENV_FILE"
+  log "Keeping existing $ENV_FILE, added TIMEZONE=$TIMEZONE"
 fi
 
 if [ -n "$TOKEN" ]; then

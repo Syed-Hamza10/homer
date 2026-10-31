@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -70,6 +71,8 @@ def test_install_script_dry_run_changes_nothing(tmp_path: Path) -> None:
     assert "install Ollama 0." in result.stdout
     assert "verify every wheel against SHA256SUMS" in result.stdout
     assert "requirements.lock as constraints" in result.stdout
+    assert re.search(r"timezone: [A-Za-z_]+(/[A-Za-z_+-]+)*$", result.stdout, re.MULTILINE)
+    assert re.search(r"\.env with TIMEZONE=\S+ and pull", result.stdout)
     assert not home.exists()
 
 
