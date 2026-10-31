@@ -19,6 +19,13 @@ def ensure_first_user(session: Session, name: str, timezone: str) -> User:
     return user
 
 
+def set_timezone(session: Session, user: User, timezone: str) -> None:
+    if user.timezone != timezone:
+        user.timezone = timezone
+        session.add(user)
+        session.commit()
+
+
 def forget_user(session: Session, user: User) -> dict[str, int]:
     deleted = privacy.wipe(session, user)
     deleted["settings"] = session.exec(delete(Setting).where(Setting.user_id == user.id)).rowcount
