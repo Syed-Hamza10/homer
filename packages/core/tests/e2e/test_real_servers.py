@@ -1,6 +1,7 @@
 """The real stack: achilles serve, the real MCP servers, the Google simulator and the live model."""
 
 import json
+import re
 import sqlite3
 import subprocess
 import time
@@ -185,19 +186,26 @@ def answer(frames: Frames) -> str:
     return "".join(data["text"] for data in of(frames, "token"))
 
 
-def request_send(chat: Chat, name: str, text: str) -> tuple[list[str], list[dict[str, Any]]]:
+def request_send(chat: Chat, name: str, text: str) -> Frames:
     """Asks the model to draft and send; allows one follow-up if it only drafted."""
     frames = chat({"message": REPLY_PROMPT.format(name=name, text=text)})
     assert frames[-1][0] == "done", frames
-    calls, requested = tool_calls(frames), of(frames, "approval_required")
-    if not requested:
+    if not of(frames, "approval_required"):
         conversation_id = frames[0][1]["conversation_id"]
-        frames = chat({"conversation_id": conversation_id, "message": SEND_FOLLOW_UP})
-        assert frames[-1][0] == "done", frames
-        calls += tool_calls(frames)
-        requested = of(frames, "approval_required")
-    assert requested, (calls, answer(frames))
-    return calls, requested
+        follow_up = chat({"conversation_id": conversation_id, "message": SEND_FOLLOW_UP})
+        assert follow_up[-1][0] == "done", follow_up
+        frames += follow_up
+    assert of(frames, "approval_required"), (tool_calls(frames), answer(frames))
+    return frames
+
+
+def returned_draft_ids(frames: Frames) -> list[str]:
+    results = [r["summary"] for r in of(frames, "tool_result") if r["name"] == "mail_draft"]
+    return [json.loads(summary)["draft_id"] for summary in results]
+
+
+def sent_draft_ids(frames: Frames) -> list[str]:
+    return [c["args"].get("draft_id") for c in of(frames, "tool_call") if c["name"] == "mail_send"]
 
 
 @pytest.fixture(scope="session")
@@ -252,7 +260,8 @@ def test_calendar_question(chat: Chat) -> None:
 
 def test_draft_reply_needs_approval(stack: Stack, client: httpx.Client, chat: Chat) -> None:
     sent_before = stack.sent_count()
-    calls, requested = request_send(chat, "Maya", "I'll confirm by Friday")
+    frames = request_send(chat, "Maya", "I'll confirm by Friday")
+    calls, requested = tool_calls(frames), of(frames, "approval_required")
     assert "mail_draft" in calls, calls
     assert "mail_search" in calls or "mail_thread" in calls, calls
     assert requested[0]["action"] == "mail_send"
@@ -268,10 +277,28 @@ def test_draft_reply_needs_approval(stack: Stack, client: httpx.Client, chat: Ch
 
 def test_reject_sends_nothing(stack: Stack, client: httpx.Client, chat: Chat) -> None:
     sent_before = stack.sent_count()
-    _, requested = request_send(chat, "Tomas", "the invoice is paid")
+    requested = of(request_send(chat, "Tomas", "the invoice is paid"), "approval_required")
     rejected = client.post(f"/api/approvals/{requested[0]['approval_id']}/reject").json()
     assert rejected["status"] == "rejected"
     assert stack.sent_count() == sent_before
+
+
+def test_send_carries_the_draft_id_that_mail_draft_returned(
+    stack: Stack, client: httpx.Client, chat: Chat
+) -> None:
+    frames = request_send(chat, "Priya", "the weekend cover is sorted")
+    returned = returned_draft_ids(frames)
+    assert returned and all(re.fullmatch(r"r-\d{19}", d) for d in returned), returned
+    requested = of(frames, "approval_required")[0]
+    pending = client.get("/api/approvals").json()
+    approval = next(a for a in pending if a["id"] == requested["approval_id"])
+    draft_id = approval["payload"]["draft_id"]
+    assert draft_id in returned, (draft_id, returned, sent_draft_ids(frames))
+    assert stack.gmail(f"/drafts/{draft_id}")["id"] == draft_id
+    if any(given not in returned for given in sent_draft_ids(frames)):
+        assert "draft_id_substituted" in (stack.home / "server.log").read_text()
+    print("draft handoff:", {"returned": returned, "sent_with": sent_draft_ids(frames)})
+    client.post(f"/api/approvals/{requested['approval_id']}/reject").raise_for_status()
 
 
 def set_self_email(client: httpx.Client, address: str, enabled: bool = True) -> None:

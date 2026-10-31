@@ -46,11 +46,7 @@ class RunState:
 
 def mentioned_draft_ids(history: list[ModelMessage], prompt: str) -> list[str]:
     texts = [str(getattr(part, "content", "")) for message in history for part in message.parts]
-    found: list[str] = []
-    for draft_id in DRAFT_ID_PATTERN.findall(" ".join([*texts, prompt])):
-        if draft_id not in found:
-            found.append(draft_id)
-    return found
+    return list(dict.fromkeys(DRAFT_ID_PATTERN.findall(" ".join([*texts, prompt]))))
 
 
 def tier_2_approval(name: str, args: dict[str, Any]) -> dict[str, Any]:
