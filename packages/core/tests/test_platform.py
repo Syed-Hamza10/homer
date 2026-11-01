@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from achilles_core import platform
+from homer_core import platform
 
 
 def link_localtime(tmp_path: Path, target: str) -> Path:

@@ -6,13 +6,13 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models import Model
 from sqlmodel import Session, select
 
-from achilles_core.agent.runtime import build_runtime
-from achilles_core.db.models import Approval
-from achilles_core.mcp.manager import McpManager
-from achilles_core.services import approvals
-from achilles_core.services.users import first_user
-from achilles_eval.runner import TaskResult, check_task, run_task, summarise
-from achilles_eval.tasks import Expect, FollowUp, Task, load_tasks
+from homer_core.agent.runtime import build_runtime
+from homer_core.db.models import Approval
+from homer_core.mcp.manager import McpManager
+from homer_core.services import approvals
+from homer_core.services.users import first_user
+from homer_eval.runner import TaskResult, check_task, run_task, summarise
+from homer_eval.tasks import Expect, FollowUp, Task, load_tasks
 
 Scripted = Any
 

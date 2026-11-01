@@ -1,4 +1,4 @@
-# Achilles: a private AI assistant for Gmail and Calendar
+# Homer: a private AI assistant for Gmail and Calendar
 
 ## The problem
 Small agencies and consultants run their business through Gmail: inquiries, proposals, invoices,
@@ -6,8 +6,8 @@ meeting requests. The hosted AI assistants that could help read all of that mail
 servers, bill per token, and give an admin no way to see what left the building. Many of these
 teams, and the clients they sign NDAs with, cannot accept that.
 
-## What Achilles does
-Achilles runs on the user's own computer. A local language model (Qwen 3.5 9B through Ollama)
+## What Homer does
+Homer runs on the user's own computer. A local language model (Qwen 3.5 9B through Ollama)
 answers questions about mail and calendar, drafts replies in context, and proposes actions. The
 user talks to it in a browser on `localhost`. Today it reads and searches mail, reads the calendar,
 finds free slots, drafts replies, and sends mail or creates and changes events only after the user

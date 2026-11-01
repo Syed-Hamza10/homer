@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models import Model
 from structlog.testing import capture_logs
 
-from achilles_core.agent.toolsets import TOOLSETS
+from homer_core.agent.toolsets import TOOLSETS
 
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]

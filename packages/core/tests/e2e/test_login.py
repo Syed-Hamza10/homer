@@ -16,7 +16,7 @@ def test_login_rules(fresh_server: str, passphrase: str) -> None:
         ok = client.post("/api/auth/login", json={"passphrase": passphrase}, headers=origin)
         assert ok.status_code == 204
         cookie = ok.headers["set-cookie"]
-        assert cookie.startswith("achilles_session=")
+        assert cookie.startswith("homer_session=")
         assert "HttpOnly" in cookie
         assert "samesite=strict" in cookie.lower()
 

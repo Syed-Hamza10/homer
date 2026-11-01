@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from achilles_core.auth import SESSION_COOKIE
+from homer_core.auth import SESSION_COOKIE
 
 
 def test_login_sets_http_only_cookie(client: TestClient, origin: dict[str, str]) -> None:
@@ -66,7 +66,7 @@ def test_tampered_cookie_is_401(logged_in: TestClient) -> None:
 def test_logout_clears_cookie(logged_in: TestClient, origin: dict[str, str]) -> None:
     response = logged_in.post("/api/auth/logout", headers=origin)
     assert response.status_code == 204
-    assert 'achilles_session=""' in response.headers["set-cookie"]
+    assert 'homer_session=""' in response.headers["set-cookie"]
     assert logged_in.get("/api/auth/me").status_code == 401
 
 

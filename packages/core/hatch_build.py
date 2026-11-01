@@ -4,7 +4,7 @@ from typing import Any
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
-PACKAGED = Path("achilles_core") / "models" / "manifest.json"
+PACKAGED = Path("homer_core") / "models" / "manifest.json"
 SOURCE = Path("..") / ".." / "models" / "manifest.json"
 
 

@@ -1,4 +1,4 @@
-from achilles_mcp_search.search import parse_results, real_url
+from homer_mcp_search.search import parse_results, real_url
 
 PAGE = """
 <html><body>

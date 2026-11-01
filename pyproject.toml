@@ -1,5 +1,5 @@
 [project]
-name = "achilles"
+name = "homer"
 version = "0.1.0"
 description = "Local-first AI assistant for email, calendar and search, running on the client's machine through Ollama."
 readme = "README.md"
@@ -19,12 +19,12 @@ dev = [
 members = ["packages/*"]
 
 [tool.uv.sources]
-achilles-net = { workspace = true }
-achilles-core = { workspace = true }
-achilles-eval = { workspace = true }
-achilles-mcp-google = { workspace = true }
-achilles-mcp-search = { workspace = true }
-achilles-mcp-system = { workspace = true }
+homer-net = { workspace = true }
+homer-core = { workspace = true }
+homer-eval = { workspace = true }
+homer-mcp-google = { workspace = true }
+homer-mcp-search = { workspace = true }
+homer-mcp-system = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -34,10 +34,10 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM", "TID251"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"httpx".msg = "Use achilles_net."
-"requests".msg = "Use achilles_net."
-"aiohttp".msg = "Use achilles_net."
-"urllib.request".msg = "Use achilles_net."
+"httpx".msg = "Use homer_net."
+"requests".msg = "Use homer_net."
+"aiohttp".msg = "Use homer_net."
+"urllib.request".msg = "Use homer_net."
 
 [tool.ruff.lint.per-file-ignores]
 "packages/net/**" = ["TID251"]
@@ -55,11 +55,11 @@ filterwarnings = [
 
 [tool.ruff.lint.isort]
 known-first-party = [
-    "achilles_net",
-    "achilles_core",
-    "achilles_eval",
-    "achilles_sim",
-    "achilles_mcp_google",
-    "achilles_mcp_search",
-    "achilles_mcp_system",
+    "homer_net",
+    "homer_core",
+    "homer_eval",
+    "homer_sim",
+    "homer_mcp_google",
+    "homer_mcp_search",
+    "homer_mcp_system",
 ]

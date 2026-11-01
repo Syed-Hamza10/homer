@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from achilles_net import OutboundCall, SqliteLog
+from homer_net import OutboundCall, SqliteLog
 
 SCHEMA = (
     "CREATE TABLE outbound_log (id INTEGER PRIMARY KEY, ts TEXT, method TEXT, host TEXT, "
@@ -10,7 +10,7 @@ SCHEMA = (
 
 
 def test_inserts_row(tmp_path: Path) -> None:
-    db = tmp_path / "achilles.db"
+    db = tmp_path / "homer.db"
     sqlite3.connect(db).execute(SCHEMA)
     SqliteLog(db)(OutboundCall("GET", "example.test", "/x", 200, 12))
     rows = (

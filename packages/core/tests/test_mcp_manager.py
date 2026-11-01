@@ -5,23 +5,21 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from pydantic_ai.models.test import TestModel
 
-from achilles_core.agent.toolsets import TOOLSETS
-from achilles_core.config import Settings
-from achilles_core.main import create_app
-from achilles_core.mcp import manager as manager_module
-from achilles_core.mcp.manager import McpManager, ServerUnavailable, server_env, stdio_toolset
+from homer_core.agent.toolsets import TOOLSETS
+from homer_core.config import Settings
+from homer_core.main import create_app
+from homer_core.mcp import manager as manager_module
+from homer_core.mcp.manager import McpManager, ServerUnavailable, server_env, stdio_toolset
 
 
 def make_settings(tmp_path: Path) -> Settings:
-    return Settings(
-        achilles_home=tmp_path / "home", achilles_passphrase=SecretStr("p"), _env_file=None
-    )
+    return Settings(homer_home=tmp_path / "home", homer_passphrase=SecretStr("p"), _env_file=None)
 
 
 def test_server_env_carries_home_and_google_settings(tmp_path: Path) -> None:
     env = server_env(make_settings(tmp_path))
     assert env == {
-        "ACHILLES_HOME": str(tmp_path / "home"),
+        "HOMER_HOME": str(tmp_path / "home"),
         "GOOGLE_API_BASE": "https://www.googleapis.com",
         "GOOGLE_TOKEN_URL": "https://oauth2.googleapis.com/token",
         "WEB_SEARCH": "true",

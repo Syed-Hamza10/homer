@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models import Model
 from sqlmodel import Session
 
-from achilles_core.agent.router import Command, normalise, parse_command
-from achilles_core.agent.toolsets import TOOLSETS
-from achilles_core.services import approvals
+from homer_core.agent.router import Command, normalise, parse_command
+from homer_core.agent.toolsets import TOOLSETS
+from homer_core.services import approvals
 
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]

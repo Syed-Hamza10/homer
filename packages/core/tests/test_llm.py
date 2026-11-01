@@ -6,8 +6,8 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from achilles_core.config import Settings
-from achilles_core.llm import (
+from homer_core.config import Settings
+from homer_core.llm import (
     PACKAGED_MANIFEST,
     REPO_MANIFEST,
     build_http_client,
@@ -15,7 +15,7 @@ from achilles_core.llm import (
     chat_model_tag,
     load_manifest,
 )
-from achilles_net import BlockedHostError, OutboundCall
+from homer_net import BlockedHostError, OutboundCall
 
 HOOK_PATH = Path(__file__).resolve().parents[1] / "hatch_build.py"
 
@@ -30,7 +30,7 @@ def load_build_hook() -> ModuleType:
 
 def make_settings() -> Settings:
     return Settings(
-        achilles_passphrase=SecretStr("p"), ollama_url="http://127.0.0.1:11434", _env_file=None
+        homer_passphrase=SecretStr("p"), ollama_url="http://127.0.0.1:11434", _env_file=None
     )
 
 
@@ -55,7 +55,7 @@ def test_build_hook_copies_the_repo_manifest(tmp_path: Path) -> None:
     source.write_text('{"tiers": {}}')
 
     target = hook.copy_manifest(root)
-    assert target == root / "achilles_core" / "models" / "manifest.json"
+    assert target == root / "homer_core" / "models" / "manifest.json"
     assert target.read_text() == '{"tiers": {}}'
 
     source.unlink()

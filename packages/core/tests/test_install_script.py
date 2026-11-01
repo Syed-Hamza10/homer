@@ -18,8 +18,8 @@ def run_installer(tmp_path: Path, *args: str, env: dict[str, str] | None = None)
     home = tmp_path / "home"
     environment = {
         **os.environ,
-        "ACHILLES_HOME": str(home),
-        "ACHILLES_PASSPHRASE": "test-pass",
+        "HOMER_HOME": str(home),
+        "HOMER_PASSPHRASE": "test-pass",
         **(env or {}),
     }
     result = subprocess.run(
@@ -43,7 +43,7 @@ def write_release(directory: Path, names: tuple[str, ...]) -> None:
     (directory / "SHA256SUMS").write_text("\n".join(lines) + "\n")
 
 
-WHEELS = ("achilles_core-0.1.0-py3-none-any.whl", "achilles_net-0.1.0-py3-none-any.whl")
+WHEELS = ("homer_core-0.1.0-py3-none-any.whl", "homer_net-0.1.0-py3-none-any.whl")
 
 
 @needs_bash
@@ -100,7 +100,7 @@ def test_install_script_refuses_a_checksum_mismatch(tmp_path: Path) -> None:
 def test_install_script_refuses_an_unlisted_wheel(tmp_path: Path) -> None:
     release = tmp_path / "release"
     write_release(release, (*WHEELS, "requirements.lock"))
-    (release / "achilles_extra-0.1.0-py3-none-any.whl").write_bytes(b"extra")
+    (release / "homer_extra-0.1.0-py3-none-any.whl").write_bytes(b"extra")
     home, result = run_installer(tmp_path, "--wheels-dir", str(release))
     assert result.returncode == 1
     assert "is not listed in SHA256SUMS" in result.stderr
@@ -124,7 +124,7 @@ OLLAMA_ENV = {
 @needs_bash
 def test_ollama_launch_agent_carries_the_environment(tmp_path: Path) -> None:
     plist = render(tmp_path, "ollama-plist")
-    assert "<string>dev.achilles.ollama</string>" in plist
+    assert "<string>dev.homer.ollama</string>" in plist
     assert "<key>KeepAlive</key><true/>" in plist
     assert "<key>RunAtLoad</key><true/>" in plist
     for key, value in OLLAMA_ENV.items():
@@ -143,9 +143,9 @@ def test_ollama_systemd_dropin_carries_the_environment(tmp_path: Path) -> None:
 def test_server_launch_agent_restarts_and_points_at_the_venv(tmp_path: Path) -> None:
     home = tmp_path / "home"
     plist = render(tmp_path, "server-plist")
-    assert "<string>dev.achilles.server</string>" in plist
-    assert f"<string>{home}/venv/bin/achilles</string><string>serve</string>" in plist
-    assert f"<key>ACHILLES_HOME</key><string>{home}</string>" in plist
+    assert "<string>dev.homer.server</string>" in plist
+    assert f"<string>{home}/venv/bin/homer</string><string>serve</string>" in plist
+    assert f"<key>HOMER_HOME</key><string>{home}</string>" in plist
     assert "<key>KeepAlive</key><true/>" in plist
     assert "<key>RunAtLoad</key><true/>" in plist
 
@@ -154,8 +154,8 @@ def test_server_launch_agent_restarts_and_points_at_the_venv(tmp_path: Path) -> 
 def test_server_systemd_unit_restarts_and_points_at_the_venv(tmp_path: Path) -> None:
     home = tmp_path / "home"
     unit = render(tmp_path, "server-unit")
-    assert f"ExecStart={home}/venv/bin/achilles serve" in unit
-    assert f"Environment=ACHILLES_HOME={home}" in unit
+    assert f"ExecStart={home}/venv/bin/homer serve" in unit
+    assert f"Environment=HOMER_HOME={home}" in unit
     assert "Restart=always" in unit
     assert "WantedBy=default.target" in unit
 

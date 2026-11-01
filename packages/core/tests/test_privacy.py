@@ -5,12 +5,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from achilles_core.db.models import OutboundLog
-from achilles_core.privacy_hosts import CORE_HOSTS, GOOGLE_HOSTS, SEARCH_HOSTS, privacy_markdown
-from achilles_core.services import approvals
-from achilles_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_TOKEN_URL
-from achilles_mcp_search.search import SEARCH_HOST
-from achilles_net.allowlist import host_key
+from homer_core.db.models import OutboundLog
+from homer_core.privacy_hosts import CORE_HOSTS, GOOGLE_HOSTS, SEARCH_HOSTS, privacy_markdown
+from homer_core.services import approvals
+from homer_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_TOKEN_URL
+from homer_mcp_search.search import SEARCH_HOST
+from homer_net.allowlist import host_key
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
 

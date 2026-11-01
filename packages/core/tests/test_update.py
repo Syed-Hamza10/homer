@@ -11,27 +11,27 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from achilles_core import cli
-from achilles_core.cli import app
-from achilles_core.update import REPO
+from homer_core import cli
+from homer_core.cli import app
+from homer_core.update import REPO
 
 pytestmark = pytest.mark.skipif(
     shutil.which("uv") is None or shutil.which("curl") is None, reason="uv and curl are needed"
 )
 runner = CliRunner()
-WHEEL = "achilles_core-9.9.9-py3-none-any.whl"
+WHEEL = "homer_core-9.9.9-py3-none-any.whl"
 
 
 def fake_wheel(path: Path, doctor_exit: int) -> None:
-    info = "achilles_core-9.9.9.dist-info"
+    info = "homer_core-9.9.9.dist-info"
     files = {
-        "fake_achilles.py": (
+        "fake_homer.py": (
             "import sys\n\n\ndef main() -> None:\n"
             f"    raise SystemExit({doctor_exit} if sys.argv[1:] == ['doctor', '--quick'] else 2)\n"
         ),
-        f"{info}/METADATA": "Metadata-Version: 2.1\nName: achilles-core\nVersion: 9.9.9\n",
+        f"{info}/METADATA": "Metadata-Version: 2.1\nName: homer-core\nVersion: 9.9.9\n",
         f"{info}/WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
-        f"{info}/entry_points.txt": "[console_scripts]\nachilles = fake_achilles:main\n",
+        f"{info}/entry_points.txt": "[console_scripts]\nhomer = fake_homer:main\n",
     }
     files[f"{info}/RECORD"] = "".join(f"{name},,\n" for name in [*files, f"{info}/RECORD"])
     with zipfile.ZipFile(path, "w") as archive:
@@ -74,7 +74,7 @@ def release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeRel
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_port}"
-    monkeypatch.setenv("ACHILLES_RELEASE_API", base_url)
+    monkeypatch.setenv("HOMER_RELEASE_API", base_url)
     yield FakeRelease(root, base_url)
     server.shutdown()
     server.server_close()
@@ -86,8 +86,8 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (path / "venv" / "bin").mkdir(parents=True)
     path.chmod(0o700)
     (path / "venv" / "marker").write_text("live")
-    monkeypatch.setenv("ACHILLES_HOME", str(path))
-    monkeypatch.setenv("ACHILLES_PASSPHRASE", "test-pass")
+    monkeypatch.setenv("HOMER_HOME", str(path))
+    monkeypatch.setenv("HOMER_PASSPHRASE", "test-pass")
     return path
 
 
@@ -102,7 +102,7 @@ def test_update_stages_verifies_and_swaps(home: Path, release: FakeRelease, rest
     release.publish()
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0, result.output
-    assert (home / "venv" / "bin" / "achilles").exists()
+    assert (home / "venv" / "bin" / "homer").exists()
     assert (home / "venv.prev" / "marker").read_text() == "live"
     assert not (home / "venv.new").exists()
     assert restarts == ["restart"]
@@ -142,7 +142,7 @@ def test_rollback_swaps_the_previous_venv_back(
     result = runner.invoke(app, ["rollback"])
     assert result.exit_code == 0, result.output
     assert (home / "venv" / "marker").read_text() == "live"
-    assert (home / "venv.prev" / "bin" / "achilles").exists()
+    assert (home / "venv.prev" / "bin" / "homer").exists()
     assert restarts == ["restart", "restart"]
 
 

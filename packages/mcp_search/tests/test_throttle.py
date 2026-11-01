@@ -1,6 +1,6 @@
 import time
 
-from achilles_mcp_search.throttle import RateLimiter, TtlCache
+from homer_mcp_search.throttle import RateLimiter, TtlCache
 
 
 async def test_rate_limiter_spaces_same_key() -> None:

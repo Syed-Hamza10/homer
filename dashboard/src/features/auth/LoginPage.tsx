@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { Landmark } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ApiError, post } from "@/lib/api"
 
@@ -14,7 +15,7 @@ const messages: Record<number, string> = {
 function describe(error: Error | null): string | null {
   if (!error) return null
   if (error instanceof ApiError) return messages[error.status] ?? "Login failed"
-  return "Cannot reach the Achilles server"
+  return "Cannot reach the Homer server"
 }
 
 export function LoginPage() {
@@ -39,28 +40,55 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Achilles</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="flex flex-col gap-3">
-            <Input
-              type="password"
-              autoFocus
-              autoComplete="current-password"
-              placeholder="Passphrase"
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
-              aria-invalid={error ? true : undefined}
-            />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={!passphrase || login.isPending}>
-              Unlock
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      <div className="flex w-full max-w-sm flex-col items-center gap-7">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <span className="flex size-14 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-[inset_0_1px_0_var(--marble-1)]">
+            <Landmark className="size-6" strokeWidth={1.25} />
+          </span>
+          <div>
+            <p className="text-[9px] font-medium tracking-[0.4em] uppercase text-muted-foreground">
+              Your local oracle
+            </p>
+            <h1 className="mt-1.5 font-heading text-4xl tracking-[0.14em] uppercase">
+              Homer
+            </h1>
+          </div>
+          <div aria-hidden className="flex items-center gap-3">
+            <span className="h-px w-12 bg-border" />
+            <span className="size-1.5 rotate-45 border border-ring/70" />
+            <span className="h-px w-12 bg-border" />
+          </div>
+        </div>
+        <Card className="w-full shadow-[0_24px_60px_-40px_oklch(0.25_0.01_65/0.55)]">
+          <CardContent className="flex flex-col gap-4 pt-1">
+            <p className="text-center text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+              Enter the archive
+            </p>
+            <form onSubmit={submit} className="flex flex-col gap-3">
+              <Input
+                type="password"
+                autoFocus
+                autoComplete="current-password"
+                placeholder="Passphrase"
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+                aria-invalid={error ? true : undefined}
+              />
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button
+                type="submit"
+                disabled={!passphrase || login.isPending}
+                className="w-full"
+              >
+                Unlock
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+        <p className="text-center text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
+          The model runs on this machine
+        </p>
+      </div>
     </main>
   )
 }

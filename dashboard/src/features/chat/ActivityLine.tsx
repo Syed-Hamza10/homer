@@ -20,7 +20,7 @@ export function ActivityLine({ item }: Props) {
   const detail =
     item.kind === "tool_call" ? JSON.stringify(item.args) : item.summary
   return (
-    <p className="truncate font-mono text-xs text-muted-foreground">
+    <p className="truncate font-mono text-[11px] text-muted-foreground/80">
       {item.kind === "tool_call" ? "→" : "←"} {item.name} {detail}
     </p>
   )

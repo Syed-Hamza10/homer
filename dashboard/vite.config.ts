@@ -13,7 +13,7 @@ export default defineConfig({
     proxy: { "/api": "http://127.0.0.1:8000" },
   },
   build: {
-    outDir: "../packages/core/achilles_core/static",
+    outDir: "../packages/core/homer_core/static",
     emptyOutDir: true,
   },
   test: {

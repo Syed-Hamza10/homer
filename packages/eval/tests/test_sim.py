@@ -7,8 +7,8 @@ from email.message import EmailMessage
 import pytest
 from fastapi.testclient import TestClient
 
-from achilles_sim.app import create_app
-from achilles_sim.state import KNOWN_TOKEN
+from homer_sim.app import create_app
+from homer_sim.state import KNOWN_TOKEN
 
 AUTH = {"Authorization": f"Bearer {KNOWN_TOKEN}"}
 GMAIL = "/gmail/v1/users/me"

@@ -6,13 +6,13 @@ import pytest
 from sqlmodel import Session
 from typer.testing import CliRunner
 
-from achilles_core import cli
-from achilles_core.cli import app
-from achilles_core.db.session import make_engine, run_migrations
-from achilles_core.llm import chat_model_tag
-from achilles_core.platform import ensure_home
-from achilles_core.services.rules import get_rules
-from achilles_core.services.users import ensure_first_user, first_user
+from homer_core import cli
+from homer_core.cli import app
+from homer_core.db.session import make_engine, run_migrations
+from homer_core.llm import chat_model_tag
+from homer_core.platform import ensure_home
+from homer_core.services.rules import get_rules
+from homer_core.services.users import ensure_first_user, first_user
 
 runner = CliRunner()
 
@@ -26,8 +26,8 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     with Session(engine) as session:
         ensure_first_user(session, "Tester", "UTC")
     engine.dispose()
-    monkeypatch.setenv("ACHILLES_HOME", str(path))
-    monkeypatch.setenv("ACHILLES_PASSPHRASE", "test-pass")
+    monkeypatch.setenv("HOMER_HOME", str(path))
+    monkeypatch.setenv("HOMER_PASSPHRASE", "test-pass")
     return path
 
 
@@ -66,15 +66,15 @@ def test_backup_command_writes_a_file(home: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Backup written" in result.output
     assert "--include-secrets" in result.output
-    assert list((home / "backups").glob("achilles-*.tar.gz"))
+    assert list((home / "backups").glob("homer-*.tar.gz"))
 
 
 def test_backup_command_can_include_secrets(home: Path) -> None:
-    (home / ".env").write_text("ACHILLES_PASSPHRASE=test-pass\n")
+    (home / ".env").write_text("HOMER_PASSPHRASE=test-pass\n")
     result = runner.invoke(app, ["backup", "--include-secrets"])
     assert result.exit_code == 0, result.output
     assert "--include-secrets" not in result.output
-    archive = next((home / "backups").glob("achilles-*.tar.gz"))
+    archive = next((home / "backups").glob("homer-*.tar.gz"))
     with tarfile.open(archive) as tar:
         assert ".env" in tar.getnames()
 
@@ -109,7 +109,7 @@ def test_eval_requires_the_smoke_flag(home: Path) -> None:
     assert "--smoke" in result.output
 
 
-def test_eval_smoke_wraps_achilles_eval(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_eval_smoke_wraps_homer_eval(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], check: bool) -> SimpleNamespace:
@@ -120,4 +120,4 @@ def test_eval_smoke_wraps_achilles_eval(home: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
     result = runner.invoke(app, ["eval", "--smoke"])
     assert result.exit_code == 3
-    assert calls == [["/fake/bin/achilles-eval", "--runs", "3"]]
+    assert calls == [["/fake/bin/homer-eval", "--runs", "3"]]

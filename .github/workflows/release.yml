@@ -29,20 +29,20 @@ jobs:
       - name: Check tag matches the package version
         run: |
           uv run python - <<'PY'
-          import achilles_core, os
+          import homer_core, os
           tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
-          assert achilles_core.__version__ == tag, (achilles_core.__version__, tag)
+          assert homer_core.__version__ == tag, (homer_core.__version__, tag)
           PY
       - run: uv build --all-packages --out-dir dist
-      - run: rm -f dist/achilles_eval-*.whl dist/*.tar.gz
+      - run: rm -f dist/homer_eval-*.whl dist/*.tar.gz
       - name: Verify the wheel contains the dashboard and manifest
         run: |
           uv run python - <<'PY'
           import glob, zipfile
-          wheel = glob.glob("dist/achilles_core-*.whl")[0]
+          wheel = glob.glob("dist/homer_core-*.whl")[0]
           names = zipfile.ZipFile(wheel).namelist()
-          assert "achilles_core/static/index.html" in names
-          assert "achilles_core/models/manifest.json" in names
+          assert "homer_core/static/index.html" in names
+          assert "homer_core/models/manifest.json" in names
           print("wheel verified")
           PY
       - name: Export the locked dependency set and checksums
@@ -63,8 +63,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     env:
-      ACHILLES_HOME: ${{ github.workspace }}/achilles-home
-      ACHILLES_PASSPHRASE: smoke-test
+      HOMER_HOME: ${{ github.workspace }}/homer-home
+      HOMER_PASSPHRASE: smoke-test
     steps:
       - uses: astral-sh/setup-uv@v5
       - uses: actions/download-artifact@v4
@@ -79,9 +79,9 @@ jobs:
           uv pip install --python venv/bin/python -c dist/requirements.lock dist/*.whl
       - name: Run the installed CLI
         run: |
-          venv/bin/achilles db upgrade
-          venv/bin/achilles doctor --quick
-          venv/bin/achilles privacy > /dev/null
+          venv/bin/homer db upgrade
+          venv/bin/homer doctor --quick
+          venv/bin/homer privacy > /dev/null
 
   publish:
     needs: smoke

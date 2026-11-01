@@ -14,7 +14,7 @@ BASE = "2026-10-16T12:00:00+05:00"
 @pytest.fixture
 async def client() -> AsyncIterator[Client]:
     transport = StdioTransport(
-        sys.executable, ["-m", "achilles_mcp_system.server"], env=dict(os.environ)
+        sys.executable, ["-m", "homer_mcp_system.server"], env=dict(os.environ)
     )
     async with Client(transport) as c:
         yield c

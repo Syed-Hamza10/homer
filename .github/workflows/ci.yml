@@ -43,9 +43,9 @@ jobs:
         run: |
           uv run python - <<'PY'
           import glob, zipfile
-          wheel = glob.glob("dist/achilles_core-*.whl")[0]
+          wheel = glob.glob("dist/homer_core-*.whl")[0]
           names = zipfile.ZipFile(wheel).namelist()
-          assert "achilles_core/static/index.html" in names
-          assert "achilles_core/models/manifest.json" in names
+          assert "homer_core/static/index.html" in names
+          assert "homer_core/models/manifest.json" in names
           print("wheel verified")
           PY

@@ -1,6 +1,6 @@
 import pytest
 
-from achilles_net import Allowlist, BlockedHostError
+from homer_net import Allowlist, BlockedHostError
 
 
 def test_allowed_host_passes() -> None:

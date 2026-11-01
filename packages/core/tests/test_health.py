@@ -1,7 +1,7 @@
 import respx
 from fastapi.testclient import TestClient
 
-from achilles_core import __version__
+from homer_core import __version__
 
 
 def test_health_reports_ollama_ok(client: TestClient, respx_mock: respx.MockRouter) -> None:

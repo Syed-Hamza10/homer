@@ -11,8 +11,10 @@ export function MessageBubble({ role, content }: Props) {
     >
       <div
         className={cn(
-          "max-w-[75%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap",
-          own ? "bg-primary text-primary-foreground" : "bg-muted",
+          "max-w-[75%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+          own
+            ? "bg-primary text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.12)]"
+            : "border border-border bg-card/80 shadow-[inset_0_1px_0_var(--marble-1)]",
         )}
       >
         {content || <span className="animate-pulse">…</span>}

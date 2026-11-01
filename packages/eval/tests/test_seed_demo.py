@@ -10,13 +10,13 @@ from types import ModuleType
 import httpx
 import pytest
 
-from achilles_sim.state import KNOWN_TOKEN
+from homer_sim.state import KNOWN_TOKEN
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "scripts"
 VENV_BIN = Path(sys.executable).parent
 AUTH = {"Authorization": f"Bearer {KNOWN_TOKEN}"}
-DEMO_QUERY = {"q": "label:achilles-demo -in:trash"}
+DEMO_QUERY = {"q": "label:homer-demo -in:trash"}
 
 
 def load(name: str) -> ModuleType:
@@ -40,7 +40,7 @@ def sim_url() -> Iterator[str]:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     url = f"http://127.0.0.1:{port}"
-    command = [str(VENV_BIN / "achilles-sim"), "--port", str(port)]
+    command = [str(VENV_BIN / "homer-sim"), "--port", str(port)]
     command += ["--seed", str(SCRIPTS / "demo_sim_seed.json")]
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -81,7 +81,7 @@ def test_seed_sim_is_idempotent_and_wipes(sim_url: str) -> None:
     labels = {
         label["name"] for label in httpx.get(f"{gmail}/labels", headers=AUTH).json()["labels"]
     }
-    assert {"Clients", "Invoices", "Newsletters", "achilles-demo"} <= labels
+    assert {"Clients", "Invoices", "Newsletters", "homer-demo"} <= labels
 
     wiped = seed("--target", "sim", "--sim-url", sim_url, "--wipe")
     assert "10 messages trashed, 6 events deleted" in wiped

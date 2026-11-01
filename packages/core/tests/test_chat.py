@@ -9,7 +9,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
 
-from achilles_core.db.models import Message, TokenCounter
+from homer_core.db.models import Message, TokenCounter
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
 

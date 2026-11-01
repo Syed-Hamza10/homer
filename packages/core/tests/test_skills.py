@@ -6,13 +6,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from achilles_core.db.models import EmailCache, FollowUp, Reminder
-from achilles_core.mcp.manager import McpManager
-from achilles_core.services import briefs, calendar, followups
-from achilles_core.services.rules import get_rules
-from achilles_core.services.scheduler import CURSOR_KEY, Scheduler
-from achilles_core.services.store import read_setting, write_setting
-from achilles_core.services.users import first_user
+from homer_core.db.models import EmailCache, FollowUp, Reminder
+from homer_core.mcp.manager import McpManager
+from homer_core.services import briefs, calendar, followups
+from homer_core.services.rules import get_rules
+from homer_core.services.scheduler import CURSOR_KEY, Scheduler
+from homer_core.services.store import read_setting, write_setting
+from homer_core.services.users import first_user
 
 
 def test_refresh_and_triage_labels(
@@ -294,7 +294,7 @@ async def test_scheduler_backup_writes_an_archive(
 ) -> None:
     scheduler = Scheduler(settings, app.state.engine, app.state.runtime, app.state.http_client)
     await scheduler.backup()
-    assert list((settings.achilles_home / "backups").glob("achilles-*.tar.gz"))
+    assert list((settings.homer_home / "backups").glob("homer-*.tar.gz"))
 
 
 def test_brief_text_includes_sources(app: FastAPI, logged_in: TestClient) -> None:

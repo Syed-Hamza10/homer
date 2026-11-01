@@ -24,11 +24,11 @@ from demo_data import (  # noqa: E402
     raw_message,
 )
 
-from achilles_mcp_google.auth import TokenStore  # noqa: E402
-from achilles_mcp_google.client import GoogleClient  # noqa: E402
-from achilles_mcp_google.settings import Settings  # noqa: E402
-from achilles_net.client import no_log  # noqa: E402
-from achilles_sim.state import KNOWN_TOKEN  # noqa: E402
+from homer_mcp_google.auth import TokenStore  # noqa: E402
+from homer_mcp_google.client import GoogleClient  # noqa: E402
+from homer_mcp_google.settings import Settings  # noqa: E402
+from homer_net.client import no_log  # noqa: E402
+from homer_sim.state import KNOWN_TOKEN  # noqa: E402
 
 GMAIL = "/gmail/v1/users/me"
 EVENTS_PATH = "/calendar/v3/calendars/primary/events"
@@ -164,7 +164,7 @@ def google_client(settings: Settings, token_path: Path) -> GoogleClient:
 
 
 def sim_client(sim_url: str) -> GoogleClient:
-    home = Path(tempfile.mkdtemp(prefix="achilles-seed-"))
+    home = Path(tempfile.mkdtemp(prefix="homer-seed-"))
     store = TokenStore(home / "google_token.json")
     store.save({"token": KNOWN_TOKEN, "refresh_token": "sim-refresh-token"})
     settings = Settings(home=home, api_base=sim_url, token_url=f"{sim_url}/token")
@@ -181,10 +181,8 @@ async def run(client: Transport, wipe_only: bool) -> None:
 
 
 def main(
-    target: Annotated[Target, typer.Option(help="sim: a running achilles-sim; google: the token")],
-    sim_url: Annotated[
-        str, typer.Option(help="Base URL of achilles-sim")
-    ] = "http://127.0.0.1:8900",
+    target: Annotated[Target, typer.Option(help="sim: a running homer-sim; google: the token")],
+    sim_url: Annotated[str, typer.Option(help="Base URL of homer-sim")] = "http://127.0.0.1:8900",
     wipe: Annotated[bool, typer.Option("--wipe", help="Remove only items with the marker")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Print requests only")] = False,
 ) -> None:

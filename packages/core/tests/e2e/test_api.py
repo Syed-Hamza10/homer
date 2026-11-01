@@ -48,7 +48,7 @@ def test_follow_up_uses_history(first_reply: Frames, follow_up_reply: Frames) ->
 
 
 def test_outbound_log_only_ollama(home: Path, follow_up_reply: Frames) -> None:
-    with sqlite3.connect(home / "data" / "achilles.db") as connection:
+    with sqlite3.connect(home / "data" / "homer.db") as connection:
         hosts = connection.execute("SELECT DISTINCT host FROM outbound_log").fetchall()
         calls = connection.execute("SELECT COUNT(*) FROM outbound_log").fetchone()[0]
         requests = connection.execute("SELECT requests FROM token_counter").fetchone()[0]

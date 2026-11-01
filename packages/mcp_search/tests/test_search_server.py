@@ -23,8 +23,8 @@ Rows = Callable[[], list[tuple]]
 def server_client(home: Path, **env: str) -> Client:
     transport = StdioTransport(
         sys.executable,
-        ["-m", "achilles_mcp_search.server"],
-        env={**os.environ, "ACHILLES_HOME": str(home), **env},
+        ["-m", "homer_mcp_search.server"],
+        env={**os.environ, "HOMER_HOME": str(home), **env},
     )
     return Client(transport)
 
@@ -48,7 +48,7 @@ class CountingHandler(BaseHTTPRequestHandler):
 def home(tmp_path: Path) -> Path:
     home = tmp_path / "home"
     (home / "data").mkdir(parents=True)
-    sqlite3.connect(home / "data" / "achilles.db").execute(SCHEMA)
+    sqlite3.connect(home / "data" / "homer.db").execute(SCHEMA)
     return home
 
 
@@ -56,7 +56,7 @@ def home(tmp_path: Path) -> Path:
 def outbound_rows(home: Path) -> Rows:
     def rows() -> list[tuple]:
         return (
-            sqlite3.connect(home / "data" / "achilles.db")
+            sqlite3.connect(home / "data" / "homer.db")
             .execute("SELECT method, host, path, status FROM outbound_log")
             .fetchall()
         )

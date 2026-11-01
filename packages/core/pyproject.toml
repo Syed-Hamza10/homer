@@ -1,10 +1,10 @@
 [project]
-name = "achilles-core"
+name = "homer-core"
 version = "0.1.0"
-description = "Achilles backend: API, agent, scheduler and approvals."
+description = "Homer backend: API, agent, scheduler and approvals."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "achilles-net",
+    "homer-net",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic-settings>=2.6",
@@ -19,27 +19,27 @@ dependencies = [
 ]
 
 [project.scripts]
-achilles = "achilles_core.cli:app"
+homer = "homer_core.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["achilles_core/models/manifest.json"]
+artifacts = ["homer_core/models/manifest.json"]
 
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["achilles_core"]
+packages = ["homer_core"]
 
 [dependency-groups]
 dev = [
     "fastmcp>=4.1",
     "pytest-playwright>=0.6",
-    "achilles-eval",
-    "achilles-mcp-google",
-    "achilles-mcp-search",
-    "achilles-mcp-system",
+    "homer-eval",
+    "homer-mcp-google",
+    "homer-mcp-search",
+    "homer-mcp-system",
 ]

@@ -10,7 +10,7 @@ export function describeDecisionError(error: Error | null): string | null {
   if (error instanceof ApiError && error.status === 409)
     return "Already decided"
   if (error instanceof ApiError) return `Request failed (${error.status})`
-  return "Cannot reach the Achilles server"
+  return "Cannot reach the Homer server"
 }
 
 export function useDecide(onDecided?: (approval: Approval) => void) {

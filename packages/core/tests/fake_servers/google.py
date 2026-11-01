@@ -1,4 +1,4 @@
-"""Stand-in for achilles-mcp-google: contract-shaped tools over canned fictional data."""
+"""Stand-in for homer-mcp-google: contract-shaped tools over canned fictional data."""
 
 import asyncio
 from typing import Any
@@ -6,7 +6,7 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-server = FastMCP("achilles-mcp-google")
+server = FastMCP("homer-mcp-google")
 
 MESSAGES = {
     "m1": {

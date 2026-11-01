@@ -1,17 +1,17 @@
-# Achilles
+# Homer
 
 Local-first AI assistant (email, calendar, search) running on the client's machine through Ollama.
 
 ## Source of truth
 
-`ACHILLES_IMPLEMENTATION_PLAN_v3.md`. Read it before each build step. Section 13 is the build order; section 15 is the rules. Record every deviation in `docs/DECISIONS.md` with a one-line reason.
+`HOMER_IMPLEMENTATION_PLAN_v3.md`. Read it before each build step. Section 13 is the build order; section 15 is the rules. Record every deviation in `docs/DECISIONS.md` with a one-line reason.
 
 ## Code style
 
 - SOLID, KISS, DRY. No overengineering.
 - No comments. A docstring only when a function's behaviour is not obvious from its name and types.
 - No abstraction without a second implementation.
-- All outbound HTTP goes through `achilles_net`. Nothing else imports `httpx`, `requests`, `aiohttp` or `urllib.request`.
+- All outbound HTTP goes through `homer_net`. Nothing else imports `httpx`, `requests`, `aiohttp` or `urllib.request`.
 - Model tags live only in `models/manifest.json`.
 - Tests ship with the code. Prefer end-to-end functional tests through the real API, real SQLite, the real Ollama model and a real browser (Playwright), marked `e2e` and auto-skipped when Ollama is unreachable. A thin fake-model suite (Pydantic AI `TestModel`) stays only as the CI gate, because CI has no model.
 - No real credentials, emails or names anywhere in the repo.

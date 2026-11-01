@@ -8,11 +8,11 @@ import httpx
 import pytest
 from fastmcp import Client
 
-from achilles_mcp_google.auth import TokenStore
-from achilles_mcp_google.client import GoogleClient
-from achilles_mcp_google.settings import Settings
-from achilles_mcp_google.tools import TOOL_NAMES
-from achilles_net import BlockedHostError
+from homer_mcp_google.auth import TokenStore
+from homer_mcp_google.client import GoogleClient
+from homer_mcp_google.settings import Settings
+from homer_mcp_google.tools import TOOL_NAMES
+from homer_net import BlockedHostError
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 Spawn = Callable[..., Client]
@@ -230,7 +230,7 @@ async def test_contacts_search(mcp: Client) -> None:
 async def test_outbound_log_rows(mcp: Client, home: Path) -> None:
     await call(mcp, "contacts_search", query="maya")
     rows = (
-        sqlite3.connect(home / "data" / "achilles.db")
+        sqlite3.connect(home / "data" / "homer.db")
         .execute(
             "SELECT method, host, path, status FROM outbound_log WHERE path LIKE '/v1/people%'"
         )
@@ -284,7 +284,7 @@ async def test_server_only_ever_contacted_the_simulator(
     mcp: Client, home: Path, sim_url: str
 ) -> None:
     hosts = (
-        sqlite3.connect(home / "data" / "achilles.db")
+        sqlite3.connect(home / "data" / "homer.db")
         .execute("SELECT DISTINCT host FROM outbound_log")
         .fetchall()
     )

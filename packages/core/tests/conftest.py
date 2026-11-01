@@ -16,9 +16,9 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from achilles_core.config import Settings
-from achilles_core.main import create_app
-from achilles_core.mcp.manager import McpManager
+from homer_core.config import Settings
+from homer_core.main import create_app
+from homer_core.mcp.manager import McpManager
 
 FAKE_SERVERS = Path(__file__).parent / "fake_servers"
 
@@ -33,8 +33,8 @@ Scripted = Callable[[str, list[Step], list[list[str]]], Model]
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     return Settings(
-        achilles_home=tmp_path / "home",
-        achilles_passphrase=SecretStr(PASSPHRASE),
+        homer_home=tmp_path / "home",
+        homer_passphrase=SecretStr(PASSPHRASE),
         user_name="Tester",
         timezone="Europe/London",
         scheduler_enabled=False,

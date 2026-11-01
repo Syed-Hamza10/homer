@@ -49,7 +49,7 @@ def _write_token(home: Path, access_token: str = KNOWN_TOKEN) -> Path:
 
 
 def _create_outbound_log(home: Path) -> Path:
-    db = home / "data" / "achilles.db"
+    db = home / "data" / "homer.db"
     db.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db) as conn:
         conn.execute(OUTBOUND_LOG_SCHEMA)
@@ -59,13 +59,13 @@ def _create_outbound_log(home: Path) -> Path:
 def _spawn(home: Path, api_base: str, token_url: str) -> Client:
     env = {
         **os.environ,
-        "ACHILLES_HOME": str(home),
+        "HOMER_HOME": str(home),
         "GOOGLE_API_BASE": api_base,
         "GOOGLE_TOKEN_URL": token_url,
     }
     transport = StdioTransport(
         command="uv",
-        args=["run", "--project", str(REPO), "achilles-mcp-google"],
+        args=["run", "--project", str(REPO), "homer-mcp-google"],
         env=env,
         log_file=sys.stderr,
     )
@@ -92,7 +92,7 @@ def sim_url() -> Iterator[str]:
     port = _free_port()
     url = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(
-        ["uv", "run", "--project", str(REPO), "achilles-sim", "--port", str(port)],
+        ["uv", "run", "--project", str(REPO), "homer-sim", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
@@ -132,7 +132,7 @@ def spawn(sim_url: str) -> Spawn:
 
 @pytest.fixture(scope="session")
 def home(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    home = tmp_path_factory.mktemp("achilles_home")
+    home = tmp_path_factory.mktemp("homer_home")
     _write_token(home)
     _create_outbound_log(home)
     return home

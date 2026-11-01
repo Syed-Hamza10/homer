@@ -15,13 +15,13 @@ build/
 # Generated at build time
 node_modules/
 dashboard/dist/
-packages/core/achilles_core/static/
-packages/core/achilles_core/models/manifest.json
+packages/core/homer_core/static/
+packages/core/homer_core/models/manifest.json
 
 # Secrets and local data
 .env
 *.local
-~/.achilles/
+~/.homer/
 client_secret*.json
 token*.json
 

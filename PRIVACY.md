@@ -1,10 +1,10 @@
 # Privacy
 
-Achilles runs on your machine. Conversations, mail cache, calendar cache, approvals and the
-outbound log live in `~/.achilles`. The language model runs through Ollama locally; nothing is sent
+Homer runs on your machine. Conversations, mail cache, calendar cache, approvals and the
+outbound log live in `~/.homer`. The language model runs through Ollama locally; nothing is sent
 to a hosted model API, and there is no per-token bill.
 
-## Hosts Achilles contacts at runtime
+## Hosts Homer contacts at runtime
 
 | Host | Why |
 |---|---|
@@ -34,7 +34,7 @@ The installer and updater contact these hosts and nothing else:
 They are used to install `uv`, install Ollama, download the release wheels and install their Python
 dependencies. They are not contacted at runtime.
 
-## What Achilles never does
+## What Homer never does
 
 - It never sends a hosted-model request. There is no OpenAI, Anthropic or other model API key.
 - It never opens a host outside the list above unless the user explicitly asks `fetch_page` to open
@@ -47,7 +47,7 @@ dependencies. They are not contacted at runtime.
 Open the Privacy page, or query the database:
 
 ```sh
-sqlite3 ~/.achilles/data/achilles.db "select host, count(*) from outbound_log group by host;"
+sqlite3 ~/.homer/data/homer.db "select host, count(*) from outbound_log group by host;"
 ```
 
 The only rows you should see for normal use are `127.0.0.1:11434`, `www.googleapis.com`,

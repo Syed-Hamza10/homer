@@ -4,17 +4,17 @@ requires-python = "==3.12.*"
 
 [manifest]
 members = [
-    "achilles",
-    "achilles-core",
-    "achilles-eval",
-    "achilles-mcp-google",
-    "achilles-mcp-search",
-    "achilles-mcp-system",
-    "achilles-net",
+    "homer",
+    "homer-core",
+    "homer-eval",
+    "homer-mcp-google",
+    "homer-mcp-search",
+    "homer-mcp-system",
+    "homer-net",
 ]
 
 [[package]]
-name = "achilles"
+name = "homer"
 version = "0.1.0"
 source = { virtual = "." }
 
@@ -39,11 +39,11 @@ dev = [
 ]
 
 [[package]]
-name = "achilles-core"
+name = "homer-core"
 version = "0.1.0"
 source = { editable = "packages/core" }
 dependencies = [
-    { name = "achilles-net" },
+    { name = "homer-net" },
     { name = "alembic" },
     { name = "apscheduler" },
     { name = "fastapi" },
@@ -59,17 +59,17 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "achilles-eval" },
-    { name = "achilles-mcp-google" },
-    { name = "achilles-mcp-search" },
-    { name = "achilles-mcp-system" },
+    { name = "homer-eval" },
+    { name = "homer-mcp-google" },
+    { name = "homer-mcp-search" },
+    { name = "homer-mcp-system" },
     { name = "fastmcp" },
     { name = "pytest-playwright" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "achilles-net", editable = "packages/net" },
+    { name = "homer-net", editable = "packages/net" },
     { name = "alembic", specifier = ">=1.14" },
     { name = "apscheduler", specifier = ">=3.10,<4" },
     { name = "fastapi", specifier = ">=0.115" },
@@ -85,21 +85,21 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "achilles-eval", editable = "packages/eval" },
-    { name = "achilles-mcp-google", editable = "packages/mcp_google" },
-    { name = "achilles-mcp-search", editable = "packages/mcp_search" },
-    { name = "achilles-mcp-system", editable = "packages/mcp_system" },
+    { name = "homer-eval", editable = "packages/eval" },
+    { name = "homer-mcp-google", editable = "packages/mcp_google" },
+    { name = "homer-mcp-search", editable = "packages/mcp_search" },
+    { name = "homer-mcp-system", editable = "packages/mcp_system" },
     { name = "fastmcp", specifier = ">=4.1" },
     { name = "pytest-playwright", specifier = ">=0.6" },
 ]
 
 [[package]]
-name = "achilles-eval"
+name = "homer-eval"
 version = "0.1.0"
 source = { editable = "packages/eval" }
 dependencies = [
-    { name = "achilles-core" },
-    { name = "achilles-net" },
+    { name = "homer-core" },
+    { name = "homer-net" },
     { name = "fastapi" },
     { name = "pydantic-ai-slim", extra = ["openai"] },
     { name = "pyyaml" },
@@ -110,8 +110,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "achilles-core", editable = "packages/core" },
-    { name = "achilles-net", editable = "packages/net" },
+    { name = "homer-core", editable = "packages/core" },
+    { name = "homer-net", editable = "packages/net" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -121,49 +121,49 @@ requires-dist = [
 ]
 
 [[package]]
-name = "achilles-mcp-google"
+name = "homer-mcp-google"
 version = "0.1.0"
 source = { editable = "packages/mcp_google" }
 dependencies = [
-    { name = "achilles-net" },
+    { name = "homer-net" },
     { name = "fastmcp" },
     { name = "google-auth-oauthlib" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "achilles-eval" },
+    { name = "homer-eval" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "achilles-net", editable = "packages/net" },
+    { name = "homer-net", editable = "packages/net" },
     { name = "fastmcp", specifier = ">=4,<5" },
     { name = "google-auth-oauthlib", specifier = ">=1.2" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "achilles-eval", editable = "packages/eval" }]
+dev = [{ name = "homer-eval", editable = "packages/eval" }]
 
 [[package]]
-name = "achilles-mcp-search"
+name = "homer-mcp-search"
 version = "0.1.0"
 source = { editable = "packages/mcp_search" }
 dependencies = [
-    { name = "achilles-net" },
+    { name = "homer-net" },
     { name = "fastmcp" },
     { name = "trafilatura" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "achilles-net", editable = "packages/net" },
+    { name = "homer-net", editable = "packages/net" },
     { name = "fastmcp", specifier = ">=4.0,<5" },
     { name = "trafilatura", specifier = ">=2.0" },
 ]
 
 [[package]]
-name = "achilles-mcp-system"
+name = "homer-mcp-system"
 version = "0.1.0"
 source = { editable = "packages/mcp_system" }
 dependencies = [
@@ -178,7 +178,7 @@ requires-dist = [
 ]
 
 [[package]]
-name = "achilles-net"
+name = "homer-net"
 version = "0.1.0"
 source = { editable = "packages/net" }
 dependencies = [

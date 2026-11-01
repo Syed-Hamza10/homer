@@ -14,7 +14,7 @@ HEALTH_TIMEOUT = 20.0
 
 def test_health_job_reports_on_today(tmp_path_factory: pytest.TempPathFactory) -> None:
     require_ollama()
-    home: Path = tmp_path_factory.mktemp("achilles-scheduler-home")
+    home: Path = tmp_path_factory.mktemp("homer-scheduler-home")
     env = stand_in_env(home, free_port(), SCHEDULER_ENABLED="true")
     with running_server(home, env) as url, httpx.Client(base_url=url, headers={"Origin": url}) as c:
         login(c)

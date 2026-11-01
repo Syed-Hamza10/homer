@@ -1,4 +1,4 @@
-"""The real stack: achilles serve, the real MCP servers, the Google simulator and the live model."""
+"""The real stack: homer serve, the real MCP servers, the Google simulator and the live model."""
 
 import json
 import re
@@ -17,10 +17,10 @@ import pytest
 from playwright.sync_api import Page, expect
 from sqlmodel import Session
 
-from achilles_core.db.models import FollowUp
-from achilles_core.db.session import make_engine
-from achilles_mcp_google.messages import build_raw
-from achilles_sim.state import DEFAULT_SEED, KNOWN_TOKEN
+from homer_core.db.models import FollowUp
+from homer_core.db.session import make_engine
+from homer_mcp_google.messages import build_raw
+from homer_sim.state import DEFAULT_SEED, KNOWN_TOKEN
 
 from .conftest import (
     OLLAMA_URL,
@@ -96,7 +96,7 @@ class Stack:
         return {names[label] for label in self.gmail(f"/messages/{message_id}")["labelIds"]}
 
     def brief_rows(self) -> list[tuple[str, str]]:
-        with sqlite3.connect(self.home / "data" / "achilles.db") as connection:
+        with sqlite3.connect(self.home / "data" / "homer.db") as connection:
             return connection.execute("SELECT kind, content FROM daily_briefs").fetchall()
 
     def make_due(self, followup_id: int) -> None:
@@ -108,7 +108,7 @@ class Stack:
             session.commit()
 
     def logged_hosts(self) -> set[str]:
-        with sqlite3.connect(self.home / "data" / "achilles.db") as connection:
+        with sqlite3.connect(self.home / "data" / "homer.db") as connection:
             rows = connection.execute("SELECT DISTINCT host FROM outbound_log").fetchall()
         return {host for (host,) in rows}
 
@@ -173,7 +173,7 @@ def wait_for_simulator(process: subprocess.Popen[bytes], url: str) -> None:
 def running_simulator(seed: Path) -> tuple[subprocess.Popen[bytes], str]:
     port = free_port()
     url = f"http://127.0.0.1:{port}"
-    command = [str(VENV_BIN / "achilles-sim"), "--port", str(port), "--seed", str(seed)]
+    command = [str(VENV_BIN / "homer-sim"), "--port", str(port), "--seed", str(seed)]
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     wait_for_simulator(process, url)
     return process, url
@@ -216,7 +216,7 @@ def sent_draft_ids(frames: Frames) -> list[str]:
 @pytest.fixture(scope="session")
 def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
     require_ollama()
-    home = tmp_path_factory.mktemp("achilles-real-home")
+    home = tmp_path_factory.mktemp("homer-real-home")
     write_google_token(home)
     simulator, sim_url = running_simulator(write_seed(home))
     env = process_env(

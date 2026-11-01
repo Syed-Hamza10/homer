@@ -7,12 +7,12 @@ UV_INSTALLER="https://astral.sh/uv/${UV_VERSION}/install.sh"
 OLLAMA_RELEASE="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}"
 OLLAMA_INSTALLER="https://ollama.com/install.sh"
 
-REPO="Syed-Hamza10/achilles"
-VERSION="${ACHILLES_VERSION:-latest}"
-ACHILLES_HOME="${ACHILLES_HOME:-$HOME/.achilles}"
+REPO="Syed-Hamza10/homer"
+VERSION="${HOMER_VERSION:-latest}"
+HOMER_HOME="${HOMER_HOME:-$HOME/.homer}"
 WHEELS_DIR=""
-TOKEN="${GITHUB_TOKEN:-${ACHILLES_GITHUB_TOKEN:-}}"
-PASSPHRASE="${ACHILLES_PASSPHRASE:-}"
+TOKEN="${GITHUB_TOKEN:-${HOMER_GITHUB_TOKEN:-}}"
+PASSPHRASE="${HOMER_PASSPHRASE:-}"
 PASSPHRASE_FLAG=0
 NO_SERVICE=0
 SKIP_OLLAMA=0
@@ -29,11 +29,11 @@ usage() {
 Usage: scripts/install.sh [options] (published as install.sh on each release)
 
   --version TAG     Release tag to install (default: latest)
-  --home PATH       Achilles home (default: ~/.achilles)
+  --home PATH       Homer home (default: ~/.homer)
   --wheels-dir DIR  Install from local wheels instead of a GitHub release
   --token TOKEN     GitHub token for the private release
   --passphrase P    Initial passphrase (discouraged: lands in shell history; prefer
-                    ACHILLES_PASSPHRASE in the environment or the interactive prompt)
+                    HOMER_PASSPHRASE in the environment or the interactive prompt)
   --no-service      Do not register a launchd/systemd service
   --skip-ollama     Do not install or configure Ollama
   --dry-run         Check the machine and print the plan; change nothing
@@ -50,7 +50,7 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSION="$2"; shift 2 ;;
-    --home) ACHILLES_HOME="$2"; shift 2 ;;
+    --home) HOMER_HOME="$2"; shift 2 ;;
     --wheels-dir) WHEELS_DIR="$2"; shift 2 ;;
     --token) TOKEN="$2"; shift 2 ;;
     --passphrase) PASSPHRASE="$2"; PASSPHRASE_FLAG=1; shift 2 ;;
@@ -64,10 +64,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-export ACHILLES_HOME
+export HOMER_HOME
 
-VENV="$ACHILLES_HOME/venv"
-LABEL="dev.achilles.server"
+VENV="$HOMER_HOME/venv"
+LABEL="dev.homer.server"
 OLLAMA_BIN="${OLLAMA_BIN:-ollama}"
 
 render_ollama_plist() {
@@ -76,7 +76,7 @@ render_ollama_plist() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>dev.achilles.ollama</string>
+  <key>Label</key><string>dev.homer.ollama</string>
   <key>ProgramArguments</key>
   <array><string>$OLLAMA_BIN</string><string>serve</string></array>
   <key>EnvironmentVariables</key>
@@ -88,8 +88,8 @@ render_ollama_plist() {
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$ACHILLES_HOME/logs/ollama.log</string>
-  <key>StandardErrorPath</key><string>$ACHILLES_HOME/logs/ollama.err.log</string>
+  <key>StandardOutPath</key><string>$HOMER_HOME/logs/ollama.log</string>
+  <key>StandardErrorPath</key><string>$HOMER_HOME/logs/ollama.err.log</string>
 </dict>
 </plist>
 EOF
@@ -113,17 +113,17 @@ render_server_plist() {
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$VENV/bin/achilles</string><string>serve</string></array>
+  <array><string>$VENV/bin/homer</string><string>serve</string></array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>ACHILLES_HOME</key><string>$ACHILLES_HOME</string>
-    <key>PATH</key><string>$VENV/bin:$ACHILLES_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOMER_HOME</key><string>$HOMER_HOME</string>
+    <key>PATH</key><string>$VENV/bin:$HOMER_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
-  <key>WorkingDirectory</key><string>$ACHILLES_HOME</string>
+  <key>WorkingDirectory</key><string>$HOMER_HOME</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$ACHILLES_HOME/logs/achilles.log</string>
-  <key>StandardErrorPath</key><string>$ACHILLES_HOME/logs/achilles.err.log</string>
+  <key>StandardOutPath</key><string>$HOMER_HOME/logs/homer.log</string>
+  <key>StandardErrorPath</key><string>$HOMER_HOME/logs/homer.err.log</string>
 </dict>
 </plist>
 EOF
@@ -132,18 +132,18 @@ EOF
 render_server_unit() {
   cat <<EOF
 [Unit]
-Description=Achilles local assistant
+Description=Homer local assistant
 After=network-online.target
 
 [Service]
-WorkingDirectory=$ACHILLES_HOME
-Environment=ACHILLES_HOME=$ACHILLES_HOME
+WorkingDirectory=$HOMER_HOME
+Environment=HOMER_HOME=$HOMER_HOME
 Environment=PATH=$VENV/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=$VENV/bin/achilles serve
+ExecStart=$VENV/bin/homer serve
 Restart=always
 RestartSec=3
-StandardOutput=append:$ACHILLES_HOME/logs/achilles.log
-StandardError=append:$ACHILLES_HOME/logs/achilles.err.log
+StandardOutput=append:$HOMER_HOME/logs/homer.log
+StandardError=append:$HOMER_HOME/logs/homer.err.log
 
 [Install]
 WantedBy=default.target
@@ -162,7 +162,7 @@ if [ -n "$RENDER" ]; then
 fi
 
 if [ "$PASSPHRASE_FLAG" = "1" ]; then
-  warn "--passphrase is saved in your shell history; next time set ACHILLES_PASSPHRASE or use the prompt"
+  warn "--passphrase is saved in your shell history; next time set HOMER_PASSPHRASE or use the prompt"
 fi
 
 OS="$(uname -s)"
@@ -177,7 +177,7 @@ else
   RAM_BYTES="$(awk '/MemTotal/ {print $2 * 1024}' /proc/meminfo)"
 fi
 RAM_GB=$((RAM_BYTES / 1073741824))
-DISK_PATH="$ACHILLES_HOME"
+DISK_PATH="$HOMER_HOME"
 while [ ! -d "$DISK_PATH" ]; do DISK_PATH="$(dirname "$DISK_PATH")"; done
 FREE_BYTES="$(df -Pk "$DISK_PATH" | awk 'NR==2 {print $4 * 1024}')"
 FREE_GB=$((FREE_BYTES / 1073741824))
@@ -217,12 +217,12 @@ if [ "$DRY_RUN" = "1" ]; then
 Dry run only. The installer would:
   1. install uv $UV_VERSION if missing (from $UV_INSTALLER)
   2. install Ollama $OLLAMA_VERSION if missing, verified against its sha256sum.txt, and configure it with a 16k context
-  3. create $ACHILLES_HOME/{credentials,data,documents,logs,backups,venv} with mode 0700
+  3. create $HOMER_HOME/{credentials,data,documents,logs,backups,venv} with mode 0700
   4. download the release wheels, SHA256SUMS and requirements.lock, and verify every wheel against SHA256SUMS
-  5. install the verified wheels into $ACHILLES_HOME/venv with requirements.lock as constraints
-  6. write $ACHILLES_HOME/.env with TIMEZONE=$TIMEZONE and pull the manifest models
-  7. register and start the Achilles service (unless --no-service)
-  8. run achilles doctor and print http://127.0.0.1:8000
+  5. install the verified wheels into $HOMER_HOME/venv with requirements.lock as constraints
+  6. write $HOMER_HOME/.env with TIMEZONE=$TIMEZONE and pull the manifest models
+  7. register and start the Homer service (unless --no-service)
+  8. run homer doctor and print http://127.0.0.1:8000
 EOF
   exit 0
 fi
@@ -245,8 +245,8 @@ verify_wheels() {
   log "Verified $(ls "$dir"/*.whl | wc -l | tr -d ' ') wheels against SHA256SUMS"
 }
 
-mkdir -p "$ACHILLES_HOME"/{credentials,data,documents,logs,backups}
-chmod 700 "$ACHILLES_HOME" "$ACHILLES_HOME"/{credentials,data,documents,logs,backups}
+mkdir -p "$HOMER_HOME"/{credentials,data,documents,logs,backups}
+chmod 700 "$HOMER_HOME" "$HOMER_HOME"/{credentials,data,documents,logs,backups}
 
 if ! command -v uv >/dev/null 2>&1; then
   log "Installing uv $UV_VERSION"
@@ -255,10 +255,10 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 command -v uv >/dev/null 2>&1 || die "uv is not on PATH after installation"
 
-ENV_FILE="$ACHILLES_HOME/.env"
+ENV_FILE="$HOMER_HOME/.env"
 if [ ! -f "$ENV_FILE" ]; then
   if [ -z "$PASSPHRASE" ]; then
-    [ -t 0 ] || die "set ACHILLES_PASSPHRASE in the environment, or run interactively to be prompted"
+    [ -t 0 ] || die "set HOMER_PASSPHRASE in the environment, or run interactively to be prompted"
     read -rsp "Choose a passphrase: " PASSPHRASE; echo
     read -rsp "Repeat the passphrase: " CONFIRM; echo
     [ "$PASSPHRASE" = "$CONFIRM" ] || die "passphrases do not match"
@@ -266,8 +266,8 @@ if [ ! -f "$ENV_FILE" ]; then
   [ -n "$PASSPHRASE" ] || die "passphrase cannot be empty"
   ESCAPED="$(printf '%s' "$PASSPHRASE" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
   cat >"$ENV_FILE" <<EOF
-ACHILLES_HOME="$ACHILLES_HOME"
-ACHILLES_PASSPHRASE="$ESCAPED"
+HOMER_HOME="$HOMER_HOME"
+HOMER_PASSPHRASE="$ESCAPED"
 WEB_SEARCH=true
 SCHEDULER_ENABLED=true
 TIMEZONE=$TIMEZONE
@@ -282,9 +282,9 @@ else
 fi
 
 if [ -n "$TOKEN" ]; then
-  printf '%s\n' "$TOKEN" >"$ACHILLES_HOME/github_token"
-  chmod 600 "$ACHILLES_HOME/github_token"
-  log "Saved the GitHub token to $ACHILLES_HOME/github_token for achilles update"
+  printf '%s\n' "$TOKEN" >"$HOMER_HOME/github_token"
+  chmod 600 "$HOMER_HOME/github_token"
+  log "Saved the GitHub token to $HOMER_HOME/github_token for homer update"
 fi
 
 install_ollama_darwin() {
@@ -293,10 +293,10 @@ install_ollama_darwin() {
   curl -fsSL -o "$tmp/ollama-darwin.tgz" "$OLLAMA_RELEASE/ollama-darwin.tgz"
   curl -fsSL -o "$tmp/sha256sum.txt" "$OLLAMA_RELEASE/sha256sum.txt"
   sha256_check "$tmp" sha256sum.txt || die "Ollama $OLLAMA_VERSION checksum mismatch"
-  mkdir -p "$ACHILLES_HOME/bin"
-  tar -xzf "$tmp/ollama-darwin.tgz" -C "$ACHILLES_HOME/bin"
+  mkdir -p "$HOMER_HOME/bin"
+  tar -xzf "$tmp/ollama-darwin.tgz" -C "$HOMER_HOME/bin"
   rm -rf "$tmp"
-  export PATH="$ACHILLES_HOME/bin:$PATH"
+  export PATH="$HOMER_HOME/bin:$PATH"
 }
 
 if [ "$SKIP_OLLAMA" = "0" ]; then
@@ -312,7 +312,7 @@ if [ "$SKIP_OLLAMA" = "0" ]; then
   [ -n "$OLLAMA_BIN" ] || die "ollama is not on PATH after installation"
 
   if [ "$OS" = "Darwin" ]; then
-    PLIST="$HOME/Library/LaunchAgents/dev.achilles.ollama.plist"
+    PLIST="$HOME/Library/LaunchAgents/dev.homer.ollama.plist"
     mkdir -p "$HOME/Library/LaunchAgents"
     render_ollama_plist >"$PLIST"
     launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
@@ -320,7 +320,7 @@ if [ "$SKIP_OLLAMA" = "0" ]; then
   else
     if command -v systemctl >/dev/null 2>&1; then
       sudo mkdir -p /etc/systemd/system/ollama.service.d
-      render_ollama_dropin | sudo tee /etc/systemd/system/ollama.service.d/achilles.conf >/dev/null
+      render_ollama_dropin | sudo tee /etc/systemd/system/ollama.service.d/homer.conf >/dev/null
       sudo systemctl daemon-reload
       sudo systemctl enable --now ollama
       sudo systemctl restart ollama
@@ -393,7 +393,7 @@ else
   fi
 fi
 
-ls "$WHEELS"/achilles_core-*.whl >/dev/null 2>&1 || die "no achilles_core wheel in $WHEELS"
+ls "$WHEELS"/homer_core-*.whl >/dev/null 2>&1 || die "no homer_core wheel in $WHEELS"
 if [ -f "$WHEELS/SHA256SUMS" ]; then
   verify_wheels "$WHEELS"
 elif [ -n "$WHEELS_DIR" ]; then
@@ -415,14 +415,14 @@ if [ ! -x "$VENV/bin/python" ]; then
   log "Creating the Python environment"
   uv venv --python 3.12 "$VENV"
 fi
-log "Installing Achilles"
+log "Installing Homer"
 uv pip install --python "$VENV/bin/python" --upgrade --find-links "$WHEELS" \
   ${CONSTRAINTS[@]+"${CONSTRAINTS[@]}"} \
-  achilles-core achilles-mcp-google achilles-mcp-search achilles-mcp-system
+  homer-core homer-mcp-google homer-mcp-search homer-mcp-system
 
 if [ "$SKIP_OLLAMA" = "0" ]; then
-  CHAT_TAG="$("$VENV/bin/python" -c 'from achilles_core.llm import chat_model_tag; from achilles_core.platform import hardware_tier; print(chat_model_tag(hardware_tier()))')"
-  EMBED_TAG="$("$VENV/bin/python" -c 'from achilles_core.llm import load_manifest; from achilles_core.platform import hardware_tier; print(load_manifest()[hardware_tier()]["embed"])')"
+  CHAT_TAG="$("$VENV/bin/python" -c 'from homer_core.llm import chat_model_tag; from homer_core.platform import hardware_tier; print(chat_model_tag(hardware_tier()))')"
+  EMBED_TAG="$("$VENV/bin/python" -c 'from homer_core.llm import load_manifest; from homer_core.platform import hardware_tier; print(load_manifest()[hardware_tier()]["embed"])')"
   log "Pulling $CHAT_TAG and $EMBED_TAG"
   "$OLLAMA_BIN" pull "$CHAT_TAG"
   "$OLLAMA_BIN" pull "$EMBED_TAG"
@@ -432,11 +432,11 @@ if [ "$OS" = "Darwin" ]; then
   PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 else
   UNIT_DIR="$HOME/.config/systemd/user"
-  UNIT="$UNIT_DIR/achilles.service"
+  UNIT="$UNIT_DIR/homer.service"
 fi
 
 if [ "$NO_SERVICE" = "0" ]; then
-  log "Registering the Achilles service"
+  log "Registering the Homer service"
   if [ "$OS" = "Darwin" ]; then
     mkdir -p "$HOME/Library/LaunchAgents"
     render_server_plist >"$PLIST"
@@ -447,15 +447,15 @@ if [ "$NO_SERVICE" = "0" ]; then
     mkdir -p "$UNIT_DIR"
     render_server_unit >"$UNIT"
     systemctl --user daemon-reload || warn "systemctl --user is unavailable"
-    systemctl --user enable --now achilles || warn "could not start the user service"
+    systemctl --user enable --now homer || warn "could not start the user service"
     loginctl enable-linger "$USER" >/dev/null 2>&1 || true
   fi
 else
-  warn "service not registered; start with $VENV/bin/achilles serve"
+  warn "service not registered; start with $VENV/bin/homer serve"
 fi
 
-"$VENV/bin/achilles" db upgrade
-"$VENV/bin/achilles" doctor || warn "doctor reported a problem; see the table above"
+"$VENV/bin/homer" db upgrade
+"$VENV/bin/homer" doctor || warn "doctor reported a problem; see the table above"
 
 if [ "$NO_SERVICE" = "0" ]; then
   attempts=0
@@ -468,19 +468,19 @@ fi
 
 cat <<EOF
 
-Achilles is installed.
+Homer is installed.
 
   Dashboard:  http://127.0.0.1:8000
-  Data:       $ACHILLES_HOME
-  Backups:    $ACHILLES_HOME/backups
-  Logs:       $VENV/bin/achilles logs -f
+  Data:       $HOMER_HOME
+  Backups:    $HOMER_HOME/backups
+  Logs:       $VENV/bin/homer logs -f
 
 Next:
   1. Open the dashboard and sign in with your passphrase.
   2. Connect Google with the onboarding guide, then run:
-       $VENV/bin/achilles setup google
+       $VENV/bin/homer setup google
   3. Re-run the doctor after the first sign-in:
-       $VENV/bin/achilles doctor
+       $VENV/bin/homer doctor
 
-If anything fails, read $ACHILLES_HOME/logs/achilles.err.log.
+If anything fails, read $HOMER_HOME/logs/homer.err.log.
 EOF

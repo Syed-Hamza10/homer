@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from achilles_net import Allowlist, AllowlistedClient, BlockedHostError, OutboundCall
+from homer_net import Allowlist, AllowlistedClient, BlockedHostError, OutboundCall
 
 
 @pytest.fixture

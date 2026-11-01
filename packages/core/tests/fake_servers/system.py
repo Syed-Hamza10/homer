@@ -1,11 +1,11 @@
-"""Stand-in for achilles-mcp-system: fixed time answers."""
+"""Stand-in for homer-mcp-system: fixed time answers."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastmcp import FastMCP
 
-server = FastMCP("achilles-mcp-system")
+server = FastMCP("homer-mcp-system")
 
 
 @server.tool

@@ -8,22 +8,22 @@ consultant; every address ends in `example.test`. Nothing in the recording is re
 ```sh
 ollama serve                                             # or make sure it is already running
 ollama run qwen3.5:9b "Say OK"                           # warms the model outside the app (not logged)
-cd ~/code/achilles
-make build                                               # dashboard into achilles_core/static
-uv run achilles-mcp-google-setup                         # only if the token is older than 7 days
+cd ~/code/homer
+make build                                               # dashboard into homer_core/static
+uv run homer-mcp-google-setup                         # only if the token is older than 7 days
 uv run python scripts/seed_demo.py --target google       # idempotent; --wipe removes the demo items
-uv run achilles doctor                                   # all green before the next line
-mv ~/.achilles/data ~/.achilles/data.$(date +%s)         # fresh database: empty outbound log and $0.00
-uv run achilles serve                                    # http://127.0.0.1:8000, keep this terminal open
+uv run homer doctor                                   # all green before the next line
+mv ~/.homer/data ~/.homer/data.$(date +%s)         # fresh database: empty outbound log and $0.00
+uv run homer serve                                    # http://127.0.0.1:8000, keep this terminal open
 ```
 
 Checklist before pressing record:
 
 - [ ] `ollama ps` shows `qwen3.5:9b` loaded and `doctor` was green before the database move.
 - [ ] Gmail in a second tab, signed in to the throwaway account, Inbox showing the seeded threads.
-- [ ] Browser window 1440x900, zoom 125%, bookmarks bar hidden, one tab for Achilles and one for Gmail.
-- [ ] Terminal 120x30, font 16pt, in a third window ready for `uv run achilles doctor`.
-- [ ] Log in to Achilles (passphrase) before recording so the first frame is the Privacy page.
+- [ ] Browser window 1440x900, zoom 125%, bookmarks bar hidden, one tab for Homer and one for Gmail.
+- [ ] Terminal 120x30, font 16pt, in a third window ready for `uv run homer doctor`.
+- [ ] Log in to Homer (passphrase) before recording so the first frame is the Privacy page.
 - [ ] Do not open `/api/health` or run `doctor` after the fresh database: both log an Ollama call.
 
 ## Storyboard (type the prompts exactly)
@@ -38,7 +38,7 @@ Checklist before pressing record:
 | 1:20 | Back to chat. Type: `Draft a reply to the latest email from the accounts team saying the reissued invoice with the PO number goes out tomorrow, then send it` | "Same flow, but this time I say no." |
 | 1:40 | Click **Reject**. Card shows `rejected`. Gmail Sent unchanged | "Rejected means nothing happened." |
 | 1:48 | Privacy page: `127.0.0.1:11434` and `www.googleapis.com` (plus `oauth2.googleapis.com` if the token refreshed), with call counts | "Every outbound call, by host. Ollama and Google. No AI provider, no per-token bill." |
-| 1:55 | Terminal: `uv run achilles doctor` | "And this is the install check a client runs." |
+| 1:55 | Terminal: `uv run homer doctor` | "And this is the install check a client runs." |
 
 If the model only drafts and does not ask to send, type `Send that draft now with mail_send.` and
 carry on; the real-stack tests allow the same follow-up. If the model sends before you expect it,

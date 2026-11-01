@@ -10,13 +10,13 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import RunUsage
 
-from achilles_core.agent.tools import build_core_toolset
-from achilles_core.agent.toolsets import MAX_TOOLS, TOOLSETS, build_toolsets
-from achilles_core.mcp.manager import HIDDEN_TOOLS, SERVERS, McpManager
-from achilles_mcp_google.server import build as build_google
-from achilles_mcp_google.settings import Settings as GoogleSettings
-from achilles_mcp_search.server import mcp as search_server
-from achilles_mcp_system.server import mcp as system_server
+from homer_core.agent.tools import build_core_toolset
+from homer_core.agent.toolsets import MAX_TOOLS, TOOLSETS, build_toolsets
+from homer_core.mcp.manager import HIDDEN_TOOLS, SERVERS, McpManager
+from homer_mcp_google.server import build as build_google
+from homer_mcp_google.settings import Settings as GoogleSettings
+from homer_mcp_search.server import mcp as search_server
+from homer_mcp_system.server import mcp as system_server
 
 UNUSED_URL = "http://127.0.0.1:1"
 

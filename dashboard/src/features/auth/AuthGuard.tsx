@@ -11,7 +11,7 @@ export function AuthGuard() {
   if (error) {
     return (
       <p className="p-6 text-sm text-destructive">
-        Cannot reach the Achilles server.
+        Cannot reach the Homer server.
       </p>
     )
   }

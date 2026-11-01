@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -30,11 +31,19 @@ function healthLine(health: Health | null | undefined): string {
   return `${parts.join(" · ")} · checked ${clock(health.checked_at)}`
 }
 
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+      {children}
+    </h2>
+  )
+}
+
 function FollowUpItem({ followup }: { followup: FollowUp }) {
   const send = useSendFollowUp()
   return (
     <li
-      className="flex flex-col gap-1 border-t py-2"
+      className="flex flex-col gap-1.5 border-t border-border/70 py-2.5"
       data-testid={`followup-${followup.id}`}
     >
       <span>{followup.subject}</span>
@@ -43,7 +52,7 @@ function FollowUpItem({ followup }: { followup: FollowUp }) {
         {new Date(followup.due_at).toLocaleDateString()} · {followup.status}
       </span>
       {followup.draft_preview && (
-        <p className="rounded-md bg-muted p-2 text-xs whitespace-pre-wrap">
+        <p className="rounded-md border border-border bg-muted/40 p-2 text-xs leading-relaxed whitespace-pre-wrap">
           {followup.draft_preview}
         </p>
       )}
@@ -67,7 +76,7 @@ function FollowUpItem({ followup }: { followup: FollowUp }) {
       {send.data && (
         <span className="text-xs text-muted-foreground">
           Approval #{send.data.id} requested ·{" "}
-          <Link to="/approvals" className="underline">
+          <Link to="/approvals" className="underline underline-offset-2">
             decide on Approvals
           </Link>
         </span>
@@ -83,37 +92,41 @@ export function TodayPage() {
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-        <section className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold">Today</h1>
-            <p className="text-sm text-muted-foreground">
-              {data
-                ? `${data.unread} unread · ${data.pending_approvals} waiting for approval`
-                : "Loading"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={brief.isPending}
-              onClick={() => brief.mutate()}
-            >
-              Morning brief
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={digest.isPending}
-              onClick={() => digest.mutate()}
-            >
-              End-of-day digest
-            </Button>
-          </div>
-        </section>
+      <main className="mx-auto flex max-w-3xl flex-col gap-7 p-6">
+        <PageHeader
+          eyebrow="Daily"
+          title="Today"
+          description={
+            data
+              ? `${data.unread} unread · ${data.pending_approvals} waiting for approval`
+              : "Loading"
+          }
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={brief.isPending}
+                onClick={() => brief.mutate()}
+              >
+                Morning brief
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={digest.isPending}
+                onClick={() => digest.mutate()}
+              >
+                End-of-day digest
+              </Button>
+            </>
+          }
+        />
 
-        <p className="text-xs text-muted-foreground" data-testid="health-line">
+        <p
+          className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground"
+          data-testid="health-line"
+        >
           {healthLine(data?.health)}
         </p>
 
@@ -123,35 +136,40 @@ export function TodayPage() {
           </p>
         ))}
 
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Morning brief</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-              {data?.brief?.content ?? "No brief yet. Generate one above."}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>Morning brief</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                {data?.brief?.content ?? "No brief yet. Generate one above."}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>End-of-day digest</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-              {data?.digest?.content ?? "No digest yet."}
-            </p>
-          </CardContent>
-        </Card>
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>End-of-day digest</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                {data?.digest?.content ?? "No digest yet."}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">Calendar</h2>
+          <SectionTitle>Calendar</SectionTitle>
           {data?.events.length ? (
-            <ul className="flex flex-col gap-1 text-sm">
+            <ul className="flex flex-col text-sm">
               {data.events.map((event) => (
-                <li key={event.event_id} className="flex gap-3 border-t py-2">
-                  <span className="w-16 text-muted-foreground">
+                <li
+                  key={event.event_id}
+                  className="flex gap-3 border-t border-border/70 py-2.5"
+                >
+                  <span className="w-16 shrink-0 text-muted-foreground tabular-nums">
                     {clock(event.start)}
                   </span>
                   <span>{event.title}</span>
@@ -169,12 +187,15 @@ export function TodayPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">Reminders</h2>
+          <SectionTitle>Reminders</SectionTitle>
           {data?.reminders.length ? (
-            <ul className="flex flex-col gap-1 text-sm">
+            <ul className="flex flex-col text-sm">
               {data.reminders.map((reminder) => (
-                <li key={reminder.id} className="flex gap-3 border-t py-2">
-                  <span className="w-16 text-muted-foreground">
+                <li
+                  key={reminder.id}
+                  className="flex gap-3 border-t border-border/70 py-2.5"
+                >
+                  <span className="w-16 shrink-0 text-muted-foreground tabular-nums">
                     {clock(reminder.due_at)}
                   </span>
                   <span>{reminder.text}</span>
@@ -190,9 +211,9 @@ export function TodayPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">Follow-ups</h2>
+          <SectionTitle>Follow-ups</SectionTitle>
           {data?.follow_ups.length ? (
-            <ul className="flex flex-col gap-1 text-sm">
+            <ul className="flex flex-col text-sm">
               {data.follow_ups.map((followup) => (
                 <FollowUpItem key={followup.id} followup={followup} />
               ))}

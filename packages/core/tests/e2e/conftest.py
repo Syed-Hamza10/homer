@@ -15,12 +15,12 @@ import pytest
 from playwright.sync_api import Page, expect
 from sqlmodel import Session
 
-from achilles_core.config import Settings
-from achilles_core.db.models import Approval
-from achilles_core.db.session import make_engine
-from achilles_core.llm import chat_model_tag
-from achilles_core.platform import hardware_tier
-from achilles_core.services.approvals import create_from_tool_result
+from homer_core.config import Settings
+from homer_core.db.models import Approval
+from homer_core.db.session import make_engine
+from homer_core.llm import chat_model_tag
+from homer_core.platform import hardware_tier
+from homer_core.services.approvals import create_from_tool_result
 
 REPO = Path(__file__).resolve().parents[4]
 FAKE_SERVERS = Path(__file__).resolve().parents[1] / "fake_servers"
@@ -51,11 +51,11 @@ def free_port() -> int:
 
 
 def write_fake_servers(home: Path) -> Path:
-    """Puts stand-in achilles-mcp-google and achilles-mcp-system launchers on a bin dir."""
+    """Puts stand-in homer-mcp-google and homer-mcp-system launchers on a bin dir."""
     bin_dir = home / "bin"
     bin_dir.mkdir(exist_ok=True)
     for name in ("google", "system"):
-        script = bin_dir / f"achilles-mcp-{name}"
+        script = bin_dir / f"homer-mcp-{name}"
         source = FAKE_SERVERS / f"{name}.py"
         launcher = f"runpy.run_path({str(source)!r}, run_name='__main__')"
         script.write_text(f"#!{sys.executable}\nimport runpy\n{launcher}\n")
@@ -64,9 +64,9 @@ def write_fake_servers(home: Path) -> Path:
 
 
 def process_env(home: Path, port: int, bin_dir: Path | None = None, **extra: str) -> dict[str, str]:
-    """Env for `achilles serve`; bin_dir goes first on PATH so stand-in servers win there. The
+    """Env for `homer serve`; bin_dir goes first on PATH so stand-in servers win there. The
     scheduler is off unless a test asks for it, so background jobs never race the assertions."""
-    (home / ".env").write_text(f"ACHILLES_PASSPHRASE={PASSPHRASE}\nOLLAMA_URL={OLLAMA_URL}\n")
+    (home / ".env").write_text(f"HOMER_PASSPHRASE={PASSPHRASE}\nOLLAMA_URL={OLLAMA_URL}\n")
     inherited = {k: v for k, v in os.environ.items() if k.lower() not in Settings.model_fields}
     path = inherited.get("PATH", "")
     if bin_dir is not None:
@@ -74,7 +74,7 @@ def process_env(home: Path, port: int, bin_dir: Path | None = None, **extra: str
     return {
         **inherited,
         "PATH": path,
-        "ACHILLES_HOME": str(home),
+        "HOMER_HOME": str(home),
         "HOST": "127.0.0.1",
         "PORT": str(port),
         "SCHEDULER_ENABLED": "false",
@@ -86,8 +86,8 @@ def stand_in_env(home: Path, port: int, **extra: str) -> dict[str, str]:
     return process_env(home, port, write_fake_servers(home), **extra)
 
 
-def achilles_command(*args: str) -> list[str]:
-    return [str(VENV_BIN / "achilles"), *args]
+def homer_command(*args: str) -> list[str]:
+    return [str(VENV_BIN / "homer"), *args]
 
 
 def create_pending_approval(home: Path, draft_id: str = "d1") -> int:
@@ -137,7 +137,7 @@ def running_server(home: Path, env: dict[str, str]) -> Iterator[str]:
     log = home / "server.log"
     with log.open("wb") as log_file:
         process = subprocess.Popen(
-            achilles_command("serve"),
+            homer_command("serve"),
             cwd=home,
             env=env,
             stdout=log_file,
@@ -175,7 +175,7 @@ def post_chat(client: httpx.Client, body: dict[str, Any]) -> Frames:
 
 @pytest.fixture(scope="session")
 def home(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return tmp_path_factory.mktemp("achilles-home")
+    return tmp_path_factory.mktemp("homer-home")
 
 
 @contextmanager
@@ -194,7 +194,7 @@ def server(home: Path) -> Iterator[str]:
 @pytest.fixture
 def fresh_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     require_ollama()
-    with stand_in_server(tmp_path_factory.mktemp("achilles-home")) as base_url:
+    with stand_in_server(tmp_path_factory.mktemp("homer-home")) as base_url:
         yield base_url
 
 
@@ -207,7 +207,7 @@ def server_env(home: Path, server: str) -> dict[str, str]:
 
 @pytest.fixture
 def doctor_command() -> list[str]:
-    return achilles_command("doctor")
+    return homer_command("doctor")
 
 
 @pytest.fixture

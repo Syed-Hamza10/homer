@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Homer UI preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background: #14130f;
+        color: #ece7dc;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 1500px;
+        padding: 48px 32px 80px;
+      }
+      h1 {
+        font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        font-size: 44px;
+        font-weight: 400;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin: 0;
+      }
+      p {
+        color: #a39c8c;
+        max-width: 70ch;
+        line-height: 1.6;
+      }
+      .grid {
+        display: grid;
+        gap: 32px;
+        grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+        margin-top: 40px;
+      }
+      figure {
+        margin: 0;
+      }
+      img {
+        display: block;
+        width: 100%;
+        border: 1px solid #3a372e;
+        border-radius: 6px;
+        background: #f4f1ea;
+      }
+      figcaption {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 10px;
+        color: #a39c8c;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .wide {
+        grid-column: 1 / -1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Homer</h1>
+    <p>
+      Captured from <code>make preview</code> against a throwaway
+      <code>HOMER_HOME</code> with the scheduler off and no Ollama model loaded.
+      Pages are empty because there is no mail, calendar or model, but the shell,
+      navigation, typography and surfaces are all live.
+    </p>
+    <div class="grid">
+      <figure class="wide">
+        <img src="login.png" alt="Homer login screen" />
+        <figcaption><span>Login</span><span>Alabaster / light</span></figcaption>
+      </figure>
+      <figure class="wide">
+        <img src="chat.png" alt="Homer chat screen" />
+        <figcaption><span>Chat</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="today.png" alt="Today page" />
+        <figcaption><span>Today</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="inbox.png" alt="Inbox page" />
+        <figcaption><span>Inbox</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="calendar.png" alt="Calendar page" />
+        <figcaption><span>Calendar</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="approvals.png" alt="Approvals page" />
+        <figcaption><span>Approvals</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="privacy.png" alt="Privacy page" />
+        <figcaption><span>Privacy</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="settings.png" alt="Settings page" />
+        <figcaption><span>Settings</span><span>Light</span></figcaption>
+      </figure>
+      <figure>
+        <img src="chat-dark.png" alt="Chat page in dark mode" />
+        <figcaption><span>Chat</span><span>Basalt / dark</span></figcaption>
+      </figure>
+      <figure>
+        <img src="privacy-dark.png" alt="Privacy page in dark mode" />
+        <figcaption><span>Privacy</span><span>Basalt / dark</span></figcaption>
+      </figure>
+    </div>
+  </body>
+</html>

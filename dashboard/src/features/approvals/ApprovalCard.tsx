@@ -24,10 +24,12 @@ export function ApprovalCard({ approval, onDecided }: Props) {
   return (
     <Card size="sm" data-testid={`approval-${approval.id}`}>
       <CardContent className="flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
           Approval #{approval.id} · {approval.action}
         </p>
-        <p className="text-sm whitespace-pre-wrap">{approval.preview}</p>
+        <p className="text-sm leading-relaxed whitespace-pre-wrap">
+          {approval.preview}
+        </p>
         {decided ? (
           <p className="text-sm">
             Status: <span className="font-medium">{decided.status}</span>

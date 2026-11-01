@@ -1,10 +1,13 @@
-.PHONY: dev dashboard-dev test test-e2e test-all lint fmt build manifest eval-smoke
+.PHONY: dev dashboard-dev preview test test-e2e test-all lint fmt build manifest eval-smoke
 
 dev:
-	EXTRA_ORIGINS='["http://localhost:5173"]' uv run uvicorn achilles_core.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+	EXTRA_ORIGINS='["http://localhost:5173"]' uv run uvicorn homer_core.main:create_app --factory --reload --host 127.0.0.1 --port 8000
 
 dashboard-dev:
 	cd dashboard && pnpm dev
+
+preview:
+	./scripts/preview_ui.sh
 
 test:
 	uv run pytest -m "not e2e"
@@ -28,7 +31,7 @@ build: manifest
 	cd dashboard && pnpm install --frozen-lockfile && pnpm build
 
 manifest:
-	mkdir -p packages/core/achilles_core/models && cp models/manifest.json packages/core/achilles_core/models/manifest.json
+	mkdir -p packages/core/homer_core/models && cp models/manifest.json packages/core/homer_core/models/manifest.json
 
 eval-smoke:
-	uv run achilles-eval --runs 3 $(ARGS)
+	uv run homer-eval --runs 3 $(ARGS)

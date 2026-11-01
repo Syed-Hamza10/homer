@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from achilles_core.db.models import Approval, utcnow
-from achilles_core.services import approvals
+from homer_core.db.models import Approval, utcnow
+from homer_core.services import approvals
 
 SEND = {
     "approval_required": True,

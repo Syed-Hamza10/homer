@@ -3,20 +3,18 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from achilles_core.config import Settings, own_origins, session_secret
+from homer_core.config import Settings, own_origins, session_secret
 
 
 def test_home_is_expanded() -> None:
-    settings = Settings(
-        achilles_home=Path("~/x"), achilles_passphrase=SecretStr("p"), _env_file=None
-    )
-    assert "~" not in str(settings.achilles_home)
-    assert settings.achilles_home.is_absolute()
+    settings = Settings(homer_home=Path("~/x"), homer_passphrase=SecretStr("p"), _env_file=None)
+    assert "~" not in str(settings.homer_home)
+    assert settings.homer_home.is_absolute()
 
 
 def test_own_origins_include_both_loopback_names_and_extras() -> None:
     settings = Settings(
-        achilles_passphrase=SecretStr("p"),
+        homer_passphrase=SecretStr("p"),
         port=9000,
         extra_origins=["http://localhost:5173"],
         _env_file=None,
@@ -29,7 +27,7 @@ def test_own_origins_include_both_loopback_names_and_extras() -> None:
 
 
 def test_session_secret_is_created_once_with_private_mode(tmp_path: Path) -> None:
-    settings = Settings(achilles_home=tmp_path, achilles_passphrase=SecretStr("p"), _env_file=None)
+    settings = Settings(homer_home=tmp_path, homer_passphrase=SecretStr("p"), _env_file=None)
     first = session_secret(settings)
     second = session_secret(settings)
     assert first == second
@@ -38,18 +36,18 @@ def test_session_secret_is_created_once_with_private_mode(tmp_path: Path) -> Non
 
 
 def test_settings_read_env_file(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
-    (tmp_path / ".env").write_text("ACHILLES_PASSPHRASE=from-file\nPORT=8123\n")
+    (tmp_path / ".env").write_text("HOMER_PASSPHRASE=from-file\nPORT=8123\n")
     monkeypatch.chdir(tmp_path)
     settings = Settings(_env_file=tmp_path / ".env")
-    assert settings.achilles_passphrase.get_secret_value() == "from-file"
+    assert settings.homer_passphrase.get_secret_value() == "from-file"
     assert settings.port == 8123
 
 
 def test_timezone_falls_back_to_the_system_then_utc(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.delenv("TIMEZONE", raising=False)
-    monkeypatch.setattr("achilles_core.config.system_timezone", lambda: "Europe/Paris")
-    assert Settings(achilles_passphrase=SecretStr("p"), _env_file=None).timezone == "Europe/Paris"
-    monkeypatch.setattr("achilles_core.config.system_timezone", lambda: None)
-    assert Settings(achilles_passphrase=SecretStr("p"), _env_file=None).timezone == "UTC"
+    monkeypatch.setattr("homer_core.config.system_timezone", lambda: "Europe/Paris")
+    assert Settings(homer_passphrase=SecretStr("p"), _env_file=None).timezone == "Europe/Paris"
+    monkeypatch.setattr("homer_core.config.system_timezone", lambda: None)
+    assert Settings(homer_passphrase=SecretStr("p"), _env_file=None).timezone == "UTC"
     monkeypatch.setenv("TIMEZONE", "Asia/Karachi")
-    assert Settings(achilles_passphrase=SecretStr("p"), _env_file=None).timezone == "Asia/Karachi"
+    assert Settings(homer_passphrase=SecretStr("p"), _env_file=None).timezone == "Asia/Karachi"
