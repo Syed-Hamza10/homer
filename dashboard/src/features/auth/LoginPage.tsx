@@ -47,7 +47,7 @@ export function LoginPage() {
           </span>
           <div>
             <p className="text-[9px] font-medium tracking-[0.4em] uppercase text-muted-foreground">
-              Your local oracle
+              Your AI assistant at home
             </p>
             <h1 className="mt-1.5 font-heading text-4xl tracking-[0.14em] uppercase">
               Homer

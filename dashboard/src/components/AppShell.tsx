@@ -33,8 +33,8 @@ export function AppShell() {
             <span className="font-heading text-[1.35rem] tracking-[0.16em] uppercase">
               Homer
             </span>
-            <span className="mt-1.5 text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
-              Your local oracle
+            <span className="mt-1.5 text-[8px] font-medium tracking-[0.16em] uppercase text-muted-foreground">
+              Your AI assistant at home
             </span>
           </span>
         </div>
