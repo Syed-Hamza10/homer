@@ -10,10 +10,17 @@ import { useMessages } from "./useMessages"
 export function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const { data: messages = [] } = useMessages(conversationId)
-  const { send, draft, activity, error, tokens, streaming } = useChatStream(
-    conversationId,
-    setConversationId,
-  )
+  const {
+    send,
+    stop,
+    regenerate,
+    draft,
+    activity,
+    status,
+    error,
+    tokens,
+    streaming,
+  } = useChatStream(conversationId, setConversationId)
 
   return (
     <>
@@ -34,11 +41,17 @@ export function ChatPage() {
             Local model
           </p>
         </div>
-        <MessageList messages={messages} draft={draft} activity={activity} />
+        <MessageList
+          messages={messages}
+          draft={draft}
+          activity={activity}
+          status={status}
+          onRegenerate={regenerate}
+        />
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 p-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
           {!messages.length && !streaming && <SuggestedPrompts onPick={send} />}
-          <Composer disabled={streaming} onSend={send} />
+          <Composer streaming={streaming} onSend={send} onStop={stop} />
           <StatusLine tokens={tokens} />
         </div>
       </main>
