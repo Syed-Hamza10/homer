@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homer, your AI assistant at home</title>
+<meta name="description" content="Homer is an AI assistant for Gmail and Google Calendar. The AI runs on your computer. Your emails are never sent to an AI company. No per-token bills.">
+<meta name="color-scheme" content="light dark">
+<style>
+:root {
+  --bg: oklch(0.964 0.006 85);
+  --fg: oklch(0.252 0.008 65);
+  --card: oklch(0.986 0.004 90);
+  --muted: oklch(0.933 0.006 82);
+  --muted-fg: oklch(0.478 0.012 68);
+  --primary: oklch(0.278 0.01 62);
+  --primary-fg: oklch(0.972 0.006 85);
+  --accent: oklch(0.905 0.018 172);
+  --accent-fg: oklch(0.285 0.02 172);
+  --ring: oklch(0.545 0.045 176);
+  --border: oklch(0.874 0.01 78);
+  --danger: oklch(0.48 0.14 28);
+  --marble-1: oklch(1 0 0 / 55%);
+  --marble-2: oklch(0.88 0.012 80 / 45%);
+  --serif: "Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, Palatino, Georgia, "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.172 0.006 70);
+    --fg: oklch(0.918 0.008 85);
+    --card: oklch(0.208 0.007 70);
+    --muted: oklch(0.245 0.006 70);
+    --muted-fg: oklch(0.695 0.01 80);
+    --primary: oklch(0.9 0.01 85);
+    --primary-fg: oklch(0.19 0.006 70);
+    --accent: oklch(0.3 0.022 175);
+    --accent-fg: oklch(0.9 0.015 175);
+    --ring: oklch(0.66 0.05 176);
+    --border: oklch(1 0 0 / 12%);
+    --danger: oklch(0.68 0.13 28);
+    --marble-1: oklch(1 0 0 / 8%);
+    --marble-2: oklch(0.72 0.02 175 / 9%);
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1100px 620px at 12% -12%, var(--marble-1), transparent 62%),
+    radial-gradient(900px 520px at 108% 4%, var(--marble-2), transparent 58%);
+  color: var(--fg);
+  font: 16px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection { background: var(--accent); color: var(--accent-fg); }
+a { color: inherit; text-underline-offset: 3px; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 500; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2rem, 6vw, 3.2rem); }
+h2 { font-size: clamp(1.6rem, 4.5vw, 2.3rem); }
+h3 { font-size: 1.25rem; }
+p { margin: 0; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+.eyebrow { font-size: 0.7rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted-fg); }
+.eyebrow::before { content: "\25C7  "; }
+.lead { color: var(--muted-fg); font-size: 1.05rem; max-width: 62ch; }
+section { padding: 72px 0; border-top: 1px solid var(--border); }
+section > .wrap > h2 { margin: 8px 0 12px; }
+
+header.top { padding: 20px 0; }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.brand-mark { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); display: grid; place-items: center; }
+.brand-name { font-family: var(--serif); font-size: 1.35rem; letter-spacing: 0.18em; line-height: 1; }
+.brand-tag { font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted-fg); margin-top: 4px; }
+.top-link { font-size: 0.9rem; color: var(--muted-fg); }
+
+.hero { padding: 40px 0 72px; border-top: 0; }
+.hero-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: start; }
+.hero h1 { margin: 12px 0 16px; }
+.promise { margin: 20px 0 28px; padding-left: 14px; border-left: 2px solid var(--ring); font-family: var(--serif); font-size: 1.2rem; line-height: 1.45; }
+
+.video { position: relative; aspect-ratio: 16 / 10; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.6); background: var(--card); overflow: hidden; }
+.video video { width: 100%; height: 100%; display: block; object-fit: cover; background: var(--muted); }
+.video-placeholder { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted-fg); background: repeating-linear-gradient(135deg, transparent 0 14px, var(--muted) 14px 15px); }
+.video-placeholder strong { display: block; font-family: var(--serif); font-weight: 500; font-size: 1.2rem; color: var(--fg); margin-bottom: 4px; }
+.video-note { font-size: 0.8rem; color: var(--muted-fg); margin-top: 10px; }
+
+form.waitlist { display: grid; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.6); padding: 20px; }
+.field { display: grid; gap: 6px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+label { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-fg); }
+input, select { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-height: 44px; }
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); }
+.error { min-height: 1.2em; font-size: 0.85rem; color: var(--danger); }
+button { font: inherit; font-weight: 500; cursor: pointer; border: 1px solid var(--primary); background: var(--primary); color: var(--primary-fg); border-radius: var(--radius); padding: 10px 18px; min-height: 44px; }
+.btn { display: inline-block; text-decoration: none; font-weight: 500; border: 1px solid var(--primary); background: var(--primary); color: var(--primary-fg); border-radius: var(--radius); padding: 10px 18px; }
+button:disabled { opacity: 0.6; cursor: progress; }
+.btn-ghost { background: transparent; color: var(--fg); border-color: var(--border); }
+.form-foot { font-size: 0.8rem; color: var(--muted-fg); }
+.success { display: none; background: var(--accent); color: var(--accent-fg); border-radius: calc(var(--radius) * 1.6); padding: 20px; }
+.success h3 { margin-bottom: 6px; }
+.waitlist-box.done form.waitlist { display: none; }
+.waitlist-box.done .success { display: block; }
+
+.panel { margin-top: 32px; background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.6); padding: 24px; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0 20px; }
+.stat { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--bg); }
+.stat .k { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-fg); }
+.stat .v { font-family: var(--serif); font-size: 1.6rem; }
+table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 0.65rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-fg); background: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td code { font-family: var(--mono); font-size: 0.88rem; overflow-wrap: anywhere; }
+td.what { color: var(--muted-fg); font-size: 0.92rem; }
+.caption { font-size: 0.85rem; color: var(--muted-fg); margin-top: 14px; max-width: 70ch; }
+
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 32px; counter-reset: step; list-style: none; padding: 0; }
+.steps li { border-top: 1px solid var(--fg); padding-top: 16px; counter-increment: step; }
+.steps li::before { content: counter(step, upper-roman); font-family: var(--serif); font-size: 1rem; color: var(--muted-fg); display: block; margin-bottom: 8px; }
+.steps h3 { margin-bottom: 8px; }
+.steps p { color: var(--muted-fg); }
+
+.approval-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; margin-top: 32px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.6); padding: 20px; box-shadow: 0 1px 0 var(--border), 0 18px 40px -28px oklch(0 0 0 / 35%); }
+.card-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 14px; }
+.badge { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent-fg); background: var(--accent); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.9rem; margin-bottom: 14px; }
+.meta dt { color: var(--muted-fg); }
+.meta dd { margin: 0; overflow-wrap: anywhere; }
+.body { font-family: var(--serif); font-size: 1.02rem; line-height: 1.55; border-top: 1px solid var(--border); padding-top: 14px; white-space: pre-line; }
+.actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.bullets { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 14px; }
+.bullets li { padding-left: 22px; position: relative; }
+.bullets li::before { content: "\25C7"; position: absolute; left: 0; color: var(--ring); }
+
+.caps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 32px; }
+.cap { background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.6); padding: 22px; display: grid; gap: 10px; align-content: start; }
+.cap p { color: var(--muted-fg); }
+.prompt { font-family: var(--mono); font-size: 0.86rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; color: var(--fg); overflow-wrap: anywhere; }
+.prompt::before { content: "> "; color: var(--muted-fg); }
+
+.pro-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; margin-top: 24px; }
+.pro-grid p + p { margin-top: 14px; }
+.aside { border-left: 2px solid var(--ring); padding-left: 16px; font-size: 0.92rem; color: var(--muted-fg); }
+.aside p + p { margin-top: 10px; }
+
+.faq { margin-top: 24px; border-top: 1px solid var(--border); }
+details { border-bottom: 1px solid var(--border); padding: 18px 0; }
+summary { cursor: pointer; font-family: var(--serif); font-size: 1.2rem; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--muted-fg); font-family: var(--sans); }
+details[open] summary::after { content: "\2212"; }
+details p { margin-top: 10px; color: var(--muted-fg); max-width: 70ch; }
+
+.cta { text-align: center; }
+.cta .lead { margin: 12px auto 24px; }
+footer { padding: 32px 0 48px; border-top: 1px solid var(--border); font-size: 0.85rem; color: var(--muted-fg); }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+@media (max-width: 860px) {
+  .hero-grid, .approval-grid, .pro-grid { grid-template-columns: 1fr; gap: 32px; }
+  .steps { grid-template-columns: 1fr; }
+  .caps { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  section { padding: 56px 0; }
+  .row { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  th, td { padding: 10px; }
+  td code { font-size: 0.74rem; }
+  .top-link { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10M9.5 21V10M14.5 21V10M19 21V10M2 10l10-6 10 6z"/></svg>
+      </span>
+      <span>
+        <span class="brand-name">HOMER</span>
+        <span class="brand-tag" style="display:block">Your AI assistant at home</span>
+      </span>
+    </a>
+    <a class="top-link" href="#waitlist">Join the beta waitlist</a>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">Private beta</p>
+        <h1>An AI assistant for your Gmail and Calendar that runs on your own Mac.</h1>
+        <p class="lead">Homer answers questions about your mail and schedule, drafts replies in your tone and books meetings. You approve everything before it happens.</p>
+        <p class="promise">The AI runs on your computer. Your emails are never sent to an AI company. No per-token bills.</p>
+        <div id="waitlist" class="waitlist-box">
+          <form class="waitlist" novalidate>
+            <div class="field">
+              <label for="email">Work email</label>
+              <input id="email" name="email" type="email" autocomplete="email" placeholder="you@yourfirm.com" required>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="role">What do you do?</label>
+                <select id="role" name="role" required>
+                  <option value="">Choose one</option>
+                  <option>Lawyer</option>
+                  <option>Paralegal or legal assistant</option>
+                  <option>Advisor or consultant</option>
+                  <option>Accountant</option>
+                  <option>Therapist or clinician</option>
+                  <option>Founder or operator</option>
+                  <option>Engineer</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="firm_size">Firm size</label>
+                <select id="firm_size" name="firm_size" required>
+                  <option value="">Choose one</option>
+                  <option>Just me</option>
+                  <option>2 to 10</option>
+                  <option>11 to 50</option>
+                  <option>51 or more</option>
+                </select>
+              </div>
+            </div>
+            <p class="error" role="alert" aria-live="polite"></p>
+            <button type="submit">Join the waitlist</button>
+            <p class="form-foot">We only use your email to contact you about the beta. This page has no analytics or tracking scripts.</p>
+          </form>
+          <div class="success" role="status" tabindex="-1">
+            <h3>Thank you.</h3>
+            <p class="success-text">You are on the list. We will write to you when a beta seat opens.</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="video" id="video">
+          <div class="video-placeholder">
+            <div><strong>Demo video</strong>75 seconds on real Gmail. Coming soon.</div>
+          </div>
+        </div>
+        <p class="video-note">Real waits are shown with an on-screen timer. Nothing is staged.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Trust</p>
+      <h2>Every server it talked to today.</h2>
+      <p class="lead">Homer logs every outbound call it makes. The Privacy page in the app is that log, grouped by host. After a session of reading mail, drafting and sending, it has three lines.</p>
+      <div class="panel" role="figure" aria-label="Illustration of the Homer Privacy page">
+        <p class="eyebrow">Privacy</p>
+        <div class="stats">
+          <div class="stat"><div class="k">AI provider</div><div class="v">None</div></div>
+          <div class="stat"><div class="k">Spent on inference</div><div class="v">$0.00</div></div>
+        </div>
+        <table>
+          <thead><tr><th>Host</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr><td><code>127.0.0.1:11434</code></td><td class="what">The AI model, running on this computer through Ollama</td></tr>
+            <tr><td><code>www.googleapis.com</code></td><td class="what">Your Gmail and Google Calendar</td></tr>
+            <tr><td><code>oauth2.googleapis.com</code></td><td class="what">Google sign-in</td></tr>
+          </tbody>
+        </table>
+        <p class="caption">Every outbound call goes through one HTTP client with an allowlist. A host that is not on the list is refused before a connection opens, and an automated test checks it. If you switch on web search, DuckDuckGo and the pages Homer reads show up here too.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">How it works</p>
+      <h2>Three steps, all on your machine.</h2>
+      <ol class="steps">
+        <li>
+          <h3>Install and connect</h3>
+          <p>Homer and a local AI model are installed on your Mac. You sign in to your Google account once. During the beta we set it up with you.</p>
+        </li>
+        <li>
+          <h3>Ask in plain English</h3>
+          <p>Type what you need in Homer's chat, which opens in your browser and runs on your computer. The model turns your sentence into a clear request; plain code finds the email, the thread or the free slot.</p>
+        </li>
+        <li>
+          <h3>Approve what goes out</h3>
+          <p>Homer drafts. You read it, edit it by asking, and press Send, or reject it and nothing happens.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap approval-grid">
+      <div>
+        <p class="eyebrow">Consent</p>
+        <h2>Nothing is sent until you press Send.</h2>
+        <ul class="bullets">
+          <li>Sending an email or changing your calendar always becomes a card like this one. The model writes the draft; it has no way to send it.</li>
+          <li>The rule lives in the server code, not in the AI's instructions. Approving checks the card has not changed, and a double click cannot send twice.</li>
+          <li>Ask for changes in chat ("make it warmer") and the same card updates.</li>
+          <li>On our test laptop (M3 Pro, 18 GB) the median time from your message to a ready draft was 4.4 seconds.</li>
+        </ul>
+      </div>
+      <div class="card" aria-label="Example approval card">
+        <div class="card-head">
+          <h3>Send email</h3>
+          <span class="badge">Waiting for you</span>
+        </div>
+        <dl class="meta">
+          <dt>To</dt><dd>rosa@example.test</dd>
+          <dt>Subject</dt><dd>Re: Revised proposal</dd>
+        </dl>
+        <p class="body">Hi Rosa,
+
+Thanks for your patience. I'll have the revised proposal to you by Wednesday.
+
+Best,
+Dana</p>
+        <div class="actions" aria-hidden="true">
+          <span class="btn">Send</span>
+          <span class="btn btn-ghost">Reject</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">What it does today</p>
+      <h2>Four things, done carefully.</h2>
+      <div class="caps">
+        <div class="cap">
+          <h3>Email</h3>
+          <p>Finds the right thread, drafts a reply in context and waits for your approval.</p>
+          <div class="prompt">reply to Rosa about the revised proposal, tell her I'll get it to her by Wednesday</div>
+        </div>
+        <div class="cap">
+          <h3>Calendar</h3>
+          <p>Reads your schedule, finds free slots and proposes new events for you to confirm.</p>
+          <div class="prompt">what's my day look like</div>
+        </div>
+        <div class="cap">
+          <h3>Search</h3>
+          <p>Optional web search with sources listed. Your query goes to DuckDuckGo, not to an AI company.</p>
+          <div class="prompt">any news on the coffee price today? Rosa's company is a roaster</div>
+        </div>
+        <div class="cap">
+          <h3>Memory</h3>
+          <p>Remembers the facts you tell it, stored on your computer, and uses them when it drafts.</p>
+          <div class="prompt">remember that Rosa prefers short emails and hates the word synergy</div>
+        </div>
+      </div>
+      <p class="caption">Examples are from our own test runs with made-up contacts.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Who it is for</p>
+      <h2>Built for professionals with confidential clients.</h2>
+      <div class="pro-grid">
+        <div>
+          <p>If you are a lawyer at a small firm, an advisor working under NDA or an accountant, your inbox is full of things your clients trusted you with. Most AI email tools work by sending that mail to an AI company. That is one more party holding client information, and one more thing to explain to the client.</p>
+          <p>Homer is built so that the AI part stays on your computer, and so that you can see where your data went. The log on the Privacy page is something you can look at, not a promise on a website.</p>
+          <p>We are looking for a small number of firms on Google Workspace to try it with us, set up together, and tell us what it gets wrong.</p>
+        </div>
+        <div class="aside">
+          <p><strong>Context, not advice.</strong> The American Bar Association's Formal Opinion 512 (2024) discusses lawyers' duties when using generative AI, including confidentiality and when client consent is needed before client information goes into an AI tool.</p>
+          <p>Homer does not make you compliant with anything and is not legal advice. Your own professional rules and your judgement still apply.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Questions</p>
+      <h2>Honest answers.</h2>
+      <div class="faq">
+        <details>
+          <summary>Do I need a powerful computer?</summary>
+          <p>Yes, a fairly recent one. Homer needs an Apple Silicon Mac with 16 GB of memory or more (18 GB or more is comfortable) and about 30 GB of free disk. A Linux machine with an 8 GB graphics card also works. The first question after starting takes about 10 seconds longer while the model loads. Slower machines are slower.</p>
+        </details>
+        <details>
+          <summary>Does Google see my mail?</summary>
+          <p>Yes. It is your Gmail, so Google already has it, and Homer reads it through Google's official API. What Homer adds is no new AI company: the model that reads and drafts runs on your computer, and your mail is not sent to OpenAI, Anthropic, Google's AI services or anyone else for processing.</p>
+        </details>
+        <details>
+          <summary>Is the AI as good as ChatGPT?</summary>
+          <p>No. It is a smaller model (Qwen 3.5, 9 billion parameters) that fits on a laptop. It is good at reading, short drafts and understanding requests; it is weaker at long reasoning. That is why plain code does the lookups and every action ends with your approval.</p>
+        </details>
+        <details>
+          <summary>Is it free?</summary>
+          <p>During the beta, yes. There is no per-token bill because the model runs on your machine. We will talk about pricing with beta users before anyone is asked to pay.</p>
+        </details>
+        <details>
+          <summary>Does it work on Windows?</summary>
+          <p>Not yet. Windows is planned. Today Homer runs on macOS and Linux.</p>
+        </details>
+        <details>
+          <summary>Does it work with Outlook?</summary>
+          <p>Not today. Homer works with Gmail and Google Calendar, and works best for teams on Google Workspace. Tell us on the form if you use Outlook; it helps us decide what to build next.</p>
+        </details>
+        <details>
+          <summary>What languages does it support?</summary>
+          <p>English only, for now.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="wrap">
+      <h2>Try Homer with us.</h2>
+      <p class="lead">A small beta, set up together with each firm. Leave your email and we will be in touch.</p>
+      <a class="btn" href="#waitlist">Join the waitlist</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>HOMER · Your AI assistant at home</span>
+    <span><a href="mailto:hello@homer.example">hello@homer.example</a></span>
+  </div>
+</footer>
+
+<script>
+const WAITLIST_ENDPOINT = "";
+const CONTACT_EMAIL = "hello@homer.example";
+const DEMO_VIDEO = "demo.mp4";
+const DEMO_POSTER = "demo-poster.jpg";
+
+(function () {
+  const box = document.getElementById("waitlist");
+  const form = box.querySelector("form");
+  const error = form.querySelector(".error");
+  const button = form.querySelector("button[type=submit]");
+  const success = box.querySelector(".success");
+  const successText = box.querySelector(".success-text");
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  function fail(field, message) {
+    field.setAttribute("aria-invalid", "true");
+    field.focus();
+    error.textContent = message;
+  }
+
+  function read() {
+    for (const f of form.elements) f.removeAttribute && f.removeAttribute("aria-invalid");
+    error.textContent = "";
+    const email = form.email.value.trim();
+    if (!emailPattern.test(email)) return fail(form.email, "Please enter a valid email address.");
+    if (!form.role.value) return fail(form.role, "Please choose what you do.");
+    if (!form.firm_size.value) return fail(form.firm_size, "Please choose your firm size.");
+    return { email: email, role: form.role.value, firm_size: form.firm_size.value };
+  }
+
+  function done(message) {
+    if (message) successText.textContent = message;
+    box.classList.add("done");
+    success.focus();
+  }
+
+  function viaMail(data) {
+    const body = "Please add me to the Homer beta waitlist.\n\nEmail: " + data.email + "\nRole: " + data.role + "\nFirm size: " + data.firm_size + "\n";
+    window.location.href = "mailto:" + CONTACT_EMAIL + "?subject=" + encodeURIComponent("Homer waitlist") + "&body=" + encodeURIComponent(body);
+    done("Your email app should open with a message ready to send. Press Send there to join the list. If nothing opened, write to " + CONTACT_EMAIL + ".");
+  }
+
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    const data = read();
+    if (!data) return;
+    if (!WAITLIST_ENDPOINT) return viaMail(data);
+    button.disabled = true;
+    try {
+      const response = await fetch(WAITLIST_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      done();
+    } catch (e) {
+      error.textContent = "Something went wrong. Please try again, or write to " + CONTACT_EMAIL + ".";
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  fetch(DEMO_VIDEO, { method: "HEAD" }).then(function (response) {
+    if (!response.ok) return;
+    const video = document.createElement("video");
+    video.controls = true;
+    video.preload = "none";
+    video.playsInline = true;
+    video.poster = DEMO_POSTER;
+    video.src = DEMO_VIDEO;
+    const slot = document.getElementById("video");
+    slot.replaceChildren(video);
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>
