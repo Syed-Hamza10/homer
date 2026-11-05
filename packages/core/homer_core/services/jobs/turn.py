@@ -4,17 +4,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+import structlog
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
+from homer_core.agent.claims import HONEST, claims_sending
 from homer_core.agent.dates import DateFormat, default_format
 from homer_core.agent.runtime import Runtime
+from homer_core.agent.voice import HINT, leaks, scrubbed
 from homer_core.db.models import Approval, User
 from homer_core.services.rules import ClientRules
 
+log = structlog.get_logger(__name__)
+
 SUMMARY_LENGTH = 200
+MIN_SCRUBBED_WORDS = 6
 RECONNECT = "Your Google connection has expired. Reconnect it in Settings, it takes a minute."
 RECONNECT_EVENT = "google_reconnect"
 ERRORS = {
@@ -67,6 +73,7 @@ class Turn:
     approvals: list[Approval] = field(default_factory=list)
     conversation_id: int | None = None
     previous: list[dict[str, Any]] = field(default_factory=list)
+    earlier: list[dict[str, Any]] = field(default_factory=list)
     resolved: list[dict[str, Any]] = field(default_factory=list)
     facts: list[str] = field(default_factory=list)
 
@@ -131,9 +138,14 @@ class Turn:
         return result.output
 
     async def stream(
-        self, prompt: str, instructions: str, history: list[ModelMessage] | None = None
+        self,
+        prompt: str,
+        instructions: str,
+        history: list[ModelMessage] | None = None,
+        guarded: bool = True,
     ) -> int:
-        """Streams one model answer as a new segment; returns the segment's index."""
+        """Streams one model answer as a new segment; returns the segment's index. A guarded
+        answer that claims an email went out is replaced, since no model call sends anything."""
         separator = "\n\n" if self.answer else ""
         index = len(self.segments)
         self.segments.append("")
@@ -146,4 +158,23 @@ class Turn:
                 self.emit("token", {"text": delta})
             self.usage.incr(result.usage)
         self.segments[index] = self.segments[index].strip()
+        if guarded and claims_sending(self.segments[index]):
+            log.warning("unbacked_action_claim", text=self.segments[index])
+            self.replace(index, HONEST)
+        elif leaks(self.segments[index]):
+            await self.rephrase(index, prompt, instructions, history)
         return index
+
+    async def rephrase(
+        self, index: int, prompt: str, instructions: str, history: list[ModelMessage] | None
+    ) -> None:
+        """Replaces an answer that talks about its sources or "the user": scrubbed when enough
+        is left, else written once more with a hint, then scrubbed."""
+        log.warning("scaffolding_leak", text=self.segments[index])
+        text = scrubbed(self.segments[index])
+        if len(text.split()) < MIN_SCRUBBED_WORDS:
+            agent = Agent(self.runtime.model, output_type=str, instructions=instructions + HINT)
+            result = await agent.run(prompt, message_history=history or [])
+            self.usage.incr(result.usage)
+            text = scrubbed(result.output) or text
+        self.replace(index, text)
