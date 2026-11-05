@@ -14,14 +14,19 @@ UNKNOWN = re.compile(
     r"|\bmy (?:knowledge|training)(?: data)? (?:cutoff|cut-off)\b",
     re.IGNORECASE,
 )
+PERSONAL = re.compile(r"\b(?:my|mine|me)\b", re.IGNORECASE)
 
 
 async def run(turn: Turn, intent: ChatIntent) -> None:
-    instructions = render_prompt(turn.user.name, turn.user.timezone, turn.now)
+    instructions = render_prompt(turn.user.name, turn.user.timezone, turn.now, turn.facts)
     index = await turn.stream(turn.message, instructions, turn.history[-HISTORY_MESSAGES:])
     text = turn.segments[index]
     reviewed = review(text, acted=False)
     if reviewed != text:
         turn.replace(index, mail_status.honest(turn) or reviewed)
-    elif UNKNOWN.search(text) and SEARCH_SERVER in turn.runtime.manager.toolsets:
+    elif (
+        UNKNOWN.search(text)
+        and not PERSONAL.search(turn.message)
+        and SEARCH_SERVER in turn.runtime.manager.toolsets
+    ):
         await web_search.answer(turn, turn.message, turn.message)
