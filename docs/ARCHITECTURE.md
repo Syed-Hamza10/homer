@@ -98,7 +98,8 @@ and search server defaults.
 
 1. `POST /api/chat` passes the Origin middleware (non-GET under `/api` needs an own origin) and
    `current_user` (signed `homer_session` cookie, 7 days).
-2. `services.chat.stream` creates the conversation if needed (title = first 60 chars), saves the
+2. `services.chat.stream` creates the conversation if needed (title = first 6 words, at most 60
+   chars), saves the
    user message and rebuilds the model history from the stored messages.
 3. `agent/router.py` matches the skill commands, `/approve N` and `/reject N`; `/remind <text>`
    becomes "Remind me <text>". A whole-message decision word ("send it", "yes", "approved",
@@ -121,6 +122,15 @@ and search server defaults.
    a `replace` event carries the corrected text when the claim guard fires. On completion it saves
    the assistant message and adds every model call's tokens to `token_counter`. On failure it logs
    the exception and yields a generic `error`.
+7. Stop: the browser aborts the fetch. Starlette sees the disconnect and cancels the response task;
+   the `CancelledError` (or a `GeneratorExit` when the stream is closed) reaches `stream`, which
+   saves the text shown so far (tokens, or the last `replace`) as an assistant message with
+   `stopped=true` and re-raises. `run_turn` cancels the jobs task in a `finally`, so the model call
+   stops too. No `done` frame and no token count for a stopped turn. Every assistant message also
+   stores `created_approval` (an `approval_required` event was sent during the turn).
+8. Regenerate: `POST /api/conversations/{id}/regenerate` deletes the last user/assistant pair and
+   returns the user text; the browser sends it again through `/api/chat`. A reply with
+   `created_approval` is 409 and the button is hidden for it.
 
 ### The jobs
 
@@ -188,7 +198,10 @@ this client, so anything else the app contacted would show up here.
 | GET | `/api/auth/me` | – | `{user_id, name}` |
 | POST | `/api/chat` | `{conversation_id?: int, message}` | `text/event-stream`; 404 unknown conversation |
 | GET | `/api/conversations` | – | `[{id, title, created_at, updated_at}]` newest first |
-| GET | `/api/conversations/{id}/messages` | – | `[{id, conversation_id, role, content, created_at}]`; 404 if not the user's |
+| GET | `/api/conversations/{id}/messages` | – | `[{id, conversation_id, role, content, stopped, created_approval, created_at}]`; 404 if not the user's |
+| PATCH | `/api/conversations/{id}` | `{title}` | the conversation; 422 blank; 404 unknown |
+| DELETE | `/api/conversations/{id}` | – | 204; its messages go too, approvals stay (they have no conversation link); 404 unknown |
+| POST | `/api/conversations/{id}/regenerate` | – | `{message}` (the removed user text); 409 when the last message is not an assistant reply or it created an approval |
 | GET | `/api/approvals?status=pending` | – | `[{id, server, action, payload, preview, status, channel, created_at, decided_at, result}]` |
 | POST | `/api/approvals/{id}/approve` | – | the approval after execution (`done`/`failed`/`unknown`); 404 unknown; 409 not pending |
 | POST | `/api/approvals/{id}/reject` | – | the approval as `rejected`; 404 unknown; 409 not pending |
@@ -224,7 +237,11 @@ SSE events on `/api/chat`, in order:
 - `tool_call` `{name, args}` and `tool_result` `{name, summary}` (summary cut at 200 chars),
   interleaved with `token`s as the run proceeds
 - `approval_required` `{approval_id, action, preview}` right before the matching `tool_result`
+- `status` `{text}` any time before or between tokens: a short progress line ("Checking your
+  calendar…"). The chat shows "Thinking…" until the first `status` or `token`, then the latest
+  status text until the next `token`
 - `token` `{text}` repeated
+- `replace` `{text}` replaces the text shown so far (claim guard)
 - `done` `{input_tokens, output_tokens}`
 - `error` `{message}` replaces `done` when the model call fails
 
