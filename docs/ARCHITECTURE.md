@@ -7,16 +7,16 @@ api/        routers, one file per resource; thin; return Pydantic schemas (api/s
 services/   business logic as plain functions taking a Session; raise small DomainError subclasses
 db/         SQLModel tables, engine/session factory, Alembic migrations; no logic
 agent/      Pydantic AI agent and prompts/system.md; the model is injected, never built here
-            tools.py (core-native `remind`), toolsets.py (five curated name lists), router.py
-            (slash commands + one-word classifier), gate.py (approval wrapper), runtime.py (bundle)
+            intents.py (one structured call -> list of intents), router.py (slash commands and
+            typed approve/reject words), claims.py (claim guard), prompt.py, runtime.py (bundle)
 mcp/        manager.py: starts the MCP servers over stdio, hides `execute`/`health`, runs `execute`
 main.py cli.py config.py platform.py llm.py doctor.py auth.py   top-level wiring
 ```
 
 Routers depend on services; services on db, agent and mcp. Nothing points upward. Dependencies
 arrive through FastAPI `Depends` (`api/deps.py`) from `app.state`, which the lifespan fills: engine,
-session secret, login limiter, allowlisted HTTP client, model, and a `Runtime` (agent, classifier,
-toolsets, MCP manager). `DomainError` subclasses carry a `status_code`; one handler in `main.py`
+session secret, login limiter, allowlisted HTTP client, model, and a `Runtime` (model, MCP manager,
+intent agent, contacts cache). `DomainError` subclasses carry a `status_code`; one handler in `main.py`
 turns them into `{"detail": ...}` JSON.
 
 ## MCP manager
@@ -25,10 +25,8 @@ turns them into `{"detail": ...}` JSON.
 `homer-mcp-system` on PATH, then in the venv `bin`, and builds one `MCPToolset` per server over a
 `StdioTransport` with env `HOMER_HOME`, `GOOGLE_API_BASE`, `GOOGLE_TOKEN_URL`, `WEB_SEARCH`.
 `start()` enters each toolset; a server that is missing or fails to start is logged and dropped, the
-app runs with whatever is left. `model_toolset()` is the combined view with `execute` and `health`
-filtered out; `call(server, tool, args)` is the only path to `execute`, used by the approvals
-executor. Core tools (`remind`) live in a `FunctionToolset`; `agent/toolsets.py` builds the five
-`FilteredToolset`s (`mail`, `calendar`, `mail+calendar`, `search`, `system`) over both.
+app runs with whatever is left. The model never sees an MCP tool: `call(server, tool, args)` is
+the only way in, used by the job executors and the approvals executor.
 
 ## Skills, caches and scheduler (step 4)
 
@@ -102,19 +100,61 @@ and search server defaults.
    `current_user` (signed `homer_session` cookie, 7 days).
 2. `services.chat.stream` creates the conversation if needed (title = first 60 chars), saves the
    user message and rebuilds the model history from the stored messages.
-3. `agent/router.py` matches `/brief`, `/inbox` (fixed "not yet available" text), `/remind <text>`
-   (agent run with the `system` toolset), `/approve N` and `/reject N` (service call, one line of
-   text). Anything else gets one short non-streamed classification call on the same model that
-   answers one of the five toolset names (`mail+calendar` on anything unexpected).
-4. The agent runs with that toolset wrapped in an `ApprovalGate`. The gate stores any tool result
-   shaped `{"approval_required": true, action, payload, preview}` as an `approvals` row and hands
-   the model the text "Approval #N requested; the user will decide". It also remembers whether any
-   result contained `<untrusted>`; from then on `mail_label` and `mail_archive` are turned into
-   approvals instead of being called.
-5. `stream` turns the run's events into `ChatEvent`s; `api/chat.py` writes each as an SSE frame
-   `event: <name>\ndata: <json>\n\n` (no SSE library).
-6. On completion it saves the assistant message and adds the run's tokens (classifier included) to
-   `token_counter`. On failure it logs the exception with structlog and yields a generic `error`.
+3. `agent/router.py` matches the skill commands, `/approve N` and `/reject N`; `/remind <text>`
+   becomes "Remind me <text>". A whole-message decision word ("send it", "yes", "approved",
+   "no", "cancel", "discard") with exactly one pending approval settles it without the model;
+   with several it lists them; with none, a bare yes/no goes on and the rest answer "Nothing is
+   waiting for your approval."
+4. One structured call (`agent/intents.py`, Pydantic AI `ToolOutput` named `record_intents`, a
+   discriminated union) turns the message, the last 6 stored messages and a table of dates
+   (today, tomorrow, the next 7 days by name, this week) into a list of intents: `send_email`,
+   `create_event`, `read_calendar`, `read_email`, `web_search`, `remind`, `chat`. The model copies
+   dates and times; validators normalise `3pm` to `15:00` and reject anything that is not
+   `YYYY-MM-DD`, which makes Pydantic AI retry. A failed call falls back to `chat`.
+5. `services/jobs/dispatch.py` runs each intent in order through its executor in
+   `services/jobs/` (one module per job). Each gets a `Turn`: session, user, rules, history, the
+   user's local `now`, and an event queue. `Turn.call` is the only way to an MCP tool (it emits
+   `tool_call`/`tool_result` and turns `{"error": ...}` into a `JobError`), `Turn.say` emits fixed
+   text, `Turn.stream` streams one model answer, `Turn.requested` emits `approval_required` with the
+   payload. A `JobError` or `DomainError` in one intent is said and the next intent still runs.
+6. `stream` drains the queue into SSE frames `event: <name>\ndata: <json>\n\n` (no SSE library);
+   a `replace` event carries the corrected text when the claim guard fires. On completion it saves
+   the assistant message and adds every model call's tokens to `token_counter`. On failure it logs
+   the exception and yields a generic `error`.
+
+### The jobs
+
+- `send_email`: address as given, else `contacts_search` (cached 10 min per first name), else
+  recent senders from `mail_search from:<name>`; none asks for the address, several ask which.
+  `reply_to_latest_from` replies in that sender's newest thread. One `write_email` structured call
+  writes subject and body in the client's tone; `mail_draft`; a `mail_send` approval created
+  through `services/approvals.create` with payload `{draft_id, to, subject, body, thread_id}`;
+  then "Draft to <name> is ready. Edit it or press Send."
+- `create_event`: attendees resolved like recipients (an unknown one is left off and asked
+  about); an explicit start is used as given (end = end or start + duration, default 30 min); a
+  window (default business hours) goes to `cal_find_free_slots` with the user's `timezone` and the
+  first slot wins; `cal_create` with `timezone`; a `cal_create` approval; one fixed sentence.
+- `read_calendar`: `cal_list` over the local day bounds; up to 8 events are rendered as a list in
+  the user's timezone with no model call, more go to one phrasing call over that list only.
+- `read_email`: `mail_search` (`from:<first name>` and/or the topic, one retry with the longest
+  word), bodies in `<untrusted>`, one answer call citing sender and date.
+- `web_search`: `web_search`, `fetch_page` on the top 2 results (2,500 chars each, the snippet
+  when a fetch fails), one answer call under 120 words, then a "Sources:" list written by code.
+- `remind`: a reminder row at the local date and time; no model call.
+- `chat`: the short system prompt (`prompts/system.md`; the user's name only when it is not the
+  install-time placeholder) and the last 10 messages, no tools. The claim guard
+  (`agent/claims.py`) replaces any "I've sent/scheduled/created" text with a fixed honest
+  sentence; an "I don't know" answer falls through to `web_search`.
+
+### Editing an approval
+
+`POST /api/approvals/{id}/edit` takes `{to, subject, body}` for `mail_send` or `{title, date,
+start, end, attendees}` for `cal_create` (local date and times). A mail edit calls the hidden
+`mail_draft_update` (Gmail `drafts.update`, same draft id); an event edit calls `cal_create` again
+with the user's timezone. A fresh approval with a new hash is created and the old one moves
+`pending -> superseded`; editing a non-pending approval is 409, the wrong shape 422. Rejecting a
+`mail_send` (button, `/reject`, typed "discard") also deletes the Gmail draft with
+`mail_draft_delete`.
 
 ## Approvals
 
@@ -203,9 +243,9 @@ paths return `index.html`.
 
 **Search server hosts.** `web_search` is our own small DuckDuckGo HTML client: one POST to `https://html.duckduckgo.com/html/` through `AllowlistedClient` with the allowlist exactly `{"html.duckduckgo.com"}`, parsed with the stdlib `html.parser` (result links and snippets; DuckDuckGo's `/l/?uddg=` redirect links are decoded to the real URL, ad links dropped). Every search therefore lands in `outbound_log` like any other call. `fetch_page` builds an `Allowlist` per call holding only the host the user asked for and goes through `AllowlistedClient`; it resolves the hostname first and refuses any address that is not public (private, loopback, link-local, reserved, multicast, shared), caps the body at 2 MB and the whole call at 15 s, and a redirect to another host fails the per-hop allowlist check. Both searches and fetches are gated at one request per second per tool and cached for an hour by tool and arguments; errors are not cached. `WEB_SEARCH=false` makes every tool return `{"error": "web_search_off"}` before any network call.
 
-**Approvals.** A tier-1 tool never acts. It validates, builds the exact payload, and returns `{"approval_required": true, "action": "<tool name>", "payload": {...}, "preview": "<plain text the user will read>"}`. Each server with tier-1 tools also exposes `execute(action: str, payload: dict) -> dict`; the core removes `execute` from every model-visible toolset, so only the approvals executor can call it. Core table `approval(id, user_id, server, action, payload_json, payload_hash sha256, preview, status, created_at, decided_at, result_json, channel)`. Status: `pending → running → done | failed | unknown`, or `pending → rejected | expired` (24 h). Approve = one `UPDATE … SET status='running' WHERE id=? AND status='pending'`; zero rows updated means someone else got there first. The executor recomputes the hash before calling `execute`; an edited payload is a new approval. A timeout or ambiguous failure on a send sets `unknown` and is never retried automatically. Any tier-2 action proposed while untrusted content is in the current run's context is routed through approval too (the agent run tracks whether an `<untrusted>` block has been returned).
+**Approvals.** A tier-1 tool never acts. It validates, builds the exact payload, and returns `{"approval_required": true, "action": "<tool name>", "payload": {...}, "preview": "<plain text the user will read>"}`. Each server with tier-1 tools also exposes `execute(action: str, payload: dict) -> dict`; the model is given no tools at all, so only the approvals executor can call it. Core table `approval(id, user_id, server, action, payload_json, payload_hash sha256, preview, status, created_at, decided_at, result_json, channel)`. Status: `pending → running → done | failed | unknown`, or `pending → rejected | expired` (24 h), or `pending → superseded` when the user edits it. Approve = one `UPDATE … SET status='running' WHERE id=? AND status='pending'`; zero rows updated means someone else got there first. The executor recomputes the hash before calling `execute`; an edited payload is a new approval. A timeout or ambiguous failure on a send sets `unknown` and is never retried automatically. Untrusted content (email bodies, web pages) only ever reaches a model call that has no tools and whose output is shown as text, so it cannot trigger an action.
 
-**Router and toolsets.** `/brief`, `/inbox`, `/remind`, `/approve N` by regex. Otherwise one short classification call picks one of `mail`, `calendar`, `mail+calendar`, `search`, `system`. Each is a `FilteredToolset` over the MCP toolsets plus core-native tools, at most 10 tools, defined as explicit name lists in `agent/toolsets.py`.
+**Router and jobs.** Slash commands and decision words by regex; everything else is one intent call and code-driven jobs (see "Chat request flow"). The model is never given a tool list.
 
 **SSE events added:** `tool_call {name, args}`, `tool_result {name, summary}`, `approval_required {approval_id, action, preview}`.
 
