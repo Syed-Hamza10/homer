@@ -16,6 +16,7 @@ from homer_core.agent.intents import Background, extract
 from homer_core.agent.router import (
     Command,
     Decision,
+    asks_for_summary,
     asks_if_sent,
     is_conversational,
     is_edit,
@@ -28,13 +29,14 @@ from homer_core.services import approvals, briefs, calendar, drafts, followups, 
 from homer_core.services.conversations import get_conversation, list_messages, make_title
 from homer_core.services.errors import DomainError
 from homer_core.services.facts import prompt_facts
-from homer_core.services.jobs import dispatch, edit_email, mail_status
+from homer_core.services.jobs import day_summary, dispatch, edit_email, mail_status
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
 
 log = structlog.get_logger(__name__)
 
 INTENT_HISTORY = 6
+CONTEXT_TURNS = 4
 GENERIC_ERROR = "The assistant could not answer. Please try again."
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
@@ -74,6 +76,13 @@ def last_context(messages: list[Message]) -> list[dict[str, Any]]:
         if message.role == "assistant":
             return json.loads(message.context_json) if message.context_json else []
     return []
+
+
+def recent_context(messages: list[Message]) -> list[dict[str, Any]]:
+    """The resolved intents of the last few assistant turns, oldest first, so "it" can still
+    mean the event booked two turns ago."""
+    replies = [m for m in messages if m.role == "assistant" and m.context_json]
+    return [item for m in replies[-CONTEXT_TURNS:] for item in json.loads(m.context_json or "[]")]
 
 
 def start_conversation(session: Session, user: User, message: str) -> Conversation:
@@ -205,10 +214,16 @@ async def run_skill(session: Session, user: User, runtime: Runtime, command: Com
 
 
 async def routed(turn: Turn) -> bool:
-    """Answers send-status questions and edits of this chat's draft without the intent call."""
+    """Answers send-status and end-of-day questions and edits of this chat's draft without the
+    intent call."""
     if asks_if_sent(turn.message):
         turn.say(mail_status.answer(turn))
         return True
+    if asks_for_summary(turn.message):
+        turn.resolved.append({"kind": "day_summary"})
+        await day_summary.run(turn)
+        return True
+
     if not is_edit(turn.message):
         return False
     pending = approvals.list_pending(turn.session, turn.user, turn.conversation_id)
@@ -224,23 +239,36 @@ async def routed(turn: Turn) -> bool:
 
 async def run_jobs(turn: Turn) -> None:
     try:
-        if await routed(turn):
-            return
-        recent = turn.history[-INTENT_HISTORY:]
-        known = Background(turn.previous, turn.facts, turn.date_format)
-        intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
-        turn.usage.incr(usage)
-        log.info("intents", kinds=[intent.kind for intent in intents])
-        for intent in intents:
-            try:
-                await dispatch.run(turn, intent)
-            except ReconnectRequired:
-                turn.ask_to_reconnect()
-                break
-            except (JobError, DomainError) as error:
-                turn.say(str(error))
+        await jobs(turn)
+    except ReconnectRequired:
+        turn.ask_to_reconnect()
     finally:
         turn.events.put_nowait(None)
+
+
+async def jobs(turn: Turn) -> None:
+    """Routed questions first, else one intent call and a job per intent. A job's error is said
+    and the next job runs; a refused Google token ends the turn."""
+    try:
+        if await routed(turn):
+            return
+    except ReconnectRequired:
+        raise
+    except (JobError, DomainError) as error:
+        turn.say(str(error))
+        return
+    recent = turn.history[-INTENT_HISTORY:]
+    known = Background(turn.previous, turn.facts, turn.date_format)
+    intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
+    turn.usage.incr(usage)
+    log.info("intents", kinds=[intent.kind for intent in intents])
+    for intent in intents:
+        try:
+            await dispatch.run(turn, intent)
+        except ReconnectRequired:
+            raise
+        except (JobError, DomainError) as error:
+            turn.say(str(error))
 
 
 async def run_turn(turn: Turn, outcome: Outcome) -> AsyncIterator[ChatEvent]:
@@ -265,6 +293,7 @@ async def respond(
     message: str,
     outcome: Outcome,
     previous: list[dict[str, Any]] | None = None,
+    earlier: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[ChatEvent]:
     command = parse_command(message)
     if command is not None and command.name in SKILL_COMMANDS:
@@ -289,6 +318,7 @@ async def respond(
         now=datetime.now(ZoneInfo(user.timezone)),
         conversation_id=conversation_id,
         previous=previous or [],
+        earlier=earlier or [],
         facts=prompt_facts(session, user),
     )
     async with aclosing(run_turn(turn, outcome)) as events:
@@ -310,13 +340,24 @@ async def stream(
     stored = list_messages(session, user, conversation.id)
     history = to_history(stored)
     previous = last_context(stored)
+    earlier = recent_context(stored)
     user_message = save_message(session, conversation, "user", message)
     yield ChatEvent("meta", {"conversation_id": conversation.id, "message_id": user_message.id})
 
     outcome = Outcome()
     try:
         async with aclosing(
-            respond(session, user, runtime, conversation.id, history, message, outcome, previous)
+            respond(
+                session,
+                user,
+                runtime,
+                conversation.id,
+                history,
+                message,
+                outcome,
+                previous,
+                earlier,
+            )
         ) as events:
             async for event in events:
                 outcome.track(event)
