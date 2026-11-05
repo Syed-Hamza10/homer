@@ -92,6 +92,7 @@ class Approval(SQLModel, table=True):
     decided_at: datetime | None = None
     result_json: str | None = None
     channel: str = "web"
+    conversation_id: int | None = Field(default=None, index=True)
 
 
 class EmailCache(SQLModel, table=True):

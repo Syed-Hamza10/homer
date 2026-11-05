@@ -316,3 +316,87 @@ def test_edit_a_draft_in_the_chat_card_and_send(page: Page, stack: Stack) -> Non
     expect(card).to_contain_text("Status: done")
     assert stack.sent_count() == sent + 1
     assert any("Edited in the card" in body for body in stack.sent_bodies())
+
+
+UPDATED = "Updated the draft. Edit it or press Send."
+NO_DRAFT = "There's no draft waiting in this chat."
+
+
+def message_part(body: str) -> str:
+    return body.split("\n\n")[1] if body.count("\n\n") >= 1 else body
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_chat_edits_change_the_card_and_the_sent_mail(
+    stack: Stack, client: httpx.Client, talk: Talk, run: int
+) -> None:
+    draft = talk("email priya.natarajan@example.test that the review meeting is confirmed")
+    first = draft.of("approval_required")[0]
+    subject = talk("change subject to Lunch is on me!", draft.conversation)
+    assert subject.said == UPDATED, subject.said
+    assert subject.of("approval_required")[0]["payload"]["subject"] == "Lunch is on me!"
+    added = talk("add that I'm free Friday", draft.conversation)
+    assert added.said == UPDATED, added.said
+    fresh = added.of("approval_required")[0]
+    assert "friday" in fresh["payload"]["body"].lower(), fresh["payload"]["body"]
+    assert fresh["payload"]["draft_id"] == first["payload"]["draft_id"]
+    shorter = talk("make it shorter", draft.conversation)
+    assert shorter.said == UPDATED, shorter.said
+    last = shorter.of("approval_required")[0]
+    assert [a["id"] for a in client.get("/api/approvals").json()] == [last["approval_id"]]
+    sent = stack.sent_count()
+    done = talk("looks good, send it", draft.conversation)
+    assert done.said == f"Approval #{last['approval_id']} (mail_send): done.", done.said
+    assert stack.sent_count() == sent + 1
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_terse_requests_become_real_emails(talk: Talk, run: int) -> None:
+    for message, greeting in [
+        ("emial priya.natarajan@example.test that the demo is redone, thx", "Hi,"),
+        ("email Maya that the kickoff notes are in the shared folder", "Hi Maya,"),
+        ("pls send Samuel Okafor a thanks for yesterday", "Hi Samuel,"),
+    ]:
+        reply = talk(message)
+        assert reply.actions == ["mail_send"], (reply.tools, reply.said)
+        payload = reply.of("approval_required")[0]["payload"]
+        body, subject = payload["body"], payload["subject"]
+        assert body.startswith(greeting), body
+        assert "[" not in body and "thx" not in body.lower(), body
+        assert subject.strip().lower() not in {body.lower(), message_part(body).lower()}, payload
+        assert len(message_part(body).split()) >= 8, body
+        assert not body.rstrip().endswith("Best,"), body
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_typed_approvals_stay_in_their_chat(
+    stack: Stack, client: httpx.Client, talk: Talk, run: int
+) -> None:
+    word = ["looks good send", "perfect send it", "lgtm"][run]
+    draft = talk("Email Elena Marchetti that the deck looks good")
+    approval_id = draft.of("approval_required")[0]["approval_id"]
+    elsewhere = talk("send it")
+    assert elsewhere.said == NO_DRAFT and elsewhere.actions == [], elsewhere.said
+    sent = stack.sent_count()
+    reply = talk(word, draft.conversation)
+    assert reply.said == f"Approval #{approval_id} (mail_send): done.", reply.said
+    assert stack.sent_count() == sent + 1
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_send_status_comes_from_the_approvals(
+    stack: Stack, client: httpx.Client, talk: Talk, run: int
+) -> None:
+    draft = talk("email priya.natarajan@example.test the budget is approved")
+    waiting = talk("did you send it?", draft.conversation)
+    assert waiting.said.startswith("Not yet. The draft to priya.natarajan@example.test"), (
+        waiting.said
+    )
+    sent = stack.sent_count()
+    now = talk("ok now send it", draft.conversation)
+    assert now.said.endswith("(mail_send): done."), now.said
+    assert stack.sent_count() == sent + 1
+    asked = talk("did you send my email to Priya?")
+    assert asked.said.startswith("Yes, sent to priya.natarajan@example.test at "), asked.said
+    claim = talk("did you send it?")
+    assert "sent" not in claim.said.lower() or claim.said.startswith("No."), claim.said

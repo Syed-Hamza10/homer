@@ -13,7 +13,9 @@ from homer_core.agent.intents import extract
 from homer_core.agent.router import (
     Command,
     Decision,
+    asks_if_sent,
     is_conversational,
+    is_edit,
     parse_command,
     parse_decision,
 )
@@ -22,7 +24,7 @@ from homer_core.db.models import Conversation, Message, TokenCounter, User, utcn
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
 from homer_core.services.conversations import get_conversation, list_messages
 from homer_core.services.errors import DomainError
-from homer_core.services.jobs import dispatch
+from homer_core.services.jobs import dispatch, edit_email, mail_status
 from homer_core.services.jobs.turn import ChatEvent, JobError, Turn
 from homer_core.services.rules import get_rules
 
@@ -33,7 +35,7 @@ INTENT_HISTORY = 6
 GENERIC_ERROR = "The assistant could not answer. Please try again."
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
-NOTHING_PENDING = "Nothing is waiting for your approval."
+NOTHING_PENDING = "There's no draft waiting in this chat."
 
 
 @dataclass
@@ -105,13 +107,13 @@ async def decide(session: Session, user: User, runtime: Runtime, command: Comman
 
 
 async def decide_pending(
-    session: Session, user: User, runtime: Runtime, message: str
+    session: Session, user: User, runtime: Runtime, conversation_id: int, message: str
 ) -> str | None:
-    """Settles the one pending approval from a typed word; None lets the message through."""
+    """Settles this chat's one pending approval from a typed reply; None lets the message on."""
     decision = parse_decision(message)
     if decision is None:
         return None
-    pending = approvals.list_pending(session, user)
+    pending = approvals.list_pending(session, user, conversation_id)
     if len(pending) == 1:
         return await settle(session, user, runtime, decision, pending[0].id)
     if pending:
@@ -165,8 +167,28 @@ async def run_skill(session: Session, user: User, runtime: Runtime, command: Com
     return "Unknown command."
 
 
+async def routed(turn: Turn) -> bool:
+    """Answers send-status questions and edits of this chat's draft without the intent call."""
+    if asks_if_sent(turn.message):
+        turn.say(mail_status.answer(turn))
+        return True
+    if not is_edit(turn.message):
+        return False
+    pending = approvals.list_pending(turn.session, turn.user, turn.conversation_id)
+    drafts = [approval for approval in pending if approval.action == approvals.SEND_ACTION]
+    if len(drafts) != 1:
+        return False
+    try:
+        await edit_email.run(turn, drafts[0])
+    except (JobError, DomainError) as error:
+        turn.say(str(error))
+    return True
+
+
 async def run_jobs(turn: Turn) -> None:
     try:
+        if await routed(turn):
+            return
         recent = turn.history[-INTENT_HISTORY:]
         intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now)
         turn.usage.incr(usage)
@@ -193,6 +215,7 @@ async def respond(
     session: Session,
     user: User,
     runtime: Runtime,
+    conversation_id: int,
     history: list[ModelMessage],
     message: str,
     outcome: Outcome,
@@ -206,7 +229,7 @@ async def respond(
         return
     if command is not None and command.name == "remind":
         message = f"Remind me {command.arg}"
-    settled = await decide_pending(session, user, runtime, message)
+    settled = await decide_pending(session, user, runtime, conversation_id, message)
     if settled is not None:
         yield text_event(outcome, settled)
         return
@@ -218,6 +241,7 @@ async def respond(
         rules=get_rules(session, user.id),
         history=history,
         now=datetime.now(ZoneInfo(user.timezone)),
+        conversation_id=conversation_id,
     )
     async for event in run_turn(turn, outcome):
         yield event
@@ -240,7 +264,9 @@ async def stream(
 
     outcome = Outcome()
     try:
-        async for event in respond(session, user, runtime, history, message, outcome):
+        async for event in respond(
+            session, user, runtime, conversation.id, history, message, outcome
+        ):
             yield event
     except Exception:
         log.exception("chat_failed", conversation_id=conversation.id)

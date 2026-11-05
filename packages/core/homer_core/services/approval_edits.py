@@ -8,6 +8,7 @@ from homer_core.agent.intents import clock, iso_date
 from homer_core.db.models import Approval, User
 from homer_core.mcp.manager import McpManager
 from homer_core.services.approvals import (
+    SUPERSEDED,
     NotPending,
     create_from_tool_result,
     get_approval,
@@ -16,8 +17,6 @@ from homer_core.services.approvals import (
 )
 from homer_core.services.errors import DomainError
 from homer_core.services.jobs.send_email import request_send
-
-SUPERSEDED = "superseded"
 
 
 class NotEditable(DomainError):
@@ -119,4 +118,8 @@ async def edit(
     except NotPending:
         transition_from_pending(session, fresh, SUPERSEDED)
         raise
+    fresh.conversation_id = approval.conversation_id
+    session.add(fresh)
+    session.commit()
+    session.refresh(fresh)
     return fresh

@@ -8,7 +8,16 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models import Model
 from sqlmodel import Session
 
-from homer_core.agent.router import Command, parse_command, parse_decision
+from homer_core.agent.router import (
+    Command,
+    asked_recipient,
+    asks_if_sent,
+    is_conversational,
+    is_edit,
+    parse_command,
+    parse_decision,
+)
+from homer_core.db.models import Conversation
 from homer_core.services import approvals
 
 Frames = list[tuple[str, dict[str, Any]]]
@@ -57,13 +66,63 @@ def test_parse_command(message: str, expected: Command | None) -> None:
         ("cancel", "reject"),
         ("Discard it.", "reject"),
         ("don't send it", "reject"),
+        ("looks good send", "approve"),
+        ("looks good, send it", "approve"),
+        ("Perfect, send it!", "approve"),
+        ("yep send", "approve"),
+        ("LGTM", "approve"),
+        ("ok now send it", "approve"),
+        ("do not send", "reject"),
         ("send it to Maya instead", None),
+        ("yes go ahead and send the email to Rosa", None),
+        ("send maya@example.test the notes", None),
         ("yes I am free on Tuesday", None),
         ("no idea what you mean", None),
+        ("thanks", None),
     ],
 )
 def test_parse_decision(message: str, expected: str | None) -> None:
     assert parse_decision(message) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"), [("yes", True), ("No.", True), ("ok!", True), ("send it", False)]
+)
+def test_is_conversational(message: str, expected: bool) -> None:
+    assert is_conversational(message) is expected
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("make it shorter", True),
+        ("change subject to Lunch is on me!", True),
+        ("add that I'm free Friday", True),
+        ("can you make it more formal?", True),
+        ("say thanks instead", True),
+        ("add a meeting with Priya tomorrow", False),
+        ("change the meeting to 4pm", False),
+        ("email Maya that the subject is done", False),
+        ("what is the subject of Rosa's email?", False),
+    ],
+)
+def test_is_edit(message: str, expected: bool) -> None:
+    assert is_edit(message) is expected
+
+
+@pytest.mark.parametrize(
+    ("message", "asks", "recipient"),
+    [
+        ("did you send it?", True, None),
+        ("did you send my email to Hassan?", True, "hassan"),
+        ("has it been sent to bob@example.test?", True, "bob@example.test"),
+        ("was the email sent?", True, None),
+        ("did Rosa send me anything?", False, None),
+    ],
+)
+def test_send_status_questions(message: str, asks: bool, recipient: str | None) -> None:
+    assert asks_if_sent(message) is asks
+    assert asked_recipient(message) == recipient
 
 
 @pytest.mark.parametrize(("message", "needle"), [("/brief", "Good morning"), ("/inbox", "cache")])
@@ -93,7 +152,16 @@ def test_approve_command(
     assert "not pending" in tokens(post_chat({"message": f"/reject {approval_id}"}))
 
 
-def create_send_approval(app: FastAPI, draft_id: str = "d1") -> int:
+def start_chat(app: FastAPI) -> int:
+    with Session(app.state.engine) as session:
+        conversation = Conversation(user_id=1, title="test")
+        session.add(conversation)
+        session.commit()
+        assert conversation.id is not None
+        return conversation.id
+
+
+def create_send_approval(app: FastAPI, conversation_id: int, draft_id: str = "d1") -> int:
     result = {
         "approval_required": True,
         "action": "mail_send",
@@ -101,9 +169,12 @@ def create_send_approval(app: FastAPI, draft_id: str = "d1") -> int:
         "preview": f"Send draft {draft_id}",
     }
     with Session(app.state.engine) as session:
-        approval_id = approvals.create_from_tool_result(session, 1, "google", result).id
-    assert approval_id is not None
-    return approval_id
+        approval = approvals.create_from_tool_result(session, 1, "google", result)
+        approval.conversation_id = conversation_id
+        session.add(approval)
+        session.commit()
+        assert approval.id is not None
+        return approval.id
 
 
 class TestTypedDecisions:
@@ -114,8 +185,9 @@ class TestTypedDecisions:
     def test_send_it_approves_the_only_pending_approval_without_the_model(
         self, app: FastAPI, post_chat: PostChat, fake_google: ModuleType
     ) -> None:
-        approval_id = create_send_approval(app)
-        frames = post_chat({"message": "send it"})
+        chat = start_chat(app)
+        approval_id = create_send_approval(app, chat)
+        frames = post_chat({"message": "looks good, send it", "conversation_id": chat})
         assert tokens(frames) == f"Approval #{approval_id} (mail_send): done."
         assert fake_google.executed == [{"action": "mail_send", "payload": {"draft_id": "d1"}}]
         assert frames[-1][1]["input_tokens"] == 0
@@ -123,23 +195,39 @@ class TestTypedDecisions:
     def test_discard_rejects_and_deletes_the_draft(
         self, logged_in: TestClient, app: FastAPI, post_chat: PostChat, fake_google: ModuleType
     ) -> None:
-        approval_id = create_send_approval(app, "d7")
-        assert tokens(post_chat({"message": "Discard it"})) == (
+        chat = start_chat(app)
+        approval_id = create_send_approval(app, chat, "d7")
+        assert tokens(post_chat({"message": "Discard it", "conversation_id": chat})) == (
             f"Approval #{approval_id} (mail_send): rejected."
         )
         assert fake_google.executed == []
         assert fake_google.deleted == ["d7"]
 
     def test_several_pending_asks_which(self, app: FastAPI, post_chat: PostChat) -> None:
-        first, second = create_send_approval(app, "d1"), create_send_approval(app, "d2")
-        said = tokens(post_chat({"message": "yes"}))
+        chat = start_chat(app)
+        first, second = create_send_approval(app, chat, "d1"), create_send_approval(app, chat, "d2")
+        said = tokens(post_chat({"message": "yes", "conversation_id": chat}))
         assert said == (
             f"Several approvals are waiting: #{first} mail_send; #{second} mail_send. "
             "Say /approve N to pick one."
         )
 
     def test_nothing_pending(self, logged_in: TestClient, post_chat: PostChat) -> None:
-        assert tokens(post_chat({"message": "send it"})) == "Nothing is waiting for your approval."
+        assert tokens(post_chat({"message": "send it"})) == "There's no draft waiting in this chat."
+
+    def test_a_draft_in_another_chat_is_left_alone(
+        self, app: FastAPI, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        create_send_approval(app, start_chat(app))
+        other = start_chat(app)
+        said = tokens(post_chat({"message": "send it", "conversation_id": other}))
+        assert said == "There's no draft waiting in this chat."
+        assert fake_google.executed == []
+
+    def test_bare_yes_with_nothing_pending_reaches_the_model(
+        self, logged_in: TestClient, post_chat: PostChat
+    ) -> None:
+        assert tokens(post_chat({"message": "yes"})).startswith("Reminder set")
 
 
 class TestRemindCommand:
