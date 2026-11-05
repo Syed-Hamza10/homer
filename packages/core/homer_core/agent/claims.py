@@ -24,10 +24,20 @@ CLAIM = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+CALENDAR_CLAIM = re.compile(
+    r"\bI(?:'ve| have| just| already)*\s+(?:cancell?ed|moved|rescheduled|deleted|removed"
+    r"|updated|changed|shifted)\b"
+    r"|\b(?:event|meeting|lunch|call|appointment|it)\s+(?:has been|have been|was|is now)\s+"
+    r"(?:cancell?ed|moved|rescheduled|deleted|removed|updated|changed)\b"
+    r"|\b(?:cancell?ed|moved|rescheduled|deleted) (?:it )?(?:successfully|for you)\b"
+    r"|\b(?:event|meeting|call)\b[^.\n]{0,80}\bis ready\b",
+    re.IGNORECASE,
+)
+
 
 def review(text: str, acted: bool) -> str:
     """Returns the text, or a fixed honest sentence when it claims an action nothing backs."""
-    if acted or not CLAIM.search(text):
+    if acted or not (CLAIM.search(text) or CALENDAR_CLAIM.search(text)):
         return text
     log.warning("unbacked_action_claim", text=text)
     return HONEST
