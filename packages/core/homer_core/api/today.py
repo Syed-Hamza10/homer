@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from sqlmodel import Session, select
 
 from homer_core.agent.runtime import Runtime
-from homer_core.api.deps import CurrentUser, RuntimeDep, SchedulerDep, SessionDep
+from homer_core.api.deps import CurrentUser, RuntimeDep, SchedulerDep, SessionDep, SettingsDep
 from homer_core.api.schemas.reminders import ReminderOut
 from homer_core.api.schemas.skills import (
     BriefOut,
@@ -15,7 +15,7 @@ from homer_core.api.schemas.skills import (
 )
 from homer_core.db.models import CalendarEventCache, EmailCache, User
 from homer_core.mcp.manager import ExecuteFailed, ServerUnavailable
-from homer_core.services import approvals, briefs, followups
+from homer_core.services import approvals, briefs, followups, google_account
 from homer_core.services.calendar import list_events, local_day_bounds, refresh_calendar
 from homer_core.services.inbox import list_inbox, refresh_inbox
 from homer_core.services.rules import get_rules
@@ -45,7 +45,11 @@ async def _prime(user: User, session: Session, runtime: Runtime) -> None:
 
 @router.get("")
 async def today(
-    user: CurrentUser, session: SessionDep, runtime: RuntimeDep, scheduler: SchedulerDep
+    user: CurrentUser,
+    session: SessionDep,
+    runtime: RuntimeDep,
+    scheduler: SchedulerDep,
+    settings: SettingsDep,
 ) -> TodayOut:
     await _prime(user, session, runtime)
     rules = get_rules(session, user.id)
@@ -66,6 +70,7 @@ async def today(
         unread=len([message for message in messages if message.unread]),
         pending_approvals=len(approvals.list_pending(session, user)),
         health=scheduler.health,
+        google=google_account.local_status(settings, now),
     )
 
 
