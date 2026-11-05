@@ -15,6 +15,7 @@ from pydantic_ai.usage import RunUsage
 from homer_core.agent.dates import (
     DAY_AFTER,
     WEEKDAY,
+    WEEKDAY_WORDS,
     DateFormat,
     date_table,
     numeric_date,
@@ -39,6 +40,30 @@ DATED = re.compile(
     re.IGNORECASE,
 )
 SEARCH_DAYS = 14
+MOVE = re.compile(
+    r"\b(?:move|moving|moved|reschedule|rescheduling|push|pushing|shift|shifting|postpone"
+    r"|bring (?:it |that )?forward)\b",
+    re.IGNORECASE,
+)
+REPLY = re.compile(
+    r"^\W*(?:(?:ok|okay|please|pls|can you|could you|hey)[,]?\s+)*"
+    r"(?:reply|respond|write back|answer)\b",
+    re.IGNORECASE,
+)
+NEXT_EVENT = re.compile(r"\b(?:next|upcoming) (?:meeting|event|call|appointment)\b", re.IGNORECASE)
+SLOT = re.compile(
+    r"\bfind (?:me |us )?(?:a |an )?"
+    r"(?:(\d+)\s*(?:-\s*)?(min|mins|minutes|minute|h|hr|hrs|hour|hours)"
+    r"|time|slot|free slot)\b",
+    re.IGNORECASE,
+)
+WHATS_ON = re.compile(
+    r"^\W*(?:\w+[,!.]?\s+){0,4}?(?:what(?:'s|s| is)|anything)\s+(?:on|planned|happening|the plan)"
+    r"\b(?:\s+(?:for|on))?\s+(?:today|tonight|tomorrow|this \w+|next \w+|"
+    + "|".join(WEEKDAY_WORDS)
+    + r")\b",
+    re.IGNORECASE,
+)
 
 PROMPT = """You turn the user's latest message into a list of intents for Homer, an email,
 calendar and web assistant. Do not answer the message: call record_intents once with every
@@ -55,9 +80,12 @@ Intents:
   ("at 3pm", "from 2 to 3"). Use window_start/window_end when the user wants a free slot inside
   a range ("between 9 and 11", "sometime in the morning"). attendees are every person the
   meeting is with, as names or addresses.
-- update_event: move, reschedule, rename or change the time of an EXISTING event. `match` is
-  how the user names it ("design review", "lunch with Sam"); `date` only when they say which
-  day it is on now. Fill only what changes: new_date, new_start, new_end, new_title.
+- update_event: move, reschedule, push, shift, rename or change the time of an EXISTING event,
+  including one booked earlier in this chat. `match` is how the user names it ("design review",
+  "lunch with Sam", "Monday call with Elena"), or "it" for "it", "that" or "the call we just
+  booked". `date` only when they say which day it is on NOW ("my Monday call"); never put the
+  new day there. Fill only what changes: new_date, new_start, new_end, new_title, and
+  duration_minutes only when they state a new length.
 - cancel_event: cancel, delete or remove an existing event. `match` names it as above.
 - read_calendar: questions about the user's calendar, schedule, meetings or free time.
   range: today, tomorrow, this_week, next_week, this_weekend, next_n_days (with `days`),
@@ -75,6 +103,8 @@ Intents:
   `fact` is one short sentence about the user, such as "The user's dog is called Biscuit."
 - forget: the user asks you to forget something. `about` names it, or stays empty for
   "forget that".
+- day_summary: what the user got done, sent or booked today, what is still open, pending or
+  waiting on them.
 - chat: anything else: greetings, thanks, questions about the user (answer them from the
   facts below), about you or about this conversation, and general knowledge.
 A message with several requests gives several intents, in the order asked.
@@ -155,6 +185,7 @@ class UpdateEvent(BaseModel):
     new_start: Clock
     new_end: Clock
     new_title: str | None = None
+    duration_minutes: int | None = None
 
 
 class CancelEvent(BaseModel):
@@ -215,6 +246,10 @@ class Forget(BaseModel):
     about: str | None = None
 
 
+class DaySummary(BaseModel):
+    kind: Literal["day_summary"]
+
+
 class ChatIntent(BaseModel):
     kind: Literal["chat"]
 
@@ -230,6 +265,7 @@ Intent = Annotated[
     | Remind
     | Remember
     | Forget
+    | DaySummary
     | ChatIntent,
     Field(discriminator="kind"),
 ]
@@ -322,30 +358,96 @@ def pin_dates(intent: Intent, expected: date, exact: bool, today: date) -> Inten
     return intent
 
 
-def pending_event(previous: list[dict[str, Any]]) -> dict[str, Any] | None:
-    found = [item for item in previous if item.get("kind") == "create_event"]
-    return found[-1] if found and found[-1].get("approval_id") else None
+def as_move(intent: Intent, message: str) -> Intent:
+    """A move verb never books a new event: the create the model read becomes an update."""
+    if not isinstance(intent, CreateEvent) or not MOVE.search(message):
+        return intent
+    return UpdateEvent(
+        kind="update_event",
+        match=intent.title,
+        new_date=intent.date,
+        new_start=intent.start or intent.window_start,
+        new_end=intent.end if intent.start else None,
+        duration_minutes=intent.duration_minutes,
+    )
 
 
-def rebooked(intent: Intent, message: str, previous: list[dict[str, Any]]) -> Intent:
-    """A change to the event the previous turn only proposed is a corrected create_event, since
-    nothing exists in the calendar yet to update."""
-    earlier = pending_event(previous)
-    if not isinstance(intent, UpdateEvent) or earlier is None:
+def as_reply(intent: Intent, message: str) -> Intent:
+    """ "Reply to Rosa" answers her latest email, so the subject keeps its "Re:"."""
+    if isinstance(intent, SendEmail) and not intent.reply_to_latest_from and REPLY.match(message):
+        return intent.model_copy(update={"reply_to_latest_from": intent.to})
+    return intent
+
+
+def as_slot(intent: Intent, message: str, today: date) -> Intent:
+    """ "Find me 45 mins with Rosa between 2 and 5" books a free slot; it is not a question."""
+    found = SLOT.search(message)
+    if not isinstance(intent, ReadCalendar) or found is None:
         return intent
-    words = intent.match.lower().split()
-    text = " ".join([earlier.get("title", ""), *earlier.get("attendees", [])]).lower()
-    if not CORRECTION.search(message) and not all(word in text for word in words):
-        return intent
-    keeps_end = intent.new_start is None
+    day = single_day(intent, today) or weekday_date(message, today) or today
+    minutes = None
+    if found.group(1):
+        minutes = int(found.group(1)) * (60 if found.group(2).lower().startswith("h") else 1)
+    who = intent.person
     return CreateEvent(
         kind="create_event",
-        title=intent.new_title or earlier["title"],
-        date=intent.new_date or earlier["date"],
-        start=intent.new_start or earlier.get("start"),
-        end=intent.new_end or (earlier.get("end") if keeps_end else None),
-        attendees=earlier.get("attendees", []),
+        title=f"Meeting with {who}" if who else "Meeting",
+        date=day.isoformat(),
+        window_start=intent.start,
+        window_end=intent.end,
+        duration_minutes=minutes,
+        attendees=[who] if who else [],
     )
+
+
+def as_calendar(intent: Intent, message: str, today: date) -> Intent:
+    """ "What's on Thursday?" asks about the user's calendar, never the web."""
+    if not isinstance(intent, WebSearch | ChatIntent) or not WHATS_ON.search(message):
+        return intent
+    day = weekday_date(message, today)
+    if day is not None:
+        return ReadCalendar(kind="read_calendar", range="date", date=day.isoformat())
+    lowered = message.lower()
+    if "tomorrow" in lowered:
+        return ReadCalendar(kind="read_calendar", range="tomorrow")
+    if "next week" in lowered:
+        return ReadCalendar(kind="read_calendar", range="next_week")
+    if "this week" in lowered:
+        return ReadCalendar(kind="read_calendar", range="this_week")
+    return ReadCalendar(kind="read_calendar", range="today")
+
+
+def as_next(intent: Intent, message: str) -> Intent:
+    """ "When's my next meeting?" looks two weeks ahead, whatever range the model picked."""
+    if (
+        isinstance(intent, ReadCalendar)
+        and NEXT_EVENT.search(message)
+        and not DATED.search(message)
+    ):
+        return intent.model_copy(update={"range": "next_n_days", "days": SEARCH_DAYS})
+    return intent
+
+
+def one_day(intent: Intent, message: str, today: date) -> Intent:
+    """A question naming one weekday ("free next tuesday afternoon?") is about that day, not
+    the coming fortnight."""
+    day = weekday_date(message, today)
+    if (
+        not isinstance(intent, ReadCalendar)
+        or day is None
+        or intent.range != "next_n_days"
+        or re.search(r"\bweeks?\b", message, re.IGNORECASE)
+    ):
+        return intent
+    return intent.model_copy(update={"range": "date", "date": day.isoformat(), "end_date": None})
+
+
+def unique(intents: list[Intent]) -> list[Intent]:
+    kept: list[Intent] = []
+    for intent in intents:
+        if intent not in kept:
+            kept.append(intent)
+    return kept
 
 
 def widened(intent: Intent, message: str) -> Intent:
@@ -361,9 +463,16 @@ def widened(intent: Intent, message: str) -> Intent:
     return intent
 
 
+def repaired(intent: Intent, message: str, today: date) -> Intent:
+    """Code's corrections of what the model tends to misread, in order."""
+    intent = as_reply(as_move(intent, message), message)
+    intent = as_calendar(as_slot(intent, message, today), message, today)
+    return one_day(as_next(widened(intent, message), message), message, today)
+
+
 def checked(intents: list[Intent], message: str, now: datetime, known: Background) -> list[Intent]:
     today = now.date()
-    intents = [widened(rebooked(i, message, known.previous), message) for i in intents]
+    intents = unique([repaired(intent, message, today) for intent in intents])
     exact = numeric_date(message, today, known.date_format)
     if exact is None and (after := previous_day(known.previous)) and DAY_AFTER.search(message):
         exact = after + timedelta(days=1)

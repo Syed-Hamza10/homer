@@ -1,7 +1,8 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from homer_core.agent.intents import CORRECTION, CreateEvent
+from homer_core.agent.voice import phrase
 from homer_core.db.models import Approval
 from homer_core.services.approval_edits import SUPERSEDED
 from homer_core.services.approvals import (
@@ -14,6 +15,10 @@ from homer_core.services.jobs.recipients import listed, resolve
 from homer_core.services.jobs.turn import JobError, Turn
 
 DEFAULT_MINUTES = 30
+READY = (
+    "Event '{title}' on {when} is ready. Edit it or press Create.",
+    "Ready to book '{title}' on {when}. Edit it or press Create.",
+)
 WITH = re.compile(r"\bwith\s+(.+)$", re.IGNORECASE)
 
 
@@ -44,8 +49,20 @@ async def find_slot(turn: Turn, intent: CreateEvent, minutes: int) -> tuple[str,
     return slots[0]["start"], slots[0]["end"]
 
 
+def kept_minutes(turn: Turn) -> int | None:
+    """A correction ("make it 2pm instead") keeps the length of the event it corrects."""
+    if not CORRECTION.search(turn.message):
+        return None
+    for item in reversed(turn.previous):
+        if item.get("kind") == "create_event" and item.get("start") and item.get("end"):
+            opens, closes = time.fromisoformat(item["start"]), time.fromisoformat(item["end"])
+            minutes = (closes.hour * 60 + closes.minute) - (opens.hour * 60 + opens.minute)
+            return minutes if minutes > 0 else None
+    return None
+
+
 async def resolve_slot(turn: Turn, intent: CreateEvent) -> tuple[str, str]:
-    minutes = intent.duration_minutes or DEFAULT_MINUTES
+    minutes = intent.duration_minutes or kept_minutes(turn) or DEFAULT_MINUTES
     if intent.start is None:
         return await find_slot(turn, intent, minutes)
     start = at(intent.date, intent.start)
@@ -100,8 +117,6 @@ async def run(turn: Turn, intent: CreateEvent) -> None:
     turn.note(approval_id=approval.id, start=start[11:16], end=end[11:16])
     if CORRECTION.search(turn.message):
         supersede_previous(turn)
-    turn.say(
-        f"Event '{intent.title}' on {span_text(start, end)} is ready. Edit it or press Create."
-    )
+    turn.say(phrase(turn.history, READY, title=intent.title, when=span_text(start, end)))
     for question in questions:
         turn.say(question)
