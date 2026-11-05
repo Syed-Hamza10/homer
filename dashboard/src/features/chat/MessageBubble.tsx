@@ -44,6 +44,7 @@ export function MessageBubble({
       className={cn(
         "group flex flex-col gap-1",
         own ? "items-end" : "items-start",
+        !createdAt && "animate-enter",
       )}
       data-testid={`message-${role}`}
     >
@@ -55,7 +56,7 @@ export function MessageBubble({
             : "min-w-0 border border-border bg-card/80 break-words shadow-[inset_0_1px_0_var(--marble-1)]",
         )}
       >
-        {own ? content : body && <Markdown text={body} />}
+        {own ? content : body && <Markdown text={body} streaming={pending} />}
         {sources.length > 0 && <SourceChips sources={sources} />}
         {pending && (!content || status) && (
           <div className={cn(content && "mt-2")}>

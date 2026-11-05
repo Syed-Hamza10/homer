@@ -3,6 +3,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ConversationRow } from "./ConversationRow"
 import { filterConversations, groupConversations } from "./groups"
 import { useConversationActions } from "./useConversationActions"
@@ -14,7 +15,7 @@ type Props = {
 }
 
 export function ConversationList({ selectedId, onSelect }: Props) {
-  const { data = [] } = useConversations()
+  const { data = [], isPending } = useConversations()
   const { rename, remove } = useConversationActions()
   const [query, setQuery] = useState("")
   const groups = groupConversations(filterConversations(data, query))
@@ -53,6 +54,10 @@ export function ConversationList({ selectedId, onSelect }: Props) {
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 px-3 pb-3">
+          {isPending &&
+            [0, 1, 2, 3, 4].map((index) => (
+              <Skeleton key={index} className="h-7 w-full" />
+            ))}
           {groups.map((group) => (
             <section key={group.label} aria-label={group.label}>
               <p className="px-1 pb-1.5 text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">

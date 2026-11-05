@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useRef } from "react"
+import { useLocation, useNavigate, useSearchParams } from "react-router"
 import { Composer } from "./Composer"
 import { ConversationList } from "./ConversationList"
 import { MessageList } from "./MessageList"
@@ -8,8 +9,11 @@ import { useChatStream } from "./useChatStream"
 import { useMessages } from "./useMessages"
 
 export function ChatPage() {
-  const [conversationId, setConversationId] = useState<string | null>(null)
-  const { data: messages = [] } = useMessages(conversationId)
+  const [params, setParams] = useSearchParams()
+  const conversationId = params.get("conversation")
+  const setConversationId = (id: string | null) =>
+    setParams(id ? { conversation: id } : {}, { replace: true })
+  const { data: messages = [], isLoading } = useMessages(conversationId)
   const {
     send,
     stop,
@@ -21,6 +25,20 @@ export function ChatPage() {
     tokens,
     streaming,
   } = useChatStream(conversationId, setConversationId)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const queued = (location.state as { send?: string } | null)?.send
+  const sent = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!queued || sent.current === location.key) return
+    sent.current = location.key
+    navigate(location.pathname + location.search, {
+      replace: true,
+      state: null,
+    })
+    void send(queued)
+  }, [queued, location, navigate, send])
 
   return (
     <>
@@ -43,6 +61,7 @@ export function ChatPage() {
         </div>
         <MessageList
           messages={messages}
+          loading={isLoading}
           draft={draft}
           activity={activity}
           status={status}
