@@ -14,8 +14,9 @@ from homer_core.db.models import Approval, User
 from homer_core.services.rules import ClientRules
 
 SUMMARY_LENGTH = 200
+RECONNECT = "Your Google connection has expired. Reconnect it in Settings, it takes a minute."
+RECONNECT_EVENT = "google_reconnect"
 ERRORS = {
-    "google_not_connected": "Google is not connected yet. Run homer-mcp-google-setup first.",
     "web_search_off": "Web search is turned off, so I cannot look that up. "
     "You can turn it on in Settings.",
 }
@@ -29,6 +30,10 @@ class ChatEvent:
 
 class JobError(Exception):
     """A job cannot go on; the message is said to the user as is."""
+
+
+class ReconnectRequired(JobError):
+    """Google refused the token; no job that needs Google can run this turn."""
 
 
 def failure(tool: str, result: Any) -> str | None:
@@ -72,6 +77,10 @@ class Turn:
         self.segments.append(text)
         self.emit("token", {"text": separator + text})
 
+    def ask_to_reconnect(self) -> None:
+        self.say(RECONNECT)
+        self.emit(RECONNECT_EVENT, {"url": "/settings"})
+
     def replace(self, index: int, text: str) -> None:
         self.segments[index] = text
         self.emit("replace", {"text": self.answer})
@@ -80,6 +89,8 @@ class Turn:
         self.emit("tool_call", {"name": tool, "args": args})
         result = await self.runtime.manager.call(server, tool, args)
         self.emit("tool_result", {"name": tool, "summary": summarise(result)})
+        if isinstance(result, dict) and result.get("error") == "google_reconnect_required":
+            raise ReconnectRequired(RECONNECT)
         problem = failure(tool, result)
         if problem is not None:
             raise JobError(problem)

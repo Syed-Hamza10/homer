@@ -23,7 +23,7 @@ from homer_core.services import approvals, briefs, calendar, drafts, followups, 
 from homer_core.services.conversations import get_conversation, list_messages
 from homer_core.services.errors import DomainError
 from homer_core.services.jobs import dispatch
-from homer_core.services.jobs.turn import ChatEvent, JobError, Turn
+from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
 
 log = structlog.get_logger(__name__)
@@ -174,6 +174,9 @@ async def run_jobs(turn: Turn) -> None:
         for intent in intents:
             try:
                 await dispatch.run(turn, intent)
+            except ReconnectRequired:
+                turn.ask_to_reconnect()
+                break
             except (JobError, DomainError) as error:
                 turn.say(str(error))
     finally:

@@ -220,6 +220,8 @@ async def execute(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Runs an approved action. Only the approvals executor may call this."""
     if payload.get("fail"):
         raise ToolError(f"{action} refused: {payload['fail']}")
+    if payload.get("error"):
+        return {"error": payload["error"]}
     if payload.get("hang"):
         await asyncio.sleep(float(payload["hang"]))
     record = {"action": action, "payload": payload}

@@ -126,6 +126,16 @@ def test_clear_server_failure_marks_failed(
     assert fake_google.executed == []
 
 
+def test_error_result_marks_failed(
+    logged_in: TestClient, app: FastAPI, fake_google: ModuleType, origin: dict[str, str]
+) -> None:
+    approval_id = make_approval(app, error="google_reconnect_required")
+    body = logged_in.post(f"/api/approvals/{approval_id}/approve", headers=origin).json()
+    assert body["status"] == "failed"
+    assert body["result"] == {"error": "google_reconnect_required"}
+    assert fake_google.executed == []
+
+
 def test_timeout_marks_unknown(
     logged_in: TestClient, app: FastAPI, origin: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
