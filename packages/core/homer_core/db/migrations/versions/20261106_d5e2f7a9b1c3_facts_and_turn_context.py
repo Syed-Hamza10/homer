@@ -1,7 +1,7 @@
 """remembered facts and the resolved intents of each assistant turn
 
 Revision ID: d5e2f7a9b1c3
-Revises: c4d8e1f6a2b7
+Revises: e5b2a9c7d1f3
 Create Date: 2026-11-06 12:00:00.000000
 """
 
@@ -12,7 +12,7 @@ import sqlmodel
 from alembic import op
 
 revision: str = "d5e2f7a9b1c3"
-down_revision: str | None = "c4d8e1f6a2b7"
+down_revision: str | None = "e5b2a9c7d1f3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
