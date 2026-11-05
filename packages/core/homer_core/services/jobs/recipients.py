@@ -5,7 +5,7 @@ from typing import Any
 
 from homer_core.services.jobs.turn import JobError, Turn
 
-CONTACTS_TTL_SECONDS = 600.0
+CONTACTS_TTL_SECONDS = 300.0
 RECENT_SENDERS = 10
 
 

@@ -18,13 +18,15 @@ from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
 from homer_core.services.jobs.send_email import request_send
 
-from .conftest import load_fake_server
+from .conftest import ORIGIN, load_fake_server
 
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
 JobModel = Callable[..., Model]
 KARACHI = "Asia/Karachi"
 READY = "Draft to {who} is ready. Edit it or press Send."
+PAID = "The invoice was paid in full this morning."
+PAID_BODY = f"Hi,\n\n{PAID}\n\nBest,\nTester"
 
 
 def of(frames: Frames, name: str) -> list[dict[str, Any]]:
@@ -79,8 +81,15 @@ def text() -> str:
 
 
 @pytest.fixture
-def model(jobs: JobModel, intents: list[list[dict[str, Any]]], text: str) -> Model:
-    return jobs(intents, text=text, email={"subject": "Invoice", "body": "It is paid."})
+def written() -> list[dict[str, str]]:
+    return [{"subject": "Invoice", "body": PAID}]
+
+
+@pytest.fixture
+def model(
+    jobs: JobModel, intents: list[list[dict[str, Any]]], text: str, written: list[dict[str, str]]
+) -> Model:
+    return jobs(intents, text=text, email=written)
 
 
 class TestSendEmail:
@@ -95,7 +104,7 @@ class TestSendEmail:
             {
                 "to": "bob@example.test",
                 "subject": "Invoice",
-                "body": "It is paid.",
+                "body": PAID_BODY,
                 "thread_id": None,
             }
         ]
@@ -105,7 +114,7 @@ class TestSendEmail:
             "draft_id": "d1",
             "to": "bob@example.test",
             "subject": "Invoice",
-            "body": "It is paid.",
+            "body": PAID_BODY,
             "thread_id": "",
         }
         assert requested["preview"].startswith("Send email to bob@example.test\nSubject: Invoice")
@@ -345,3 +354,37 @@ class TestEdit:
             assert stored_old.status == "superseded"
             assert stored_new.payload_hash != old_hash
             assert json.loads(stored_new.payload_json)["body"] == "B2"
+
+
+class TestDraftQuality:
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")]],
+                [
+                    {"subject": "the invoice is paid", "body": "the invoice is paid"},
+                    {"subject": "Invoice paid", "body": f"Dear [Name],\n\n{PAID}\n\nBest,\n[Name]"},
+                ],
+            )
+        ],
+    )
+    def test_echo_is_rewritten_and_placeholders_are_dropped(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email Ada the invoice is paid"})
+        assert fake_google.drafted[0]["subject"] == "Invoice paid"
+        assert fake_google.drafted[0]["body"] == f"Hi Ada,\n\n{PAID}\n\nBest,\nTester"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [([[email("bob@example.test")]], [{"subject": "Note", "body": "Paid, see [link]."}])],
+    )
+    def test_a_second_bad_draft_is_cleaned_and_signed_with_the_signature(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        settings = logged_in.get("/api/settings").json()
+        logged_in.put("/api/settings", json={**settings, "signature": "Cheers, Jo"}, headers=ORIGIN)
+        post_chat({"message": "email bob paid"})
+        assert fake_google.drafted[0]["body"] == "Hi,\n\nPaid, see.\n\nCheers, Jo"
+

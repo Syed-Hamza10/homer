@@ -28,6 +28,7 @@ Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
 TEXT = "Hello from the test model."
 JobModel = Callable[..., Model]
+WRITTEN = {"subject": "Hello", "body": "Just checking in to see how the week is going for you."}
 
 
 @pytest.fixture
@@ -45,12 +46,14 @@ def settings(tmp_path: Path) -> Settings:
 def job_model(
     intents: list[list[dict[str, Any]]],
     text: str = TEXT,
-    email: dict[str, str] | None = None,
+    email: dict[str, str] | list[dict[str, str]] | None = None,
     seen: list[list[ModelMessage]] | None = None,
 ) -> Model:
     """Plays the three calls Homer makes: one intents list per turn (chat once they run out),
-    the subject and body for `write_email`, and `text` for every plain answer."""
+    the subject and body for `write_email` (a list is played in order, its last one repeats),
+    and `text` for every plain answer."""
     queue = list(intents)
+    emails = list(email) if isinstance(email, list) else [email or WRITTEN]
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         names = {tool.name for tool in info.output_tools}
@@ -58,7 +61,7 @@ def job_model(
             found = queue.pop(0) if queue else [{"kind": "chat"}]
             return ModelResponse(parts=[ToolCallPart(INTENT_TOOL, {"intents": found})])
         if "write_email" in names:
-            written = email or {"subject": "Hello", "body": "Hi there."}
+            written = emails.pop(0) if len(emails) > 1 else emails[0]
             return ModelResponse(parts=[ToolCallPart("write_email", written)])
         return ModelResponse(parts=[TextPart(content=text)])
 
