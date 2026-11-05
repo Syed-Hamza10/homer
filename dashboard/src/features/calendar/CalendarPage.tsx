@@ -91,11 +91,11 @@ export function CalendarPage() {
 
         <section className="flex flex-col gap-3">
           <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
-            Find a slot
+            Find a free time
           </h2>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
-              Minutes
+              Length (minutes)
               <Input
                 type="number"
                 min={5}
@@ -110,7 +110,7 @@ export function CalendarPage() {
               disabled={findSlot.isPending || !minutes}
               onClick={() => findSlot.mutate(minutes)}
             >
-              Propose three slots
+              Suggest three times
             </Button>
           </div>
           {findSlot.error && (
@@ -118,7 +118,7 @@ export function CalendarPage() {
           )}
           {findSlot.data && findSlot.data.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No free slots in the next week.
+              No free times in the next week.
             </p>
           )}
           <div className="flex flex-col gap-2">
@@ -131,8 +131,7 @@ export function CalendarPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Free for {minutes} minutes. Create it from Chat so the
-                    approval flow records the event.
+                    Free for {minutes} minutes. To book it, ask Homer in Chat.
                   </p>
                 </CardContent>
               </Card>

@@ -111,6 +111,11 @@ function InboxRow({ email }: { email: Email }) {
   )
 }
 
+function count(total: number): string {
+  if (total === 0) return "No messages yet"
+  return total === 1 ? "1 message" : `${total} messages`
+}
+
 export function InboxPage() {
   const { data: messages = [], isPending } = useInbox()
   const refresh = useRefreshInbox()
@@ -121,9 +126,9 @@ export function InboxPage() {
         <PageHeader
           eyebrow="Mail"
           title="Inbox"
-          description={`${messages.length} cached messages${
+          description={`${count(messages.length)}${
             refresh.data
-              ? ` · ${refresh.data.labeled} labeled, ${refresh.data.failed} failed`
+              ? ` · ${refresh.data.labeled} sorted, ${refresh.data.failed} failed`
               : ""
           }`}
           actions={
@@ -132,7 +137,7 @@ export function InboxPage() {
               disabled={refresh.isPending}
               onClick={() => refresh.mutate()}
             >
-              Refresh &amp; triage
+              Refresh inbox
             </Button>
           }
         />
@@ -157,7 +162,7 @@ export function InboxPage() {
               {!isPending && messages.length === 0 && (
                 <tr className="border-t border-border/70">
                   <td colSpan={5} className="px-3 py-6 text-muted-foreground">
-                    No messages cached yet. Refresh to load the inbox.
+                    No messages yet. Choose Refresh inbox to load your mail.
                   </td>
                 </tr>
               )}

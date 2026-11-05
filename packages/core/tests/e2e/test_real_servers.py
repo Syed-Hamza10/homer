@@ -368,7 +368,7 @@ def test_brief_shows_on_the_today_page(page: Page, stack: Stack) -> None:
     unlock(page, stack.url)
     page.get_by_role("link", name="Today").click()
     expect(page.get_by_text("Good morning")).to_be_visible()
-    expect(page.get_by_test_id("health-line")).to_contain_text("No health check yet")
+    expect(page.get_by_test_id("health-line")).to_have_count(0)
 
 
 def test_unanswered_follow_up_drafts_and_sends_through_approval(

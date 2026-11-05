@@ -26,7 +26,7 @@ export function PrivacyPage() {
   const confirmWipe = () => {
     if (
       window.confirm(
-        "Delete local conversations, mail cache, approvals and logs?",
+        "Delete saved conversations, mail copies, approvals and history?",
       )
     )
       wipe.mutate()
@@ -38,17 +38,17 @@ export function PrivacyPage() {
         <PageHeader
           eyebrow="Trust"
           title="Privacy"
-          description="Every outbound call the app made, by host. The model runs on this machine."
+          description="Every website or service Homer has contacted, and how often. The AI itself runs on this machine."
         />
         <StatusLine tokens={tokens} />
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat
-            label="Input tokens"
+            label="Text read by the AI"
             value={usage?.input_tokens.toLocaleString() ?? "0"}
           />
           <Stat
-            label="Output tokens"
+            label="Text written by the AI"
             value={usage?.output_tokens.toLocaleString() ?? "0"}
           />
           <Stat
@@ -56,7 +56,7 @@ export function PrivacyPage() {
             value={usage?.requests.toLocaleString() ?? "0"}
           />
           <Stat
-            label="Spent on inference"
+            label="Spent on AI"
             value={`$${(usage?.spent_usd ?? 0).toFixed(2)}`}
           />
         </section>
@@ -73,11 +73,11 @@ export function PrivacyPage() {
               Web search
             </label>
             <span className="text-[10px] tracking-[0.18em] uppercase text-muted-foreground">
-              Running: {hosts?.web_search ? "on" : "off"}
+              Right now: {hosts?.web_search ? "on" : "off"}
             </span>
             {setWebSearch.data?.restart_required && (
               <p className="w-full text-xs text-muted-foreground">
-                Restart Homer to apply the web search change.
+                Restart Homer to apply this change.
               </p>
             )}
             {setWebSearch.error && (
@@ -92,8 +92,8 @@ export function PrivacyPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/40 text-left text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
               <tr>
-                <th className="px-3 py-2.5 font-medium">Host</th>
-                <th className="px-3 py-2.5 font-medium">Calls</th>
+                <th className="px-3 py-2.5 font-medium">Service</th>
+                <th className="px-3 py-2.5 font-medium">Times contacted</th>
                 <th className="px-3 py-2.5 font-medium">Last seen</th>
               </tr>
             </thead>
@@ -115,7 +115,7 @@ export function PrivacyPage() {
               {hosts && hosts.hosts.length === 0 && (
                 <tr className="border-t border-border/70">
                   <td colSpan={3} className="px-3 py-6 text-muted-foreground">
-                    No outbound calls yet.
+                    Homer has not contacted anything yet.
                   </td>
                 </tr>
               )}
@@ -128,9 +128,9 @@ export function PrivacyPage() {
             Local data
           </h2>
           <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-            Removes conversations, cached mail and calendar, briefs, follow-ups,
-            approvals, reminders and the outbound log. Settings and credentials
-            stay.
+            Removes conversations, saved copies of mail and calendar, briefs,
+            follow-ups, approvals, reminders and this contact history. Your
+            preferences and Google sign-in stay.
           </p>
           <Button
             variant="destructive"
