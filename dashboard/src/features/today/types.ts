@@ -49,4 +49,42 @@ export type Today = {
   pending_approvals: number
   health: Health | null
   google: GoogleStatus
+  card: DayCardData
+}
+
+export type Meeting = {
+  event_id: string
+  title: string
+  start: string
+  end: string
+  attendees: string[]
+  join_url: string | null
+}
+
+export type EmailNeed = {
+  message_id: string
+  thread_id: string
+  sender: string
+  subject: string
+  received_at: string
+  reason: string
+}
+
+export type FollowUpDue = {
+  id: number
+  thread_id: string
+  subject: string
+  contact: string
+  due_at: string
+}
+
+export type ApprovalWaiting = { id: number; action: string; preview: string }
+
+export type DayCardData = {
+  greeting: string
+  meetings: Meeting[]
+  next_event_id: string | null
+  emails: EmailNeed[]
+  follow_ups: FollowUpDue[]
+  approvals: ApprovalWaiting[]
 }
