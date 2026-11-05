@@ -1,7 +1,9 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -9,7 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
-from homer_core.agent.intents import extract
+from homer_core.agent.intents import Background, extract
 from homer_core.agent.router import (
     Command,
     Decision,
@@ -24,6 +26,7 @@ from homer_core.db.models import Conversation, Message, TokenCounter, User, utcn
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
 from homer_core.services.conversations import get_conversation, list_messages
 from homer_core.services.errors import DomainError
+from homer_core.services.facts import prompt_facts
 from homer_core.services.jobs import dispatch, edit_email, mail_status
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
@@ -42,6 +45,7 @@ NOTHING_PENDING = "There's no draft waiting in this chat."
 class Outcome:
     answer: str = ""
     usage: RunUsage = field(default_factory=RunUsage)
+    context: list[dict[str, Any]] = field(default_factory=list)
 
 
 def to_history(messages: list[Message]) -> list[ModelMessage]:
@@ -54,6 +58,14 @@ def to_history(messages: list[Message]) -> list[ModelMessage]:
     ]
 
 
+def last_context(messages: list[Message]) -> list[dict[str, Any]]:
+    """The resolved intents of the latest assistant turn, for follow-ups."""
+    for message in reversed(messages):
+        if message.role == "assistant":
+            return json.loads(message.context_json) if message.context_json else []
+    return []
+
+
 def start_conversation(session: Session, user: User, message: str) -> Conversation:
     conversation = Conversation(user_id=user.id, title=message[:TITLE_LENGTH])
     session.add(conversation)
@@ -62,8 +74,17 @@ def start_conversation(session: Session, user: User, message: str) -> Conversati
     return conversation
 
 
-def save_message(session: Session, conversation: Conversation, role: str, content: str) -> Message:
-    message = Message(conversation_id=conversation.id, role=role, content=content)
+def save_message(
+    session: Session,
+    conversation: Conversation,
+    role: str,
+    content: str,
+    context: list[dict[str, Any]] | None = None,
+) -> Message:
+    context_json = json.dumps(context) if context else None
+    message = Message(
+        conversation_id=conversation.id, role=role, content=content, context_json=context_json
+    )
     conversation.updated_at = utcnow()
     session.add(message)
     session.add(conversation)
@@ -190,7 +211,8 @@ async def run_jobs(turn: Turn) -> None:
         if await routed(turn):
             return
         recent = turn.history[-INTENT_HISTORY:]
-        intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now)
+        known = Background(turn.previous, turn.facts, turn.date_format)
+        intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
         turn.usage.incr(usage)
         log.info("intents", kinds=[intent.kind for intent in intents])
         for intent in intents:
@@ -212,6 +234,7 @@ async def run_turn(turn: Turn, outcome: Outcome) -> AsyncIterator[ChatEvent]:
     await task
     outcome.answer = turn.answer
     outcome.usage.incr(turn.usage)
+    outcome.context = turn.resolved
 
 
 async def respond(
@@ -222,6 +245,7 @@ async def respond(
     history: list[ModelMessage],
     message: str,
     outcome: Outcome,
+    previous: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[ChatEvent]:
     command = parse_command(message)
     if command is not None and command.name in SKILL_COMMANDS:
@@ -245,6 +269,8 @@ async def respond(
         history=history,
         now=datetime.now(ZoneInfo(user.timezone)),
         conversation_id=conversation_id,
+        previous=previous or [],
+        facts=prompt_facts(session, user),
     )
     async for event in run_turn(turn, outcome):
         yield event
@@ -261,14 +287,16 @@ async def stream(
         conversation = start_conversation(session, user, message)
     else:
         conversation = get_conversation(session, user, conversation_id)
-    history = to_history(list_messages(session, user, conversation.id))
+    stored = list_messages(session, user, conversation.id)
+    history = to_history(stored)
+    previous = last_context(stored)
     user_message = save_message(session, conversation, "user", message)
     yield ChatEvent("meta", {"conversation_id": conversation.id, "message_id": user_message.id})
 
     outcome = Outcome()
     try:
         async for event in respond(
-            session, user, runtime, conversation.id, history, message, outcome
+            session, user, runtime, conversation.id, history, message, outcome, previous
         ):
             yield event
     except Exception:
@@ -276,7 +304,7 @@ async def stream(
         yield ChatEvent("error", {"message": GENERIC_ERROR})
         return
 
-    save_message(session, conversation, "assistant", outcome.answer)
+    save_message(session, conversation, "assistant", outcome.answer, outcome.context)
     usage = outcome.usage
     count_tokens(session, user, usage.input_tokens, usage.output_tokens)
     yield ChatEvent(

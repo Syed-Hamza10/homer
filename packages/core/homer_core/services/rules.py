@@ -1,4 +1,5 @@
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session
@@ -19,6 +20,7 @@ class ClientRules(BaseModel):
     email_to_self: bool = False
     self_email: str = ""
     model_tier: Tier | None = None
+    date_format: Literal["DD/MM", "MM/DD"] | None = None
 
     @field_validator("business_hours")
     @classmethod

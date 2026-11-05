@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -15,14 +15,19 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from homer_core.agent.claims import HONEST, review
+from homer_core.agent.dates import date_table, default_format, numeric_date, weekday_date
 from homer_core.agent.intents import (
     OUTPUT_TOOL,
+    Background,
+    CancelEvent,
     ChatIntent,
     CreateEvent,
+    ReadCalendar,
+    Remember,
     SendEmail,
+    UpdateEvent,
     build_intent_agent,
     clock,
-    date_table,
     extract,
 )
 
@@ -97,11 +102,135 @@ async def test_empty_list_is_chat() -> None:
     assert intents == [ChatIntent(kind="chat")]
 
 
-def test_date_table_names_every_day_of_the_coming_week() -> None:
+def test_date_table_names_fourteen_days_and_the_week_spans() -> None:
     table = date_table(NOW)
-    assert table.splitlines()[0] == "today: Friday 2026-11-06"
-    assert "Tuesday 2026-11-10" in table and "Friday 2026-11-13" in table
-    assert table.endswith("this week: 2026-11-02 to 2026-11-08")
+    lines = table.splitlines()
+    assert lines[0] == "today: Friday 2026-11-06"
+    assert "Wednesday 2026-11-11" in lines and "Thursday 2026-11-19" in lines
+    assert "Friday 2026-11-20" not in table
+    assert lines[-3:] == [
+        "this week: 2026-11-02 to 2026-11-08",
+        "next week: 2026-11-09 to 2026-11-15",
+        "this weekend: 2026-11-07 to 2026-11-08",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("schedule coffee with Maya next wed 11am", date(2026, 11, 11)),
+        ("lunch w/ Tomas friday 1pm", date(2026, 11, 6)),
+        ("next friday", date(2026, 11, 13)),
+        ("tuesday next week", date(2026, 11, 10)),
+        ("what do i have on mon 9th", date(2026, 11, 9)),
+        ("move Monday to Tuesday", None),
+        ("what is a for loop", None),
+    ],
+)
+def test_weekday_date(message: str, expected: date | None) -> None:
+    assert weekday_date(message, NOW.date()) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "form", "expected"),
+    [
+        ("calendar for 12/11", "DD/MM", date(2026, 11, 12)),
+        ("calendar for 12/11", "MM/DD", date(2026, 12, 11)),
+        ("on 3/1", "DD/MM", date(2027, 1, 3)),
+        ("on 12.11.2026", "DD/MM", date(2026, 11, 12)),
+        ("between 9-11", "DD/MM", None),
+        ("at 3.05", "DD/MM", None),
+        ("for 1/2 hour", "DD/MM", None),
+        ("on 31/02", "DD/MM", None),
+    ],
+)
+def test_numeric_date_follows_the_users_order(message: str, form: str, expected: date) -> None:
+    assert numeric_date(message, NOW.date(), form) == expected  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("zone", "form"),
+    [
+        ("Asia/Karachi", "DD/MM"),
+        ("Europe/Berlin", "DD/MM"),
+        ("America/New_York", "MM/DD"),
+        ("America/Indiana/Indianapolis", "MM/DD"),
+        ("America/Toronto", "DD/MM"),
+    ],
+)
+def test_default_date_format_comes_from_the_timezone(zone: str, form: str) -> None:
+    assert default_format(zone) == form
+
+
+async def test_wrong_weekday_from_the_model_is_resolved_in_code() -> None:
+    wrong = [{"kind": "create_event", "title": "Coffee", "date": "2026-11-10", "start": "11am"}]
+    intents, _ = await extract(
+        build_intent_agent(answering(wrong)), "schedule coffee next wed 11am", [], NOW
+    )
+    assert isinstance(intents[0], CreateEvent) and intents[0].date == "2026-11-11"
+
+
+async def test_a_right_weekday_is_kept() -> None:
+    right = [{"kind": "create_event", "title": "Call", "date": "2026-11-13", "start": "3pm"}]
+    intents, _ = await extract(build_intent_agent(answering(right)), "no, I meant Friday", [], NOW)
+    assert isinstance(intents[0], CreateEvent) and intents[0].date == "2026-11-13"
+
+
+async def test_numeric_date_overrides_a_us_reading() -> None:
+    us = [{"kind": "read_calendar", "range": "date", "date": "2026-12-11"}]
+    intents, _ = await extract(build_intent_agent(answering(us)), "calendar for 12/11", [], NOW)
+    assert isinstance(intents[0], ReadCalendar)
+    assert (intents[0].range, intents[0].date) == ("date", "2026-11-12")
+
+
+async def test_the_day_after_follows_the_previous_date() -> None:
+    prompts: list[str] = []
+    again = [{"kind": "read_calendar", "range": "tomorrow"}]
+    previous = [{"kind": "read_calendar", "date": "2026-11-07", "end_date": "2026-11-07"}]
+    known = Background(previous=previous, facts=["The user's dog is called Biscuit."])
+    intents, _ = await extract(
+        build_intent_agent(answering(again, prompts=prompts)), "and the day after?", [], NOW, known
+    )
+    assert isinstance(intents[0], ReadCalendar) and intents[0].date == "2026-11-08"
+    assert '"date": "2026-11-07"' in prompts[0]
+    assert "- The user's dog is called Biscuit." in prompts[0]
+
+
+async def test_day_after_tomorrow_is_left_to_the_model() -> None:
+    given = [{"kind": "create_event", "title": "Call", "date": "2026-11-08", "start": "4pm"}]
+    previous = [{"kind": "read_calendar", "date": "2026-11-09"}]
+    intents, _ = await extract(
+        build_intent_agent(answering(given)),
+        "a call day after tomorrow 4pm",
+        [],
+        NOW,
+        Background(previous=previous),
+    )
+    assert isinstance(intents[0], CreateEvent) and intents[0].date == "2026-11-08"
+
+
+async def test_numeric_hint_is_in_the_prompt() -> None:
+    prompts: list[str] = []
+    model = answering([{"kind": "chat"}], prompts=prompts)
+    await extract(build_intent_agent(model), "calendar for 12/11", [], NOW)
+    assert "In this message 12/11 means Thursday 2026-11-12." in prompts[0]
+
+
+async def test_new_intents_parse() -> None:
+    model = answering(
+        [
+            {"kind": "update_event", "match": "design review", "new_start": "4pm"},
+            {"kind": "cancel_event", "match": "lunch with Sam"},
+            {"kind": "remember", "fact": "The user's dog is called Biscuit."},
+            {"kind": "read_calendar", "range": "next_n_days", "days": 14, "person": "Rosa"},
+        ]
+    )
+    intents, _ = await extract(build_intent_agent(model), "x", [], NOW)
+    update, cancel, remember, read = intents
+    assert isinstance(update, UpdateEvent) and update.new_start == "16:00"
+    assert isinstance(cancel, CancelEvent) and cancel.match == "lunch with Sam"
+    assert isinstance(remember, Remember)
+    assert isinstance(read, ReadCalendar) and read.person == "Rosa"
 
 
 @pytest.mark.parametrize(
@@ -126,6 +255,10 @@ def test_clock_refuses_nonsense() -> None:
         "The meeting has been scheduled for Tuesday.",
         "Email sent successfully!",
         "I have created the event.",
+        "Got it. I've cancelled the lunch with Sam.",
+        "Your meeting has been moved to 4pm.",
+        "I rescheduled the pitch rehearsal.",
+        "Got it. Event 'Call with Rosa' on Fri 11 Nov 15:00-15:30 is ready.",
     ],
 )
 def test_claims_without_an_action_are_replaced(text: str) -> None:
@@ -138,3 +271,44 @@ def test_claims_without_an_action_are_replaced(text: str) -> None:
 )
 def test_plain_text_passes(text: str) -> None:
     assert review(text, acted=False) == text
+
+
+async def test_changing_a_proposed_event_rebooks_it() -> None:
+    previous = [
+        {
+            "kind": "create_event",
+            "title": "Call with Maya",
+            "date": "2026-11-11",
+            "start": "15:00",
+            "end": "15:30",
+            "attendees": ["Maya"],
+            "approval_id": 3,
+        }
+    ]
+    update = [{"kind": "update_event", "match": "call with Maya", "new_date": "2026-11-12"}]
+    intents, _ = await extract(
+        build_intent_agent(answering(update)),
+        "no, I meant Friday",
+        [],
+        NOW,
+        Background(previous=previous),
+    )
+    assert intents == [
+        CreateEvent(
+            kind="create_event",
+            title="Call with Maya",
+            date="2026-11-13",
+            start="15:00",
+            end="15:30",
+            attendees=["Maya"],
+        )
+    ]
+
+
+async def test_a_person_without_a_time_looks_two_weeks_ahead() -> None:
+    today = [{"kind": "read_calendar", "range": "today", "person": "Rosa"}]
+    intents, _ = await extract(
+        build_intent_agent(answering(today)), "what about Rosa, anything with her?", [], NOW
+    )
+    assert isinstance(intents[0], ReadCalendar)
+    assert (intents[0].range, intents[0].days) == ("next_n_days", 14)
