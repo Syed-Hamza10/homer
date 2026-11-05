@@ -4,7 +4,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from homer_core.agent.claims import HONEST, review
@@ -58,6 +65,17 @@ async def test_compound_message_gives_intents_in_order() -> None:
     assert (intents[1].window_start, intents[1].window_end) == ("09:00", "11:00")
     assert usage.requests == 1
     assert "tomorrow: Saturday 2026-11-07" in prompts[0]
+
+
+async def test_earlier_turns_are_quoted_in_the_instructions_not_replayed() -> None:
+    prompts: list[str] = []
+    model = answering([{"kind": "chat"}], prompts=prompts)
+    history: list[ModelMessage] = [
+        ModelRequest(parts=[UserPromptPart(content="Email Sara about the invoice")]),
+        ModelResponse(parts=[TextPart(content="Which Sara do you mean?")]),
+    ]
+    await extract(build_intent_agent(model), "Sara Mbeki", history, NOW)
+    assert "User: Email Sara about the invoice\nHomer: Which Sara do you mean?" in prompts[0]
 
 
 async def test_invalid_date_is_retried() -> None:

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 
 from homer_core.agent.intents import CreateEvent
@@ -6,6 +7,7 @@ from homer_core.services.jobs.recipients import listed, resolve
 from homer_core.services.jobs.turn import JobError, Turn
 
 DEFAULT_MINUTES = 30
+WITH = re.compile(r"\bwith\s+(.+)$", re.IGNORECASE)
 
 
 def at(day: str, clock: str) -> str:
@@ -46,9 +48,17 @@ async def resolve_slot(turn: Turn, intent: CreateEvent) -> tuple[str, str]:
     return start, end.isoformat()
 
 
+def people(intent: CreateEvent) -> list[str]:
+    """The attendees, or the person in a "Meeting with Maya" title when the model left them out."""
+    if intent.attendees:
+        return intent.attendees
+    found = WITH.search(intent.title)
+    return [found.group(1).strip()] if found else []
+
+
 async def run(turn: Turn, intent: CreateEvent) -> None:
     attendees, questions = [], []
-    for who in intent.attendees:
+    for who in people(intent):
         try:
             attendees.append((await resolve(turn, who)).email)
         except JobError as error:

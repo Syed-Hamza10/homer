@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.e2e
 Frames = list[tuple[str, dict[str, Any]]]
 Chat = Callable[[dict[str, Any]], Frames]
-SEND_PROMPT = "Send the draft with id d1 now."
+SEND_PROMPT = "Email ada@example.test and tell her invoice 42 is paid."
 
 
 def of(frames: Frames, name: str) -> list[dict[str, Any]]:
@@ -18,27 +18,20 @@ def token_text(frames: Frames) -> str:
     return "".join(data["text"] for data in of(frames, "token"))
 
 
-def test_model_driven_send_needs_approval(logged_in: httpx.Client, chat: Chat) -> None:
+def test_live_model_send_becomes_an_approval(logged_in: httpx.Client, chat: Chat) -> None:
     frames = chat({"message": SEND_PROMPT})
     assert frames[-1][0] == "done", frames
     requested = of(frames, "approval_required")
-    if not requested:
-        pytest.skip(f"model answered in text instead of calling mail_send: {token_text(frames)!r}")
-    assert [c["name"] for c in of(frames, "tool_call")] == ["mail_send"]
+    assert requested, token_text(frames)
+    assert [c["name"] for c in of(frames, "tool_call")] == ["mail_draft"]
     assert requested[0]["action"] == "mail_send"
-    assert "d1" in requested[0]["preview"]
-    assert any("Approval #" in r["summary"] for r in of(frames, "tool_result"))
+    assert requested[0]["payload"]["to"] == "ada@example.test"
+    assert token_text(frames) == "Draft to ada@example.test is ready. Edit it or press Send."
 
     approval_id = requested[0]["approval_id"]
-    pending = logged_in.get("/api/approvals").json()
-    assert approval_id in [a["id"] for a in pending]
     approved = logged_in.post(f"/api/approvals/{approval_id}/approve").json()
     assert approved["status"] == "done"
-    assert approved["result"] == {
-        "ok": True,
-        "action": "mail_send",
-        "payload": {"draft_id": "d1"},
-    }
+    assert approved["result"]["payload"]["draft_id"] == requested[0]["payload"]["draft_id"]
 
 
 def test_approval_round_trip_over_http(

@@ -6,7 +6,7 @@ import structlog
 from pydantic import BaseModel, BeforeValidator, Field
 from pydantic_ai import Agent, ToolOutput
 from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
@@ -16,6 +16,7 @@ DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME = re.compile(r"^\s*(\d{1,2})(?:[:.](\d{2}))?\s*([ap]\.?m\.?)?\s*$", re.IGNORECASE)
 WEEK_DAYS = 7
 OUTPUT_TOOL = "record_intents"
+CONTEXT_CHARS = 300
 
 PROMPT = """You turn the user's latest message into a list of intents for Homer, an email,
 calendar and web assistant. Do not answer the message: call record_intents once with every
@@ -36,9 +37,13 @@ Intents:
 - web_search: news, current events, prices, weather, sports, anything about today or that
   needs the internet.
 - remind: the user asks to be reminded of something.
-- chat: anything else, including greetings and general questions.
+- chat: anything else: greetings, thanks, questions about the user, about you or about
+  this conversation, and general knowledge.
 A message with several requests gives several intents, in the order asked.
-Earlier turns are context: use them to fill in who or what the latest message refers to."""
+Classify only the latest message. Earlier turns, quoted below, only tell you who or what it
+refers to ("him", "that email"); never repeat an earlier request.
+Earlier turns:
+{context}"""
 
 
 def clock(value: str | None) -> str | None:
@@ -157,14 +162,25 @@ def build_intent_agent(model: Model) -> Agent[None, Intents]:
     return Agent(model, output_type=output, retries=2)
 
 
+def context(history: list[ModelMessage]) -> str:
+    """Earlier turns as quoted lines, so the model reads them as references, not as a script."""
+    lines = []
+    for message in history:
+        speaker = "User" if isinstance(message, ModelRequest) else "Homer"
+        for part in message.parts:
+            text = " ".join(str(getattr(part, "content", "")).split())
+            if text:
+                lines.append(f"{speaker}: {text[:CONTEXT_CHARS]}")
+    return "\n".join(lines) or "(none)"
+
+
 async def extract(
     agent: Agent[None, Intents], message: str, history: list[ModelMessage], now: datetime
 ) -> tuple[list[Intent], RunUsage]:
     """One structured call; a model that cannot produce valid intents falls back to chat."""
+    instructions = PROMPT.format(dates=date_table(now), context=context(history))
     try:
-        result = await agent.run(
-            message, message_history=history, instructions=PROMPT.format(dates=date_table(now))
-        )
+        result = await agent.run(message, instructions=instructions)
     except UnexpectedModelBehavior:
         log.warning("intents_failed", message=message)
         return [ChatIntent(kind="chat")], RunUsage()

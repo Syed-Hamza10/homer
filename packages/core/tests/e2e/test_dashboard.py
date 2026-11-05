@@ -36,7 +36,7 @@ def test_approvals_page_approves_and_shows_result(
 
     card = page.get_by_test_id(f"approval-{approval_id}")
     expect(card).to_contain_text("Send draft d-ui")
-    card.get_by_role("button", name="Approve").click()
+    card.get_by_role("button", name="Send").click()
 
     expect(page.get_by_test_id(f"decided-{approval_id}")).to_contain_text("done")
     expect(card).not_to_be_visible()
@@ -52,7 +52,7 @@ def test_approvals_page_rejects(
     approval_id = create_approval("d-reject")
     page = unlocked
     page.goto(f"{server}/approvals")
-    page.get_by_test_id(f"approval-{approval_id}").get_by_role("button", name="Reject").click()
+    page.get_by_test_id(f"approval-{approval_id}").get_by_role("button", name="Discard").click()
     expect(page.get_by_test_id(f"decided-{approval_id}")).to_contain_text("rejected")
     assert status_of(approval_id) == "rejected"
 

@@ -204,6 +204,13 @@ class TestCreateEvent:
         frames = post_chat({"message": "an hour between 9 and 10"})
         assert said(frames) == "No free 60-minute slot on 2026-11-10 between 09:00 and 10:00."
 
+    @pytest.mark.parametrize("intents", [[[event(title="Meeting with Ada", start="10:00")]]])
+    def test_person_in_the_title_is_invited_when_attendees_are_missing(
+        self, logged_in: TestClient, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "Add a meeting with Ada at 10"})
+        assert of(frames, "approval_required")[0]["payload"]["attendees"] == ["ada@example.test"]
+
 
 class TestReadCalendar:
     @pytest.mark.parametrize("intents", [[[{"kind": "read_calendar", "range": "tomorrow"}]]])
