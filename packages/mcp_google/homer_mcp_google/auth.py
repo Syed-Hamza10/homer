@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,8 @@ SCOPES = [
 ]
 
 
-class NotConnected(Exception):
-    pass
+class ReconnectRequired(Exception):
+    """No token file, or Google refused the refresh token (expired or revoked)."""
 
 
 class TokenStore:
@@ -21,7 +22,7 @@ class TokenStore:
 
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
-            raise NotConnected(str(self.path))
+            raise ReconnectRequired(str(self.path))
         return json.loads(self.path.read_text())
 
     def save(self, token: dict[str, Any]) -> None:
@@ -31,12 +32,17 @@ class TokenStore:
         self.path.write_text(json.dumps(token, indent=2))
 
 
-def setup() -> None:
-    """One-time consent flow in the browser; writes google_token.json with mode 0600."""
+def connect(settings: Settings) -> Path:
+    """Runs the consent flow in the browser; writes the token with its consent time, mode 0600."""
     from google_auth_oauthlib.flow import InstalledAppFlow
 
-    settings = Settings.from_env()
     flow = InstalledAppFlow.from_client_secrets_file(str(settings.client_secret_path), SCOPES)
     credentials = flow.run_local_server(port=0)
-    TokenStore(settings.token_path).save(json.loads(credentials.to_json()))
-    print(f"Google connected. Token written to {settings.token_path}")
+    token = {**json.loads(credentials.to_json()), "connected_at": datetime.now(UTC).isoformat()}
+    TokenStore(settings.token_path).save(token)
+    return settings.token_path
+
+
+def setup() -> None:
+    path = connect(Settings.from_env())
+    print(f"Google connected. Token written to {path}")

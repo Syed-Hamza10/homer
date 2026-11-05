@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -355,10 +356,23 @@ async def test_refreshes_stale_token_once(
     assert oct(token_path.stat().st_mode)[-3:] == "600"
 
 
-async def test_not_connected_without_token(tmp_path: Path, spawn: Spawn) -> None:
+async def test_reconnect_required_without_token(tmp_path: Path, spawn: Spawn) -> None:
     async with spawn(tmp_path) as client:
         result = await call(client, "mail_search", query="anything")
-    assert result == {"error": "google_not_connected"}
+    assert result == {"error": "google_reconnect_required"}
+
+
+async def test_reconnect_required_when_refresh_is_refused(
+    sim: httpx.Client, tmp_path: Path, write_token: Callable[..., Path], spawn: Spawn
+) -> None:
+    token_path = write_token(tmp_path, "stale")
+    token = json.loads(token_path.read_text())
+    token_path.write_text(json.dumps({**token, "refresh_token": ""}))
+    async with spawn(tmp_path) as client:
+        result = await call(
+            client, "cal_list", start="2026-11-06T00:00:00Z", end="2026-11-07T00:00:00Z"
+        )
+    assert result == {"error": "google_reconnect_required"}
 
 
 async def test_refuses_host_outside_allowlist(
