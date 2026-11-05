@@ -1,4 +1,6 @@
 import base64
+import html
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from email import message_from_bytes, policy
@@ -11,6 +13,8 @@ from homer_sim.query import matches
 SYSTEM_LABELS = ["INBOX", "SENT", "DRAFT", "UNREAD", "IMPORTANT", "STARRED", "SPAM", "TRASH"]
 HEADER_NAMES = ["From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"]
 SNIPPET_LENGTH = 100
+HIDDEN_LABELS = {"SPAM", "TRASH"}
+TAG = re.compile(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", re.IGNORECASE | re.DOTALL)
 DRAFT_ID_DIGITS = 19
 
 
@@ -26,6 +30,11 @@ def gmail_draft_id() -> str:
 def label_number(label_id: str) -> int:
     _, _, number = label_id.partition("_")
     return int(number) if number.isdigit() else 0
+
+
+def snippet_of(body: str, mime_type: str) -> str:
+    text = TAG.sub(" ", body) if mime_type == "text/html" else body
+    return " ".join(html.unescape(text).split())[:SNIPPET_LENGTH]
 
 
 def b64url(text: str) -> str:
@@ -57,7 +66,7 @@ class Mailbox:
         sent_at = (now - timedelta(days=item["days_ago"])).replace(
             hour=item["hour"], minute=0, second=0, microsecond=0
         )
-        html = item.get("html")
+        markup = item.get("html")
         headers = {
             "From": item["from"],
             "To": item["to"],
@@ -65,15 +74,17 @@ class Mailbox:
             "Date": format_datetime(sent_at),
             "Message-ID": f"<{item['id']}@example.test>",
         }
-        return self._stored(
+        message = self._stored(
             item["id"],
             item["thread_id"],
             item["labels"],
             headers,
-            "text/html" if html else "text/plain",
-            html or item["body"],
+            "text/html" if markup else "text/plain",
+            markup or item["body"],
             sent_at,
         )
+        message["attachments"] = item.get("attachments", [])
+        return message
 
     def _stored(
         self,
@@ -94,6 +105,7 @@ class Mailbox:
             "headers": headers,
             "mimeType": mime_type,
             "body": body,
+            "attachments": [],
         }
 
     def _bump(self, record: dict[str, Any]) -> None:
@@ -105,7 +117,7 @@ class Mailbox:
             "id": message["id"],
             "threadId": message["threadId"],
             "labelIds": message["labelIds"],
-            "snippet": message["body"][:SNIPPET_LENGTH],
+            "snippet": snippet_of(message["body"], message["mimeType"]),
             "historyId": message["historyId"],
             "internalDate": message["internalDate"],
             "sizeEstimate": len(message["body"]),
@@ -113,20 +125,72 @@ class Mailbox:
         if fmt == "minimal":
             return rendered
         headers = [{"name": k, "value": v} for k, v in message["headers"].items()]
-        payload: dict[str, Any] = {"mimeType": message["mimeType"], "headers": headers}
-        if fmt == "full":
-            payload["body"] = {"size": len(message["body"]), "data": b64url(message["body"])}
-        return {**rendered, "payload": payload}
+        attachments = message.get("attachments", [])
+        mime_type = "multipart/mixed" if attachments else message["mimeType"]
+        payload: dict[str, Any] = {"mimeType": mime_type, "headers": headers}
+        if fmt != "full":
+            return {**rendered, "payload": payload}
+        body = {"size": len(message["body"]), "data": b64url(message["body"])}
+        if not attachments:
+            return {**rendered, "payload": {**payload, "body": body}}
+        parts = [{"partId": "0", "mimeType": message["mimeType"], "filename": "", "body": body}]
+        for number, attachment in enumerate(attachments, start=1):
+            parts.append(
+                {
+                    "partId": str(number),
+                    "mimeType": attachment["mime_type"],
+                    "filename": attachment["filename"],
+                    "body": {"attachmentId": f"att-{number}", "size": attachment["size"]},
+                }
+            )
+        return {**rendered, "payload": {**payload, "body": {"size": 0}, "parts": parts}}
 
     def get(self, message_id: str) -> dict[str, Any]:
         if message_id not in self.messages:
             raise ApiError(404, "Requested entity was not found.")
         return self.messages[message_id]
 
-    def search(self, q: str, now: datetime) -> list[dict[str, Any]]:
-        label_ids = {label["name"].lower(): label["id"] for label in self.labels.values()}
-        found = [m for m in self.messages.values() if not q or matches(m, q, now, label_ids)]
+    def search(
+        self, q: str, now: datetime, label_ids: list[str] | None = None, hidden: bool = True
+    ) -> list[dict[str, Any]]:
+        """Newest first. Spam and trash stay out unless asked for, by label or by `hidden`."""
+        names = {label["name"].lower(): label["id"] for label in self.labels.values()}
+        wanted = set(label_ids or [])
+        skipped = HIDDEN_LABELS - wanted if hidden else set()
+        found = [
+            m
+            for m in self.messages.values()
+            if wanted <= set(m["labelIds"])
+            and not skipped & set(m["labelIds"])
+            and (not q or matches(m, q, now, names))
+        ]
         return sorted(found, key=lambda m: int(m["internalDate"]), reverse=True)
+
+    def thread_ids(self, found: list[dict[str, Any]]) -> list[str]:
+        """Thread ids of the found messages, newest activity first."""
+        ordered: list[str] = []
+        for message in found:
+            if message["threadId"] not in ordered:
+                ordered.append(message["threadId"])
+        return ordered
+
+    def label_counts(self, label_id: str) -> dict[str, Any]:
+        if label_id not in self.labels:
+            raise ApiError(404, "Requested entity was not found.")
+        tagged = [m for m in self.messages.values() if label_id in m["labelIds"]]
+        unread = [m for m in tagged if "UNREAD" in m["labelIds"]]
+        return {
+            **self.labels[label_id],
+            "messagesTotal": len(tagged),
+            "messagesUnread": len(unread),
+            "threadsTotal": len({m["threadId"] for m in tagged}),
+            "threadsUnread": len({m["threadId"] for m in unread}),
+        }
+
+    def modify_thread(
+        self, thread_id: str, add: list[str], remove: list[str]
+    ) -> list[dict[str, Any]]:
+        return [self.modify(m["id"], add, remove) for m in self.thread(thread_id)]
 
     def thread(self, thread_id: str) -> list[dict[str, Any]]:
         found = [m for m in self.messages.values() if m["threadId"] == thread_id]

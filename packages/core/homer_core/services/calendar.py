@@ -107,18 +107,23 @@ async def find_slots(
     duration_minutes: int = 30,
     now: datetime | None = None,
     days: int = 7,
+    attendees: list[str] | None = None,
+    limit: int | None = None,
+    timezone: str = "UTC",
 ) -> list[dict[str, Any]]:
-    now = now or datetime.now(UTC)
-    result = await manager.call(
-        "google",
-        "cal_find_free_slots",
-        {
-            "start": now.isoformat(),
-            "end": (now + timedelta(days=days)).isoformat(),
-            "duration_minutes": duration_minutes,
-            "working_hours": rules.business_hours,
-        },
-    )
+    """Free slots inside business hours in `timezone`; any attendees must be free too."""
+    now = (now or datetime.now(UTC)).astimezone(ZoneInfo(timezone))
+    args: dict[str, Any] = {
+        "start": now.isoformat(),
+        "end": (now + timedelta(days=days)).isoformat(),
+        "duration_minutes": duration_minutes,
+        "working_hours": rules.business_hours,
+    }
+    if attendees:
+        args["attendees"] = attendees
+    if limit:
+        args["limit"] = limit
+    result = await manager.call("google", "cal_find_free_slots", args)
     if isinstance(result, dict):
         slots = result.get("slots", [])
     else:

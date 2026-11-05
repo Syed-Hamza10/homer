@@ -1,4 +1,5 @@
 import base64
+import html
 import re
 from email.message import EmailMessage
 from html.parser import HTMLParser
@@ -65,6 +66,34 @@ def _collect(part: dict[str, Any]) -> tuple[str, str]:
         child_plain, child_html = _collect(child)
         plain, html = plain or child_plain, html or child_html
     return plain, html
+
+
+def html_body(payload: dict[str, Any]) -> str:
+    return _collect(payload)[1]
+
+
+def attachments_of(part: dict[str, Any]) -> list[dict[str, Any]]:
+    found = []
+    if part.get("filename"):
+        found.append(
+            {
+                "filename": part["filename"],
+                "mime_type": part.get("mimeType", ""),
+                "size": part.get("body", {}).get("size", 0),
+            }
+        )
+    for child in part.get("parts", []):
+        found.extend(attachments_of(child))
+    return found
+
+
+def has_attachment(message: dict[str, Any]) -> bool:
+    payload = message.get("payload", {})
+    return payload.get("mimeType") == "multipart/mixed" or bool(attachments_of(payload))
+
+
+def plain_snippet(message: dict[str, Any]) -> str:
+    return html.unescape(message.get("snippet", ""))
 
 
 def headers_of(message: dict[str, Any]) -> dict[str, str]:

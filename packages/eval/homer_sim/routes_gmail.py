@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from homer_sim.deps import Authed, Sim
 from homer_sim.errors import ApiError
@@ -20,20 +20,56 @@ def profile(sim: Sim) -> dict[str, Any]:
     }
 
 
+Labels = Annotated[list[str] | None, Query()]
+
+
+def paged(items: list[Any], page_token: str, size: int, key: str) -> dict[str, Any]:
+    offset = int(page_token or "0")
+    response: dict[str, Any] = {
+        key: items[offset : offset + size],
+        "resultSizeEstimate": len(items),
+    }
+    if offset + size < len(items):
+        response["nextPageToken"] = str(offset + size)
+    return response
+
+
 @router.get("/messages")
 def list_messages(
-    sim: Sim, q: str = "", maxResults: int = 100, pageToken: str = "0"
+    sim: Sim,
+    q: str = "",
+    maxResults: int = 100,
+    pageToken: str = "0",
+    labelIds: Labels = None,
+    includeSpamTrash: bool = False,
 ) -> dict[str, Any]:
-    found = sim.mailbox.search(q, sim.now)
-    offset = int(pageToken)
-    page = found[offset : offset + maxResults]
-    response: dict[str, Any] = {
-        "messages": [{"id": m["id"], "threadId": m["threadId"]} for m in page],
-        "resultSizeEstimate": len(found),
-    }
-    if offset + maxResults < len(found):
-        response["nextPageToken"] = str(offset + maxResults)
-    return response
+    found = sim.mailbox.search(q, sim.now, labelIds, hidden=not includeSpamTrash)
+    ids = [{"id": m["id"], "threadId": m["threadId"]} for m in found]
+    return paged(ids, pageToken, maxResults, "messages")
+
+
+@router.get("/threads")
+def list_threads(
+    sim: Sim,
+    q: str = "",
+    maxResults: int = 100,
+    pageToken: str = "0",
+    labelIds: Labels = None,
+    includeSpamTrash: bool = False,
+) -> dict[str, Any]:
+    box = sim.mailbox
+    found = box.search(q, sim.now, labelIds, hidden=not includeSpamTrash)
+    threads = []
+    for thread_id in box.thread_ids(found):
+        latest = box.thread(thread_id)[-1]
+        threads.append(
+            {
+                "id": thread_id,
+                "snippet": box.render(latest)["snippet"],
+                "historyId": latest["historyId"],
+            }
+        )
+    return paged(threads, pageToken, maxResults, "threads")
 
 
 @router.post("/messages")
@@ -78,6 +114,19 @@ def get_thread(sim: Sim, thread_id: str, format: str = "full") -> dict[str, Any]
         "historyId": messages[-1]["historyId"],
         "messages": [sim.mailbox.render(m, format) for m in messages],
     }
+
+
+@router.post("/threads/{thread_id}/modify")
+def modify_thread(sim: Sim, thread_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    messages = sim.mailbox.modify_thread(
+        thread_id, body.get("addLabelIds", []), body.get("removeLabelIds", [])
+    )
+    return {"id": thread_id, "messages": [sim.mailbox.render(m, "minimal") for m in messages]}
+
+
+@router.get("/labels/{label_id}")
+def get_label(sim: Sim, label_id: str) -> dict[str, Any]:
+    return sim.mailbox.label_counts(label_id)
 
 
 @router.get("/labels")

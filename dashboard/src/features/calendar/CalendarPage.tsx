@@ -1,144 +1,239 @@
+import { Keyboard } from "lucide-react"
 import { useState } from "react"
 import { PageHeader } from "@/components/PageHeader"
+import { ShortcutsHelp } from "@/components/ShortcutsHelp"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { useCalendar, useFindSlot, useRefreshCalendar } from "./useCalendar"
+import type { Approval } from "@/features/approvals/types"
+import { useTimezone } from "@/features/settings/useTimezone"
+import { useShortcuts } from "@/lib/shortcuts"
+import { instantOf, wallString, wallTime, type WallTime } from "@/lib/zoned"
+import { ApprovalPanel } from "./ApprovalPanel"
+import { CalendarToolbar } from "./CalendarToolbar"
+import { errorText } from "@/lib/errorText"
+import { EventPopover } from "./EventPopover"
+import { FindTimePanel } from "./FindTimePanel"
+import { fromInstants, fromWalls } from "./formValue"
+import { MonthGrid } from "./MonthGrid"
+import { QuickCreate } from "./QuickCreate"
+import { rangeOf, rangeTitle, shift, visibleDays } from "./range"
+import { calendarShortcuts } from "./shortcuts"
+import { TimeGrid } from "./TimeGrid"
+import type { CalendarEvent, DateOnly, FormValue, View } from "./types"
+import { useEvents, useRefreshEvents, useUpdateEvent } from "./useCalendar"
+import { useNow } from "./useNow"
 
-function day(value: string): string {
-  return new Date(value).toLocaleDateString([], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  })
+type Panel =
+  | { kind: "event"; event: CalendarEvent }
+  | { kind: "create"; initial: FormValue }
+  | { kind: "approval"; approval: Approval }
+  | null
+
+const NARROW = "(max-width: 767px)"
+const HOUR_MS = 3_600_000
+const QUICK_MS = 1_800_000
+
+function initialView(): View {
+  return typeof window !== "undefined" && window.matchMedia?.(NARROW).matches
+    ? "day"
+    : "week"
 }
 
-function clock(value: string): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+function dateOnly(wall: WallTime): DateOnly {
+  return { year: wall.year, month: wall.month, day: wall.day }
 }
 
 export function CalendarPage() {
-  const { data: events = [] } = useCalendar()
-  const refresh = useRefreshCalendar()
-  const findSlot = useFindSlot()
-  const [minutes, setMinutes] = useState(30)
+  const timeZone = useTimezone()
+  const now = useNow()
+  const [view, setView] = useState<View>(initialView)
+  const [picked, setPicked] = useState<DateOnly | null>(null)
+  const [panel, setPanel] = useState<Panel>(null)
+  const [finding, setFinding] = useState(false)
+  const [help, setHelp] = useState(false)
+  const anchor = picked ?? dateOnly(wallTime(now, timeZone))
+  const days = visibleDays(view, anchor)
+  const range = rangeOf(days, timeZone)
+  const { data, isPending, error } = useEvents(range.start, range.end)
+  const refresh = useRefreshEvents()
+  const move = useUpdateEvent()
+  const events = data?.events ?? []
+  const showApproval = (approval: Approval) =>
+    setPanel({ kind: "approval", approval })
+  const create = (initial: FormValue) => setPanel({ kind: "create", initial })
+  const step = (by: number) => setPicked(shift(view, anchor, by))
+  const createNextHour = () => {
+    const opens =
+      instantOf({ ...wallTime(now, timeZone), minute: 0 }, timeZone).getTime() +
+      HOUR_MS
+    create(fromInstants(new Date(opens), new Date(opens + QUICK_MS), timeZone))
+  }
+
+  useShortcuts(
+    help
+      ? {}
+      : {
+          t: () => setPicked(null),
+          d: () => setView("day"),
+          w: () => setView("week"),
+          m: () => setView("month"),
+          j: () => step(1),
+          ArrowRight: () => step(1),
+          k: () => step(-1),
+          ArrowLeft: () => step(-1),
+          c: createNextHour,
+          "?": () => setHelp(true),
+        },
+  )
+
+  const side = (
+    <>
+      {panel?.kind === "event" && (
+        <EventPopover
+          key={panel.event.id}
+          event={panel.event}
+          timeZone={timeZone}
+          onClose={() => setPanel(null)}
+          onApproval={showApproval}
+        />
+      )}
+      {panel?.kind === "create" && (
+        <QuickCreate
+          key={JSON.stringify(panel.initial)}
+          initial={panel.initial}
+          onClose={() => setPanel(null)}
+          onApproval={showApproval}
+        />
+      )}
+      {panel?.kind === "approval" && (
+        <ApprovalPanel
+          approval={panel.approval}
+          onClose={() => setPanel(null)}
+          onDecided={() => void refresh()}
+        />
+      )}
+      {finding && (
+        <FindTimePanel
+          timeZone={timeZone}
+          onClose={() => setFinding(false)}
+          onPick={(slot, attendees) =>
+            create({
+              ...fromInstants(
+                new Date(slot.start),
+                new Date(slot.end),
+                timeZone,
+              ),
+              attendees,
+            })
+          }
+        />
+      )}
+    </>
+  )
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 md:p-6">
         <PageHeader
           eyebrow="Schedule"
           title="Calendar"
-          description="The next seven days, read from Google Calendar."
+          description={`Read live from Google Calendar · ${timeZone}`}
           actions={
             <Button
-              size="sm"
-              variant="outline"
-              disabled={refresh.isPending}
-              onClick={() => refresh.mutate()}
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Keyboard shortcuts"
+              onClick={() => setHelp(true)}
             >
-              Refresh
+              <Keyboard />
             </Button>
           }
         />
-
-        {refresh.error && (
-          <p className="text-sm text-destructive">{refresh.error.message}</p>
+        <CalendarToolbar
+          title={rangeTitle(view, days, anchor)}
+          view={view}
+          onView={setView}
+          onToday={() => setPicked(null)}
+          onStep={step}
+          onFindTime={() => setFinding((open) => !open)}
+        />
+        {data?.source === "cache" && (
+          <p className="text-xs text-muted-foreground">
+            Google could not be reached, so saved events are shown. They may be
+            out of date.
+          </p>
         )}
-
-        <div className="overflow-x-auto rounded-lg border border-border bg-card/60 shadow-[inset_0_1px_0_var(--marble-1)]">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/40 text-left text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2.5 font-medium">Day</th>
-                <th className="px-3 py-2.5 font-medium">Time</th>
-                <th className="px-3 py-2.5 font-medium">Event</th>
-                <th className="px-3 py-2.5 font-medium">Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event) => (
-                <tr
-                  key={event.event_id}
-                  className="border-t border-border/70 transition-colors hover:bg-muted/30"
-                >
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    {day(event.start)}
-                  </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground tabular-nums">
-                    {clock(event.start)}–{clock(event.end)}
-                  </td>
-                  <td className="px-3 py-2.5">{event.title}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">
-                    {event.location}
-                  </td>
-                </tr>
-              ))}
-              {events.length === 0 && (
-                <tr className="border-t border-border/70">
-                  <td colSpan={4} className="px-3 py-6 text-muted-foreground">
-                    No events in the next seven days.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <section className="flex flex-col gap-3">
-          <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
-            Find a free time
-          </h2>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
-              Length (minutes)
-              <Input
-                type="number"
-                min={5}
-                max={240}
-                value={minutes}
-                onChange={(event) => setMinutes(Number(event.target.value))}
-                className="w-24"
+        {error && (
+          <p className="text-sm text-destructive">{errorText(error)}</p>
+        )}
+        {move.error && (
+          <p className="text-sm text-destructive">{errorText(move.error)}</p>
+        )}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1" aria-busy={isPending}>
+            {view === "month" ? (
+              <MonthGrid
+                days={days}
+                month={anchor.month}
+                events={events}
+                timeZone={timeZone}
+                now={now}
+                onOpen={(event) => setPanel({ kind: "event", event })}
+                onCreateOn={(day) =>
+                  create(
+                    fromWalls(
+                      { ...day, hour: 9, minute: 0 },
+                      { ...day, hour: 9, minute: 30 },
+                    ),
+                  )
+                }
+                onShowDay={(day) => {
+                  setPicked(day)
+                  setView("day")
+                }}
               />
-            </label>
-            <Button
-              size="sm"
-              disabled={findSlot.isPending || !minutes}
-              onClick={() => findSlot.mutate(minutes)}
-            >
-              Suggest three times
-            </Button>
+            ) : (
+              <TimeGrid
+                days={days}
+                events={events}
+                timeZone={timeZone}
+                now={now}
+                onOpen={(event) => setPanel({ kind: "event", event })}
+                onCreate={(start, end) => create(fromWalls(start, end))}
+                onMove={(event, start, end) =>
+                  move.mutate(
+                    {
+                      id: event.id,
+                      change: {
+                        start: wallString(wallTime(start, timeZone)),
+                        end: wallString(wallTime(end, timeZone)),
+                      },
+                    },
+                    { onSuccess: showApproval },
+                  )
+                }
+              />
+            )}
           </div>
-          {findSlot.error && (
-            <p className="text-sm text-destructive">{findSlot.error.message}</p>
+          {(panel || finding) && (
+            <aside className="flex w-full flex-col gap-3 lg:w-80 lg:shrink-0">
+              {side}
+            </aside>
           )}
-          {findSlot.data && findSlot.data.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No free times in the next week.
-            </p>
-          )}
-          <div className="flex flex-col gap-2">
-            {findSlot.data?.map((slot) => (
-              <Card key={slot.start} size="sm">
-                <CardHeader>
-                  <CardTitle className="text-sm">
-                    {day(slot.start)} · {clock(slot.start)}–{clock(slot.end)}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Free for {minutes} minutes. To book it, ask Homer in Chat.
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
+        </div>
+        {!panel && !finding && (
+          <p className="text-xs text-muted-foreground">
+            Click or drag on the grid to add an event. Drag an event to move it.
+            Every change waits for your approval.
+          </p>
+        )}
       </main>
-    </ScrollArea>
+      {help && (
+        <ShortcutsHelp
+          title="Calendar"
+          shortcuts={calendarShortcuts}
+          onClose={() => setHelp(false)}
+        />
+      )}
+    </div>
   )
 }

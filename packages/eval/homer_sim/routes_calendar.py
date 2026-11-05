@@ -44,8 +44,10 @@ def delete_event(sim: Sim, event_id: str) -> Response:
 
 @router.post("/freeBusy")
 def free_busy(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
-    busy = sim.calendar.busy(body["timeMin"], body["timeMax"])
-    calendars = {item["id"]: {"busy": busy} for item in body.get("items", [{"id": "primary"}])}
+    calendars = {
+        item["id"]: {"busy": sim.calendar.busy(body["timeMin"], body["timeMax"], item["id"])}
+        for item in body.get("items", [{"id": "primary"}])
+    }
     return {
         "kind": "calendar#freeBusy",
         "timeMin": body["timeMin"],

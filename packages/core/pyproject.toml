@@ -16,6 +16,7 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "itsdangerous>=2.2",
     "psutil>=6.0",
+    "nh3>=0.3.7",
 ]
 
 [project.scripts]

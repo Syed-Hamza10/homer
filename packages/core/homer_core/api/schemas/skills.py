@@ -131,6 +131,8 @@ class DraftOut(BaseModel):
 class SlotRequest(BaseModel):
     duration_minutes: int = Field(default=30, ge=5, le=240)
     days: int = Field(default=7, ge=1, le=31)
+    attendees: list[str] = []
+    limit: int | None = Field(default=None, ge=1, le=10)
 
 
 class SlotOut(BaseModel):
