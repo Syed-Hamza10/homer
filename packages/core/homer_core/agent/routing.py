@@ -5,6 +5,7 @@ from homer_core.agent.dates import WEEKDAY
 from homer_core.agent.intents import (
     Calculate,
     ChatIntent,
+    Forget,
     Intent,
     ReadCalendar,
     Recall,
@@ -13,6 +14,7 @@ from homer_core.agent.intents import (
 )
 from homer_core.agent.router import CONVERSATIONAL, words
 from homer_core.services.calc import parse
+from homer_core.services.facts import keywords
 
 SMALL_TALK_WORDS = frozenset(
     {"hi", "hello", "hey", "yo", "hiya", "sup", "whats", "up", "howdy", "morning", "evening"}
@@ -27,6 +29,11 @@ RECALL = re.compile(
     r"^(?:(?:so|and|hey|ok|okay|homer)[,]?\s+)*(?:what|anything)(?: else)?\s+(?:do|did|have)\s+"
     r"you\s+(?P<verb>remember|recall|know|saved|stored|got|noted|have (?:saved|stored|noted))"
     r"(?:\s+about\s+(?P<about>.+?))?\s*[?.!]*$",
+    re.IGNORECASE,
+)
+FORGET = re.compile(
+    r"^(?:(?:please|pls|can you|could you|ok|okay|and|also|now)[,]?\s+)*forget\s+(?:about\s+)?"
+    r"(?P<about>.+?)\s*[.!]*$",
     re.IGNORECASE,
 )
 SELF = frozenset({"me", "myself", "us", "my life"})
@@ -101,12 +108,15 @@ def recall(message: str, facts: list[str]) -> Recall | None:
 
 
 def routed(message: str, facts: list[str]) -> list[Intent] | None:
-    """Messages code can route without the intent call: small talk, sums and conversions, and
-    questions about what Homer remembers."""
+    """Messages code can route without the intent call: small talk, sums and conversions,
+    "forget ..." and questions about what Homer remembers."""
     if is_greeting_or_thanks(message):
         return [ChatIntent(kind="chat")]
     if parse(message) is not None:
         return [Calculate(kind="calculate", expression=message.strip())]
+    forget = FORGET.match(message.strip())
+    if forget is not None and (keywords(forget["about"]) or forget["about"].lower() == "that"):
+        return [Forget(kind="forget", about=forget["about"])]
     asked = recall(message, facts)
     return [asked] if asked is not None else None
 

@@ -5,6 +5,7 @@ import pytest
 from homer_core.agent.intents import (
     Calculate,
     ChatIntent,
+    Forget,
     Intent,
     ReadCalendar,
     ReadEmail,
@@ -114,3 +115,19 @@ def test_calendar_listing_only_when_asked(
 def test_a_lone_calendar_request_is_kept() -> None:
     found = refined([ReadCalendar(kind="read_calendar")], "and Rosa?", [])
     assert [intent.kind for intent in found] == ["read_calendar"]
+
+
+@pytest.mark.parametrize(
+    ("message", "about"),
+    [
+        ("forget that Dana thing please", "that Dana thing please"),
+        ("please forget about the wifi hint", "the wifi hint"),
+        ("forget that", "that"),
+    ],
+)
+def test_forget_routes_without_the_model(message: str, about: str) -> None:
+    assert routed(message, FACTS) == [Forget(kind="forget", about=about)]
+
+
+def test_forget_it_goes_to_the_model() -> None:
+    assert routed("forget it", FACTS) is None
