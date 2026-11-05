@@ -57,6 +57,7 @@ def test_settings_round_trip(logged_in: TestClient, origin: dict[str, str]) -> N
         "email_to_self": True,
         "self_email": "tester@example.test",
         "model_tier": "degraded",
+        "date_format": "DD/MM",
     }
     assert logged_in.put("/api/settings", json=body, headers=origin).json() == body
     assert logged_in.get("/api/settings").json() == body

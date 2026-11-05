@@ -14,9 +14,19 @@ def describe(day: datetime) -> str:
     return day.strftime("%A %Y-%m-%d")
 
 
-def render_prompt(user_name: str, timezone: str, now: datetime) -> str:
+def remembered(facts: list[str]) -> str:
+    if not facts:
+        return ""
+    listed = "\n".join(f"- {fact}" for fact in facts)
+    return f"The user asked you to remember these facts; answer from them when asked:\n{listed}"
+
+
+def render_prompt(
+    user_name: str, timezone: str, now: datetime, facts: list[str] | None = None
+) -> str:
     name = known_name(user_name)
     return TEMPLATE.format(
+        facts=remembered(facts or []),
         who=f" The user's name is {name}." if name else "",
         timezone=timezone,
         now=now.strftime("%A %d %B %Y, %H:%M"),

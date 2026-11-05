@@ -9,6 +9,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
+from homer_core.agent.dates import DateFormat, default_format
 from homer_core.agent.runtime import Runtime
 from homer_core.db.models import Approval, User
 from homer_core.services.rules import ClientRules
@@ -65,6 +66,17 @@ class Turn:
     usage: RunUsage = field(default_factory=RunUsage)
     approvals: list[Approval] = field(default_factory=list)
     conversation_id: int | None = None
+    previous: list[dict[str, Any]] = field(default_factory=list)
+    resolved: list[dict[str, Any]] = field(default_factory=list)
+    facts: list[str] = field(default_factory=list)
+
+    @property
+    def date_format(self) -> DateFormat:
+        return self.rules.date_format or default_format(self.user.timezone)
+
+    def note(self, **fields: Any) -> None:
+        """Adds what a job resolved (dates, approval ids) to the current intent's record."""
+        self.resolved[-1].update({k: v for k, v in fields.items() if v is not None})
 
     @property
     def answer(self) -> str:

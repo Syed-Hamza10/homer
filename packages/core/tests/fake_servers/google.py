@@ -203,6 +203,22 @@ def cal_create(
 
 
 @server.tool
+def cal_update(
+    event_id: str, title: str | None = None, start: str | None = None, end: str | None = None
+) -> dict[str, Any]:
+    """Asks the user to approve changing an event. Never changes it by itself."""
+    given = {"title": title, "start": start, "end": end}
+    changes = {key: value for key, value in given.items() if value is not None}
+    return approval("cal_update", {"event_id": event_id, "changes": changes}, "Update event")
+
+
+@server.tool
+def cal_delete(event_id: str) -> dict[str, Any]:
+    """Asks the user to approve deleting an event. Never deletes it by itself."""
+    return approval("cal_delete", {"event_id": event_id}, "Delete event")
+
+
+@server.tool
 def contacts_search(query: str) -> list[dict[str, Any]]:
     """Searches contacts by name or address."""
     needle = query.lower()

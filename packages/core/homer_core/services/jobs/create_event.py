@@ -1,8 +1,15 @@
 import re
 from datetime import datetime, timedelta
 
-from homer_core.agent.intents import CreateEvent
-from homer_core.services.approvals import create_from_tool_result, is_approval_object
+from homer_core.agent.intents import CORRECTION, CreateEvent
+from homer_core.db.models import Approval
+from homer_core.services.approval_edits import SUPERSEDED
+from homer_core.services.approvals import (
+    NotPending,
+    create_from_tool_result,
+    is_approval_object,
+    transition_from_pending,
+)
 from homer_core.services.jobs.recipients import listed, resolve
 from homer_core.services.jobs.turn import JobError, Turn
 
@@ -56,6 +63,20 @@ def people(intent: CreateEvent) -> list[str]:
     return [found.group(1).strip()] if found else []
 
 
+def supersede_previous(turn: Turn) -> None:
+    """A correction replaces the event card the previous turn left pending."""
+    for item in turn.previous:
+        if item.get("kind") != "create_event" or not item.get("approval_id"):
+            continue
+        approval = turn.session.get(Approval, item["approval_id"])
+        if approval is None or approval.user_id != turn.user.id:
+            continue
+        try:
+            transition_from_pending(turn.session, approval, SUPERSEDED)
+        except NotPending:
+            continue
+
+
 async def run(turn: Turn, intent: CreateEvent) -> None:
     attendees, questions = [], []
     for who in people(intent):
@@ -74,7 +95,11 @@ async def run(turn: Turn, intent: CreateEvent) -> None:
     result = await turn.call("google", "cal_create", args)
     if not is_approval_object(result):
         raise JobError(f"I could not prepare the event: {result}")
-    turn.requested(create_from_tool_result(turn.session, turn.user.id, "google", result))
+    approval = create_from_tool_result(turn.session, turn.user.id, "google", result)
+    turn.requested(approval)
+    turn.note(approval_id=approval.id, start=start[11:16], end=end[11:16])
+    if CORRECTION.search(turn.message):
+        supersede_previous(turn)
     turn.say(
         f"Event '{intent.title}' on {span_text(start, end)} is ready. Edit it or press Create."
     )
