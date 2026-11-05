@@ -197,6 +197,22 @@ class Mailbox:
         self.drafts[draft_id] = message["id"]
         return {"id": draft_id, "message": self.render(message, "minimal")}
 
+    def update_draft(
+        self, draft_id: str, raw: str, thread_id: str | None, now: datetime
+    ) -> dict[str, Any]:
+        """Replaces the draft's message, as Gmail's drafts.update does; the draft id stays."""
+        if draft_id not in self.drafts:
+            raise ApiError(404, "Requested entity was not found.")
+        old = self.messages.pop(self.drafts[draft_id])
+        message = self._from_raw(raw, thread_id or old["threadId"], ["DRAFT"], now)
+        self.drafts[draft_id] = message["id"]
+        return {"id": draft_id, "message": self.render(message, "minimal")}
+
+    def delete_draft(self, draft_id: str) -> None:
+        if draft_id not in self.drafts:
+            raise ApiError(404, "Requested entity was not found.")
+        del self.messages[self.drafts.pop(draft_id)]
+
     def draft(self, draft_id: str, fmt: str = "full") -> dict[str, Any]:
         if draft_id not in self.drafts:
             raise ApiError(404, "Requested entity was not found.")

@@ -1,6 +1,6 @@
 import functools
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from importlib.metadata import version
 from typing import Any
 
@@ -27,6 +27,8 @@ TOOL_NAMES = [
     "mail_thread",
     "mail_changes_since",
     "mail_draft",
+    "mail_draft_update",
+    "mail_draft_delete",
     "mail_send",
     "mail_label",
     "mail_archive",
@@ -88,14 +90,15 @@ def event_body(fields: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-def span_text(start: str, end: str) -> str:
-    opens, closes = parse_time(start), parse_time(end)
+def span_text(opens: datetime, closes: datetime) -> str:
     return f"{opens:%a %d %b %Y %H:%M}-{closes:%H:%M} ({opens.tzname()})"
 
 
-def check_span(start: str, end: str) -> None:
-    if parse_time(end) <= parse_time(start):
+def check_span(start: str, end: str, timezone: str | None = None) -> tuple[datetime, datetime]:
+    opens, closes = parse_time(start, timezone), parse_time(end, timezone)
+    if closes <= opens:
         raise ValueError("end must be after start")
+    return opens, closes
 
 
 class GoogleTools:
@@ -161,25 +164,51 @@ class GoogleTools:
                         changed.append(item["message"]["id"])
         return {"cursor": history["historyId"], "changed_ids": changed, "stale": False}
 
+    async def _draft_message(
+        self, to: str, subject: str, body: str, thread_id: str | None
+    ) -> dict[str, Any]:
+        reply_to = None
+        if thread_id:
+            thread = await self.client.get(f"{GMAIL}/threads/{thread_id}", format="metadata")
+            reply_to = headers_of(thread["messages"][-1])
+        message: dict[str, Any] = {"raw": build_raw(to, subject, body, reply_to)}
+        if thread_id:
+            message["threadId"] = thread_id
+        return message
+
+    @staticmethod
+    def _draft_result(draft: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "draft_id": draft["id"],
+            "thread_id": draft["message"]["threadId"],
+            "metadata": {"message_id": draft["message"]["id"]},
+        }
+
     @guarded
     async def mail_draft(
         self, to: str, subject: str, body: str, thread_id: str | None = None
     ) -> dict[str, Any]:
         """Creates a draft email, optionally as a reply in an existing thread, and sends nothing.
         Returns draft_id; pass it unchanged to mail_send."""
-        reply_to = None
-        if thread_id:
-            thread = await self.client.get(f"{GMAIL}/threads/{thread_id}", format="metadata")
-            reply_to = headers_of(thread["messages"][-1])
-        payload: dict[str, Any] = {"message": {"raw": build_raw(to, subject, body, reply_to)}}
-        if thread_id:
-            payload["message"]["threadId"] = thread_id
-        draft = await self.client.post(f"{GMAIL}/drafts", payload)
-        return {
-            "draft_id": draft["id"],
-            "thread_id": draft["message"]["threadId"],
-            "metadata": {"message_id": draft["message"]["id"]},
-        }
+        message = await self._draft_message(to, subject, body, thread_id)
+        return self._draft_result(await self.client.post(f"{GMAIL}/drafts", {"message": message}))
+
+    @guarded
+    async def mail_draft_update(
+        self, draft_id: str, to: str, subject: str, body: str, thread_id: str | None = None
+    ) -> dict[str, Any]:
+        """Replaces the recipient, subject and body of an existing draft. Core use only."""
+        message = await self._draft_message(to, subject, body, thread_id)
+        draft = await self.client.put(
+            f"{GMAIL}/drafts/{draft_id}", {"id": draft_id, "message": message}
+        )
+        return self._draft_result(draft)
+
+    @guarded
+    async def mail_draft_delete(self, draft_id: str) -> dict[str, Any]:
+        """Deletes a draft the user discarded. Core use only."""
+        await self.client.delete(f"{GMAIL}/drafts/{draft_id}")
+        return {"deleted": True, "draft_id": draft_id}
 
     async def _recent_drafts(self) -> list[dict[str, Any]]:
         listing = await self.client.get(f"{GMAIL}/drafts", maxResults=RECENT_DRAFTS)
@@ -215,7 +244,14 @@ class GoogleTools:
             f"Send email to {message['to']}\nSubject: {message['subject']}\n\n"
             f"{body[:PREVIEW_BODY_CHARS]}"
         )
-        return approval("mail_send", {"draft_id": draft_id}, preview)
+        payload = {
+            "draft_id": draft_id,
+            "to": message["to"],
+            "subject": message["subject"],
+            "body": body,
+            "thread_id": message["thread_id"],
+        }
+        return approval("mail_send", payload, preview)
 
     async def _modify_labels(
         self, message_id: str, add: list[str] | None, remove: list[str] | None
@@ -271,10 +307,11 @@ class GoogleTools:
         end: str,
         duration_minutes: int = 30,
         working_hours: str = "09:00-17:00",
+        timezone: str | None = None,
     ) -> dict[str, Any]:
-        """Proposes up to three free slots of the given length inside working hours on weekdays."""
-        check_span(start, end)
-        opens, closes = parse_time(start), parse_time(end)
+        """Proposes up to three free slots of the given length inside working hours on weekdays.
+        Times without an offset are read in `timezone` (IANA name), else UTC."""
+        opens, closes = check_span(start, end, timezone)
         result = await self.client.post(
             FREE_BUSY,
             {
@@ -305,19 +342,21 @@ class GoogleTools:
         attendees: list[str] | None = None,
         description: str = "",
         location: str = "",
+        timezone: str | None = None,
     ) -> dict[str, Any]:
-        """Asks the user to approve creating a calendar event. Never creates it by itself."""
-        check_span(start, end)
+        """Asks the user to approve creating a calendar event with attendee emails. Never creates
+        it by itself; times without an offset are read in `timezone` (IANA name), else UTC."""
+        opens, closes = check_span(start, end, timezone)
         payload = {
             "title": title,
-            "start": parse_time(start).isoformat(),
-            "end": parse_time(end).isoformat(),
+            "start": opens.isoformat(),
+            "end": closes.isoformat(),
             "attendees": attendees or [],
             "description": description,
             "location": location,
         }
         who = f" with {', '.join(payload['attendees'])}" if payload["attendees"] else ""
-        preview = f"Create event '{title}' on {span_text(start, end)}{who}"
+        preview = f"Create event '{title}' on {span_text(opens, closes)}{who}"
         return approval("cal_create", payload, preview)
 
     @guarded
@@ -353,9 +392,8 @@ class GoogleTools:
     async def cal_delete(self, event_id: str) -> dict[str, Any]:
         """Asks the user to approve deleting an event. Never deletes it by itself."""
         current = neutral_event(await self.client.get(f"{CALENDAR}/{event_id}"))
-        preview = (
-            f"Delete event '{current['title']}' on {span_text(current['start'], current['end'])}"
-        )
+        span = span_text(*check_span(current["start"], current["end"]))
+        preview = f"Delete event '{current['title']}' on {span}"
         return approval("cal_delete", {"event_id": event_id}, preview)
 
     @guarded

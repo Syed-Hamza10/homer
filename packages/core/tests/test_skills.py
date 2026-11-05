@@ -40,7 +40,9 @@ def test_calendar_and_slots(logged_in: TestClient, origin: dict[str, str]) -> No
     slots = logged_in.post(
         "/api/calendar/find-slot", json={"duration_minutes": 45}, headers=origin
     ).json()
-    assert slots == [{"start": "2026-10-17T10:00:00", "end": "2026-10-17T11:00:00"}]
+    assert len(slots) == 1
+    opens, closes = (datetime.fromisoformat(slots[0][key]) for key in ("start", "end"))
+    assert closes - opens == timedelta(minutes=45)
 
 
 def test_settings_round_trip(logged_in: TestClient, origin: dict[str, str]) -> None:

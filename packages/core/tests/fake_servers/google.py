@@ -1,6 +1,7 @@
 """Stand-in for homer-mcp-google: contract-shaped tools over canned fictional data."""
 
 import asyncio
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastmcp import FastMCP
@@ -46,23 +47,31 @@ MESSAGES = {
 EVENTS = [
     {
         "id": "e1",
-        "summary": "Team standup",
-        "start": "2026-10-17T09:00:00",
-        "end": "2026-10-17T09:15:00",
+        "title": "Team standup",
+        "start": "2026-10-17T09:00:00Z",
+        "end": "2026-10-17T09:15:00Z",
     },
     {
         "id": "e2",
-        "summary": "Dentist",
-        "start": "2026-10-17T14:00:00",
-        "end": "2026-10-17T15:00:00",
+        "title": "Dentist",
+        "start": "2026-10-17T14:00:00Z",
+        "end": "2026-10-17T15:00:00Z",
     },
 ]
 
 ACCOUNT_EMAIL = "tester@example.test"
+CONTACTS = [
+    {"name": "Ada Example", "email": "ada@example.test"},
+    {"name": "Sara Whitfield", "email": "sara.whitfield@example.test"},
+    {"name": "Sara Mbeki", "email": "sara.mbeki@example.test"},
+]
 
 executed: list[dict[str, Any]] = []
 labeled: list[dict[str, Any]] = []
 drafted: list[dict[str, Any]] = []
+updated: list[dict[str, Any]] = []
+deleted: list[str] = []
+slot_requests: list[dict[str, Any]] = []
 
 
 def approval(action: str, payload: dict[str, Any], preview: str) -> dict[str, Any]:
@@ -78,7 +87,9 @@ def health() -> dict[str, Any]:
 @server.tool
 def mail_search(query: str, max_results: int = 10) -> list[dict[str, Any]]:
     """Searches mail. Returns the matching messages."""
-    return list(MESSAGES.values())[:max_results]
+    sender = query.removeprefix("from:").lower() if query.startswith("from:") else ""
+    found = [m for m in MESSAGES.values() if sender in m["from"].lower()]
+    return found[:max_results]
 
 
 @server.tool
@@ -109,6 +120,22 @@ def mail_draft(to: str, subject: str, body: str, thread_id: str | None = None) -
 
 
 @server.tool
+def mail_draft_update(
+    draft_id: str, to: str, subject: str, body: str, thread_id: str | None = None
+) -> dict[str, Any]:
+    """Replaces a draft's recipient, subject and body."""
+    updated.append({"draft_id": draft_id, "to": to, "subject": subject, "body": body})
+    return {"draft_id": draft_id, "thread_id": thread_id or "t-new"}
+
+
+@server.tool
+def mail_draft_delete(draft_id: str) -> dict[str, Any]:
+    """Deletes a draft."""
+    deleted.append(draft_id)
+    return {"deleted": True, "draft_id": draft_id}
+
+
+@server.tool
 def mail_send(draft_id: str) -> dict[str, Any]:
     """Asks the user to approve sending a draft. Never sends by itself."""
     return approval("mail_send", {"draft_id": draft_id}, f"Send draft {draft_id}")
@@ -135,23 +162,51 @@ def cal_list(start: str, end: str) -> list[dict[str, Any]]:
 
 @server.tool
 def cal_find_free_slots(
-    start: str, end: str, duration_minutes: int, working_hours: str = "09:00-17:00"
+    start: str,
+    end: str,
+    duration_minutes: int = 30,
+    working_hours: str = "09:00-17:00",
+    timezone: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Finds free slots of the given length."""
-    return [{"start": "2026-10-17T10:00:00", "end": "2026-10-17T11:00:00"}]
+    """Finds free slots of the given length: the first one starts an hour into the window."""
+    slot_requests.append({"start": start, "end": end, "timezone": timezone})
+    opens = datetime.fromisoformat(start) + timedelta(hours=1)
+    closes = opens + timedelta(minutes=duration_minutes)
+    if closes > datetime.fromisoformat(end):
+        return []
+    return [{"start": opens.isoformat(), "end": closes.isoformat()}]
 
 
 @server.tool
-def cal_create(summary: str, start: str, end: str) -> dict[str, Any]:
+def cal_create(
+    title: str,
+    start: str,
+    end: str,
+    attendees: list[str] | None = None,
+    description: str = "",
+    location: str = "",
+    timezone: str | None = None,
+) -> dict[str, Any]:
     """Asks the user to approve a new event. Never creates by itself."""
-    payload = {"summary": summary, "start": start, "end": end}
-    return approval("cal_create", payload, f"Create event '{summary}' at {start}")
+    if datetime.fromisoformat(end) <= datetime.fromisoformat(start):
+        return {"error": "invalid_argument", "message": "end must be after start"}
+    payload = {
+        "title": title,
+        "start": start,
+        "end": end,
+        "attendees": attendees or [],
+        "description": description,
+        "location": location,
+    }
+    who = f" with {', '.join(payload['attendees'])}" if payload["attendees"] else ""
+    return approval("cal_create", payload, f"Create event '{title}' at {start}{who}")
 
 
 @server.tool
 def contacts_search(query: str) -> list[dict[str, Any]]:
     """Searches contacts by name or address."""
-    return [{"name": "Ada Example", "email": "ada@example.test"}]
+    needle = query.lower()
+    return [c for c in CONTACTS if needle in f"{c['name']} {c['email']}".lower()]
 
 
 @server.tool

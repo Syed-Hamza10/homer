@@ -114,6 +114,20 @@ def get_draft(sim: Sim, draft_id: str, format: str = "full") -> dict[str, Any]:
     return sim.mailbox.draft(draft_id, format)
 
 
+@router.put("/drafts/{draft_id}")
+def update_draft(sim: Sim, draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    message = body.get("message", {})
+    if "raw" not in message:
+        raise ApiError(400, "Missing raw message.")
+    return sim.mailbox.update_draft(draft_id, message["raw"], message.get("threadId"), sim.now)
+
+
+@router.delete("/drafts/{draft_id}")
+def delete_draft(sim: Sim, draft_id: str) -> dict[str, Any]:
+    sim.mailbox.delete_draft(draft_id)
+    return {}
+
+
 @router.post("/drafts/send")
 def send_draft(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
     if body.get("id") not in sim.mailbox.drafts:

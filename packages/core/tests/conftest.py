@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 from fastmcp.client import Client
 from pydantic import SecretStr
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models import Model
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
-from pydantic_ai.models.test import TestModel
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from homer_core.agent.intents import OUTPUT_TOOL as INTENT_TOOL
 from homer_core.config import Settings
 from homer_core.main import create_app
 from homer_core.mcp.manager import McpManager
@@ -26,8 +26,8 @@ PASSPHRASE = "test-pass"
 ORIGIN = {"Origin": "http://127.0.0.1:8000"}
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
-Step = list[tuple[str, dict[str, Any]]] | str
-Scripted = Callable[[str, list[Step], list[list[str]]], Model]
+TEXT = "Hello from the test model."
+JobModel = Callable[..., Model]
 
 
 @pytest.fixture
@@ -42,34 +42,42 @@ def settings(tmp_path: Path) -> Settings:
     )
 
 
-def scripted_model(toolset_name: str, steps: list[Step], seen_tools: list[list[str]]) -> Model:
-    """Classifies as toolset_name, then plays one scripted step (tool calls or text) per turn."""
+def job_model(
+    intents: list[list[dict[str, Any]]],
+    text: str = TEXT,
+    email: dict[str, str] | None = None,
+    seen: list[list[ModelMessage]] | None = None,
+) -> Model:
+    """Plays the three calls Homer makes: one intents list per turn (chat once they run out),
+    the subject and body for `write_email`, and `text` for every plain answer."""
+    queue = list(intents)
 
-    def classify(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[TextPart(content=toolset_name)])
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        names = {tool.name for tool in info.output_tools}
+        if INTENT_TOOL in names:
+            found = queue.pop(0) if queue else [{"kind": "chat"}]
+            return ModelResponse(parts=[ToolCallPart(INTENT_TOOL, {"intents": found})])
+        if "write_email" in names:
+            written = email or {"subject": "Hello", "body": "Hi there."}
+            return ModelResponse(parts=[ToolCallPart("write_email", written)])
+        return ModelResponse(parts=[TextPart(content=text)])
 
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
-        seen_tools.append([tool.name for tool in info.function_tools])
-        step = steps[sum(isinstance(message, ModelResponse) for message in messages)]
-        if isinstance(step, str):
-            yield step
-        else:
-            yield {
-                index: DeltaToolCall(name=name, json_args=json.dumps(args))
-                for index, (name, args) in enumerate(step)
-            }
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        if seen is not None:
+            seen.append(messages)
+        yield text
 
-    return FunctionModel(function=classify, stream_function=stream)
+    return FunctionModel(function=respond, stream_function=stream, model_name="test")
 
 
 @pytest.fixture
-def scripted() -> Scripted:
-    return scripted_model
+def jobs() -> JobModel:
+    return job_model
 
 
 @pytest.fixture
 def model() -> Model:
-    return TestModel(custom_output_text="Hello from the test model.", call_tools=[])
+    return job_model([])
 
 
 def load_fake_server(name: str) -> ModuleType:

@@ -12,6 +12,7 @@ export function ActivityLine({ item }: Props) {
             id: item.approval_id,
             action: item.action,
             preview: item.preview,
+            payload: item.payload ?? {},
           }}
         />
       </div>

@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from pydantic_ai.models.test import TestModel
 
-from homer_core.agent.toolsets import TOOLSETS
 from homer_core.config import Settings
 from homer_core.main import create_app
 from homer_core.mcp import manager as manager_module
@@ -46,4 +45,4 @@ def test_app_runs_with_no_servers(tmp_path: Path) -> None:
     )
     with TestClient(app) as client:
         assert client.get("/api/health").status_code == 200
-        assert set(app.state.runtime.toolsets) == set(TOOLSETS)
+        assert app.state.runtime.manager.toolsets == {}

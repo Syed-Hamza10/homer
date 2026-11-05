@@ -7,6 +7,7 @@ import type {
   DoneEvent,
   ErrorEvent,
   MetaEvent,
+  ReplaceEvent,
   TokenEvent,
   ToolCallEvent,
   ToolResultEvent,
@@ -47,6 +48,10 @@ export function useChatStream(
         token: (data) => {
           const { text } = data as TokenEvent
           setDraft((d) => d && { ...d, assistant: d.assistant + text })
+        },
+        replace: (data) => {
+          const { text } = data as ReplaceEvent
+          setDraft((d) => d && { ...d, assistant: text })
         },
         tool_call: (data) =>
           add({ kind: "tool_call", ...(data as ToolCallEvent) }),

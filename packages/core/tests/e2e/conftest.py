@@ -278,3 +278,13 @@ def unlocked(page: Page, server: str) -> Page:
 @pytest.fixture
 def chat(logged_in: httpx.Client) -> Callable[[dict[str, Any]], Frames]:
     return lambda body: post_chat(logged_in, body)
+
+
+@pytest.fixture(scope="session")
+def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Any]:
+    """One real stack (simulator, real MCP servers, live model) shared by the whole session."""
+    from .real_stack import real_stack
+
+    require_ollama()
+    with real_stack(tmp_path_factory.mktemp("homer-real-home")) as running:
+        yield running

@@ -80,6 +80,9 @@ class GoogleClient:
     async def post(self, path: str, json: dict[str, Any] | None = None) -> Any:
         return await self.request("POST", path, json=json)
 
+    async def put(self, path: str, json: dict[str, Any]) -> Any:
+        return await self.request("PUT", path, json=json)
+
     async def patch(self, path: str, json: dict[str, Any]) -> Any:
         return await self.request("PATCH", path, json=json)
 

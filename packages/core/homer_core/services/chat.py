@@ -1,54 +1,39 @@
-import json
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import structlog
-from pydantic_ai.messages import (
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    PartDeltaEvent,
-    PartStartEvent,
-    TextPart,
-    TextPartDelta,
-    UserPromptPart,
-)
-from pydantic_ai.run import AgentRunResultEvent
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
-from homer_core.agent.agent import Deps
-from homer_core.agent.gate import (
-    APPROVAL_METADATA_KEY,
-    ApprovalGate,
-    RunState,
-    mentioned_draft_ids,
+from homer_core.agent.intents import extract
+from homer_core.agent.router import (
+    Command,
+    Decision,
+    is_conversational,
+    parse_command,
+    parse_decision,
 )
-from homer_core.agent.router import Command, classify, parse_command
 from homer_core.agent.runtime import Runtime
 from homer_core.db.models import Conversation, Message, TokenCounter, User, utcnow
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
 from homer_core.services.conversations import get_conversation, list_messages
 from homer_core.services.errors import DomainError
+from homer_core.services.jobs import dispatch
+from homer_core.services.jobs.turn import ChatEvent, JobError, Turn
 from homer_core.services.rules import get_rules
 
 log = structlog.get_logger(__name__)
 
 TITLE_LENGTH = 60
-SUMMARY_LENGTH = 200
+INTENT_HISTORY = 6
 GENERIC_ERROR = "The assistant could not answer. Please try again."
-REMIND_TOOLSET = "system"
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
-
-
-@dataclass(frozen=True)
-class ChatEvent:
-    name: str
-    data: dict[str, Any]
+NOTHING_PENDING = "Nothing is waiting for your approval."
 
 
 @dataclass
@@ -63,6 +48,7 @@ def to_history(messages: list[Message]) -> list[ModelMessage]:
         if message.role == "user"
         else ModelResponse(parts=[TextPart(content=message.content)])
         for message in messages
+        if message.content
     ]
 
 
@@ -93,28 +79,45 @@ def count_tokens(session: Session, user: User, input_tokens: int, output_tokens:
     session.commit()
 
 
-def summarise(content: Any) -> str:
-    text = content if isinstance(content, str) else json.dumps(content, default=str)
-    return text if len(text) <= SUMMARY_LENGTH else text[: SUMMARY_LENGTH - 1] + "…"
-
-
 def text_event(outcome: Outcome, text: str) -> ChatEvent:
     outcome.answer += text
     return ChatEvent("token", {"text": text})
 
 
-async def decide(session: Session, user: User, runtime: Runtime, command: Command) -> str:
-    if not command.arg.isdigit():
-        return f"Usage: /{command.name} <approval id>"
-    approval_id = int(command.arg)
+async def settle(
+    session: Session, user: User, runtime: Runtime, decision: Decision, approval_id: int
+) -> str:
     try:
-        if command.name == "approve":
+        if decision == "approve":
             approval = await approvals.approve(session, user, approval_id, runtime.manager)
         else:
-            approval = approvals.reject(session, user, approval_id)
+            approval = await approvals.discard(session, user, approval_id, runtime.manager)
     except DomainError as error:
         return str(error).capitalize()
     return f"Approval #{approval.id} ({approval.action}): {approval.status}."
+
+
+async def decide(session: Session, user: User, runtime: Runtime, command: Command) -> str:
+    if not command.arg.isdigit():
+        return f"Usage: /{command.name} <approval id>"
+    decision: Decision = "approve" if command.name == "approve" else "reject"
+    return await settle(session, user, runtime, decision, int(command.arg))
+
+
+async def decide_pending(
+    session: Session, user: User, runtime: Runtime, message: str
+) -> str | None:
+    """Settles the one pending approval from a typed word; None lets the message through."""
+    decision = parse_decision(message)
+    if decision is None:
+        return None
+    pending = approvals.list_pending(session, user)
+    if len(pending) == 1:
+        return await settle(session, user, runtime, decision, pending[0].id)
+    if pending:
+        listed = "; ".join(f"#{a.id} {a.action}" for a in pending)
+        return f"Several approvals are waiting: {listed}. Say /{decision} N to pick one."
+    return None if is_conversational(message) else NOTHING_PENDING
 
 
 async def run_skill(session: Session, user: User, runtime: Runtime, command: Command) -> str:
@@ -162,52 +165,28 @@ async def run_skill(session: Session, user: User, runtime: Runtime, command: Com
     return "Unknown command."
 
 
-async def run_agent(
-    runtime: Runtime,
-    toolset_name: str,
-    prompt: str,
-    history: list[ModelMessage],
-    deps: Deps,
-    outcome: Outcome,
-) -> AsyncIterator[ChatEvent]:
-    state = RunState(draft_ids=mentioned_draft_ids(history, prompt))
-    gate = ApprovalGate(wrapped=runtime.toolsets[toolset_name], state=state)
-    async with runtime.agent.run_stream_events(
-        prompt, deps=deps, message_history=history, toolsets=[gate]
-    ) as events:
-        async for event in events:
-            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
-                if outcome.answer:
-                    yield text_event(outcome, "\n\n")
-                if event.part.content:
-                    yield text_event(outcome, event.part.content)
-            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-                yield text_event(outcome, event.delta.content_delta)
-            elif isinstance(event, FunctionToolCallEvent):
-                yield ChatEvent(
-                    "tool_call",
-                    {"name": event.part.tool_name, "args": event.part.args_as_dict()},
-                )
-            elif isinstance(event, FunctionToolResultEvent):
-                metadata = event.part.metadata
-                if isinstance(metadata, dict) and APPROVAL_METADATA_KEY in metadata:
-                    approval = next(
-                        a for a in state.approvals if a.id == metadata[APPROVAL_METADATA_KEY]
-                    )
-                    yield ChatEvent(
-                        "approval_required",
-                        {
-                            "approval_id": approval.id,
-                            "action": approval.action,
-                            "preview": approval.preview,
-                        },
-                    )
-                yield ChatEvent(
-                    "tool_result",
-                    {"name": event.part.tool_name, "summary": summarise(event.part.content)},
-                )
-            elif isinstance(event, AgentRunResultEvent):
-                outcome.usage.incr(event.result.usage)
+async def run_jobs(turn: Turn) -> None:
+    try:
+        recent = turn.history[-INTENT_HISTORY:]
+        intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now)
+        turn.usage.incr(usage)
+        log.info("intents", kinds=[intent.kind for intent in intents])
+        for intent in intents:
+            try:
+                await dispatch.run(turn, intent)
+            except (JobError, DomainError) as error:
+                turn.say(str(error))
+    finally:
+        turn.events.put_nowait(None)
+
+
+async def run_turn(turn: Turn, outcome: Outcome) -> AsyncIterator[ChatEvent]:
+    task = asyncio.create_task(run_jobs(turn))
+    while (event := await turn.events.get()) is not None:
+        yield event
+    await task
+    outcome.answer = turn.answer
+    outcome.usage.incr(turn.usage)
 
 
 async def respond(
@@ -219,25 +198,28 @@ async def respond(
     outcome: Outcome,
 ) -> AsyncIterator[ChatEvent]:
     command = parse_command(message)
-    deps = Deps(user_id=user.id, user_name=user.name, timezone=user.timezone, session=session)
-    if command is None:
-        toolset_name, usage = await classify(runtime.classifier, message)
-        outcome.usage.incr(usage)
-        log.info("toolset_chosen", toolset=toolset_name)
-        events = run_agent(runtime, toolset_name, message, history, deps, outcome)
-    elif command.name in SKILL_COMMANDS:
+    if command is not None and command.name in SKILL_COMMANDS:
         yield text_event(outcome, await run_skill(session, user, runtime, command))
         return
-    elif command.name == "remind":
-        prompt = f"Set a reminder: {command.arg}"
-        events = run_agent(runtime, REMIND_TOOLSET, prompt, history, deps, outcome)
-    elif command.name in ("approve", "reject"):
+    if command is not None and command.name in ("approve", "reject"):
         yield text_event(outcome, await decide(session, user, runtime, command))
         return
-    else:
-        yield text_event(outcome, "Unknown command.")
+    if command is not None and command.name == "remind":
+        message = f"Remind me {command.arg}"
+    settled = await decide_pending(session, user, runtime, message)
+    if settled is not None:
+        yield text_event(outcome, settled)
         return
-    async for event in events:
+    turn = Turn(
+        session=session,
+        user=user,
+        message=message,
+        runtime=runtime,
+        rules=get_rules(session, user.id),
+        history=history,
+        now=datetime.now(ZoneInfo(user.timezone)),
+    )
+    async for event in run_turn(turn, outcome):
         yield event
 
 
