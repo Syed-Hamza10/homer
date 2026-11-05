@@ -76,4 +76,23 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Stopped")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Regenerate" })).toBeNull()
   })
+
+  it("fades streamed words in and shows the typing dots before the first token", () => {
+    const { container, rerender } = render(
+      <MessageBubble role="assistant" content="" pending />,
+    )
+    expect(screen.getByTestId("typing-indicator")).toBeTruthy()
+    rerender(<MessageBubble role="assistant" content="Hello there" pending />)
+    expect(container.querySelectorAll(".stream-word")).toHaveLength(2)
+    expect(container.querySelector(".animate-enter")).toBeTruthy()
+    rerender(
+      <MessageBubble
+        role="assistant"
+        content="Hello there"
+        createdAt="2026-11-06T10:00:00Z"
+      />,
+    )
+    expect(container.querySelectorAll(".stream-word")).toHaveLength(0)
+    expect(container.querySelector(".animate-enter")).toBeNull()
+  })
 })

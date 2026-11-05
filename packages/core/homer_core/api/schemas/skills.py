@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from homer_core.api.schemas.reminders import ReminderOut
 from homer_core.db.models import CalendarEventCache, DailyBrief, EmailCache, FollowUp
+from homer_core.services.day import DayCard
 from homer_core.services.followups import draft_body
 from homer_core.services.google_account import GoogleStatus
 from homer_core.services.health import HealthReport
@@ -104,6 +105,7 @@ class TodayOut(BaseModel):
     pending_approvals: int
     health: HealthReport | None
     google: GoogleStatus
+    card: DayCard
 
 
 class RefreshOut(BaseModel):

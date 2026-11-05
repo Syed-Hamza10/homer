@@ -1,6 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { CopyButton } from "./CopyButton"
+import { rehypeStreamWords } from "./streamWords"
 
 type Node = { type: string; value?: string; children?: Node[] }
 
@@ -76,11 +77,15 @@ const components: Components = {
   ),
 }
 
-type Props = { text: string }
+type Props = { text: string; streaming?: boolean }
 
-export function Markdown({ text }: Props) {
+export function Markdown({ text, streaming = false }: Props) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={streaming ? [rehypeStreamWords] : []}
+      components={components}
+    >
       {text}
     </ReactMarkdown>
   )

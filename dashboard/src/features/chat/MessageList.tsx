@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ActivityLine } from "./ActivityLine"
 import { MessageBubble } from "./MessageBubble"
 import type { ActivityItem, Message } from "./types"
 
 type Props = {
   messages: Message[]
+  loading?: boolean
   draft: { user: string; assistant: string } | null
   activity: ActivityItem[]
   status: string | null
@@ -22,6 +24,7 @@ function draftStart(messages: Message[], user: string): number {
 
 export function MessageList({
   messages,
+  loading = false,
   draft,
   activity,
   status,
@@ -58,6 +61,14 @@ export function MessageList({
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto flex max-w-3xl flex-col gap-3 p-4">
+        {loading && (
+          <div className="flex flex-col gap-3" data-testid="history-skeleton">
+            <Skeleton className="h-9 w-2/5 self-end" />
+            <Skeleton className="h-16 w-3/5" />
+            <Skeleton className="h-9 w-1/3 self-end" />
+            <Skeleton className="h-24 w-2/3" />
+          </div>
+        )}
         {shown.map(bubble)}
         {showDraftUser && <MessageBubble role="user" content={draft.user} />}
         {activity.map((item, index) => (

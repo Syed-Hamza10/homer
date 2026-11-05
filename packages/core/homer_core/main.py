@@ -11,6 +11,7 @@ from sqlmodel import Session
 from homer_core import __version__
 from homer_core.agent.runtime import build_runtime
 from homer_core.api import (
+    activity,
     approvals,
     auth,
     calendar,
@@ -114,6 +115,7 @@ def create_app(
         today.router,
         settings_api.router,
         google.router,
+        activity.router,
     )
     for router in routers:
         app.include_router(router)

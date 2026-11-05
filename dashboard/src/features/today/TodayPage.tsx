@@ -3,7 +3,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Link } from "react-router"
+import { DayCard } from "./DayCard"
 import { GoogleBanner } from "./GoogleBanner"
+import { TodaySkeleton } from "./TodaySkeleton"
 import type { FollowUp, Health } from "./types"
 import {
   useRunBrief,
@@ -11,6 +13,7 @@ import {
   useSendFollowUp,
   useToday,
 } from "./useToday"
+import { useNow } from "./useNow"
 
 function clock(value: string): string {
   return new Date(value).toLocaleTimeString([], {
@@ -103,7 +106,8 @@ function FollowUpItem({ followup }: { followup: FollowUp }) {
 }
 
 export function TodayPage() {
-  const { data, isError } = useToday()
+  const { data, isError, isPending } = useToday()
+  const now = useNow()
   const line = healthLine(data?.health)
   const brief = useRunBrief()
   const digest = useRunDigest()
@@ -160,29 +164,35 @@ export function TodayPage() {
           </p>
         ))}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Morning brief</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                {data?.brief?.content ?? "No brief yet. Generate one above."}
-              </p>
-            </CardContent>
-          </Card>
+        {isPending && <TodaySkeleton />}
 
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>End-of-day digest</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                {data?.digest?.content ?? "No digest yet."}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        {data && <DayCard card={data.card} now={now} />}
+
+        {data && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Brief</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {data?.brief?.content ?? "No brief yet. Generate one above."}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>End-of-day digest</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {data?.digest?.content ?? "No digest yet."}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <section className="flex flex-col gap-2">
           <SectionTitle>Calendar</SectionTitle>

@@ -1,6 +1,8 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useLocation } from "react-router"
 import { PageHeader } from "@/components/PageHeader"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ApprovalCard } from "./ApprovalCard"
 import type { Approval } from "./types"
 import { useApprovals } from "./useApprovals"
@@ -8,6 +10,16 @@ import { useApprovals } from "./useApprovals"
 export function ApprovalsPage() {
   const { data: pending = [], isPending } = useApprovals()
   const [decided, setDecided] = useState<Approval[]>([])
+  const { hash } = useLocation()
+  const loaded = !isPending
+
+  useEffect(() => {
+    if (loaded && hash)
+      document
+        .getElementById(hash.slice(1))
+        ?.scrollIntoView({ block: "center" })
+  }, [loaded, hash])
+
   const add = (approval: Approval) => setDecided((list) => [approval, ...list])
 
   return (
@@ -22,6 +34,14 @@ export function ApprovalsPage() {
           <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
             Pending
           </h2>
+          {isPending &&
+            [0, 1].map((index) => (
+              <Skeleton
+                key={index}
+                className="h-36 w-full"
+                data-testid="approval-skeleton"
+              />
+            ))}
           {!isPending && pending.length === 0 && (
             <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/80 px-6 py-12 text-center">
               <span

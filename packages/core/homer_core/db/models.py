@@ -8,6 +8,11 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def as_utc(value: datetime) -> datetime:
+    """SQLite hands datetimes back naive; they were stored in UTC."""
+    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 class User(SQLModel, table=True):
     __tablename__ = "users"
 

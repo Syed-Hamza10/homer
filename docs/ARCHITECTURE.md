@@ -210,7 +210,8 @@ this client, so anything else the app contacted would show up here.
 | PUT | `/api/privacy/web-search` | `{enabled}` | `{enabled, restart_required}` |
 | POST | `/api/privacy/wipe` | `{confirm}` | `{deleted: {table: count}}`; 400 without confirm |
 | GET | `/api/reminders` | – | `[{id, text, due_at, status, created_at}]` by due date |
-| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals, health}` (`health` is the scheduler's last report or null) |
+| GET | `/api/today` | – | `{day, brief, digest, events, reminders, follow_ups, unread, pending_approvals, health, google, card}` (`health` is the scheduler's last report or null; `card` is `{greeting, meetings, next_event_id, emails, follow_ups, approvals}` built from the caches with no model call) |
+| GET | `/api/activity?before=&kind=all\|email\|calendar\|memory&limit=30` | – | `{items: [{id, kind, at, text, detail, status, link}], next}` newest first from approvals, facts and the Google consent time; `next` is the `before` cursor |
 | POST | `/api/today/brief` | – | the morning `daily_briefs` row; runs the skill |
 | POST | `/api/today/digest` | – | the digest row; runs the skill |
 | GET | `/api/inbox` | – | cached `[{message_id, thread_id, sender, subject, snippet, category, labels, unread, priority, received_at}]` |

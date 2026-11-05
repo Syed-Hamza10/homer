@@ -17,6 +17,7 @@ from homer_core.db.models import CalendarEventCache, EmailCache, User
 from homer_core.mcp.manager import ExecuteFailed, ServerUnavailable
 from homer_core.services import approvals, briefs, followups, google_account
 from homer_core.services.calendar import list_events, local_day_bounds, refresh_calendar
+from homer_core.services.day import day_card
 from homer_core.services.inbox import list_inbox, refresh_inbox
 from homer_core.services.rules import get_rules
 
@@ -71,6 +72,7 @@ async def today(
         pending_approvals=len(approvals.list_pending(session, user)),
         health=scheduler.health,
         google=google_account.local_status(settings, now),
+        card=day_card(session, user, now),
     )
 
 

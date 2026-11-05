@@ -34,7 +34,12 @@ export function ApprovalCard({ approval, onDecided }: Props) {
   const busy = decide.isPending || edit.isPending
 
   return (
-    <Card size="sm" data-testid={`approval-${current.id}`}>
+    <Card
+      size="sm"
+      id={`approval-${current.id}`}
+      className="animate-enter"
+      data-testid={`approval-${current.id}`}
+    >
       <CardContent className="flex flex-col gap-2">
         <p className="text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
           Approval #{current.id} · {current.action}
