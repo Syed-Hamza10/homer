@@ -11,6 +11,21 @@ export type Approval = {
   result: unknown
 }
 
-export type PendingApproval = Pick<Approval, "id" | "action" | "preview">
+export type PendingApproval = Pick<
+  Approval,
+  "id" | "action" | "preview" | "payload"
+>
 
 export type Decision = "approve" | "reject"
+
+export type MailEdit = { to: string; subject: string; body: string }
+
+export type EventEdit = {
+  title: string
+  date: string
+  start: string
+  end: string
+  attendees: string[]
+}
+
+export type ApprovalEdit = MailEdit | EventEdit
