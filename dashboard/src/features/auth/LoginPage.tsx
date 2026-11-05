@@ -15,7 +15,7 @@ const messages: Record<number, string> = {
 function describe(error: Error | null): string | null {
   if (!error) return null
   if (error instanceof ApiError) return messages[error.status] ?? "Login failed"
-  return "Cannot reach the Homer server"
+  return "Cannot reach Homer. Check that it is running."
 }
 
 export function LoginPage() {
@@ -86,7 +86,7 @@ export function LoginPage() {
           </CardContent>
         </Card>
         <p className="text-center text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
-          The model runs on this machine
+          The AI runs on this machine
         </p>
       </div>
     </main>

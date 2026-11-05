@@ -21,6 +21,11 @@ import {
   useSmoke,
 } from "./useSettings"
 
+const tierLabels: Record<ModelTier, string> = {
+  supported: "Quality (9B model)",
+  degraded: "Fast (4B model)",
+}
+
 const selfEmailNotes: Partial<Record<SelfEmailStatus, string>> = {
   mismatch:
     "Paused: this address is not the connected Google account, so briefs are not emailed.",
@@ -112,7 +117,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
             className="w-24"
           />
         </Field>
-        <Field label="Your address, used for email-to-self">
+        <Field label="Your email address (for sending yourself the brief)">
           <Input
             value={selfEmail}
             onChange={(event) => setSelfEmail(event.target.value)}
@@ -140,24 +145,27 @@ function RulesForm({ initial }: { initial: ClientRules }) {
           {selfEmailNote}
         </p>
       )}
-      <Field label="Model tier">
+      <Field label="AI model">
         <select
           className="h-8 w-full rounded-md border border-input bg-card/60 px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 dark:bg-input/20"
           value={modelTier}
           onChange={(event) => setModelTier(event.target.value)}
         >
-          <option value="">
-            Automatic ({options.data?.effective_tier ?? "detected"})
-          </option>
+          <option value="">Automatic</option>
           {options.data?.tiers.map((tier) => (
             <option key={tier.tier} value={tier.tier}>
-              {tier.tier} · {tier.tag} · {tier.context} context
+              {tierLabels[tier.tier]}
             </option>
           ))}
         </select>
       </Field>
+      {options.data && (
+        <p className="text-xs text-muted-foreground">
+          Currently using: {tierLabels[options.data.effective_tier]}
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
-        A changed model tier or timezone takes effect after Homer restarts.
+        A changed model or timezone takes effect after Homer restarts.
       </p>
       <div className="flex items-center gap-2">
         <Button
@@ -166,7 +174,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
           disabled={smoke.isPending}
           onClick={() => smoke.mutate(modelTier || null)}
         >
-          Test model
+          Check the model
         </Button>
         {smoke.data && (
           <span
@@ -206,20 +214,20 @@ export function SettingsPage() {
         <PageHeader
           eyebrow="Configuration"
           title="Settings"
-          description="Client rules shape triage, drafted replies and follow-ups."
+          description="These preferences shape how Homer sorts mail, drafts replies and tracks follow-ups."
         />
         <Card>
           <CardHeader>
-            <CardTitle>Client rules</CardTitle>
-            <CardDescription>
-              Stored locally in your Homer database.
-            </CardDescription>
+            <CardTitle>Your preferences</CardTitle>
+            <CardDescription>Stored only on this computer.</CardDescription>
           </CardHeader>
           <CardContent>
             {data ? (
               <RulesForm initial={data} />
             ) : (
-              <p className="text-sm text-muted-foreground">Loading rules.</p>
+              <p className="text-sm text-muted-foreground">
+                Loading your preferences.
+              </p>
             )}
           </CardContent>
         </Card>

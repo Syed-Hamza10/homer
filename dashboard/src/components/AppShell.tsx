@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   Sun,
 } from "lucide-react"
-import { NavLink, Outlet } from "react-router"
+import { Link, NavLink, Outlet } from "react-router"
 import { cn } from "@/lib/utils"
 
 const pages = [
@@ -77,9 +77,12 @@ export function AppShell() {
           <p className="text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
             Private by design
           </p>
-          <p className="mt-1.5 font-heading text-sm text-muted-foreground italic">
-            Nothing leaves this machine.
-          </p>
+          <Link
+            to="/privacy"
+            className="mt-1.5 block font-heading text-sm text-muted-foreground italic hover:text-foreground"
+          >
+            AI runs on this machine.
+          </Link>
         </div>
       </nav>
       <div className="flex min-w-0 flex-1 bg-background/40">

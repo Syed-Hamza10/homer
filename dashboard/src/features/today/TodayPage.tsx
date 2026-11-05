@@ -18,17 +18,33 @@ function clock(value: string): string {
   })
 }
 
-function healthLine(health: Health | null | undefined): string {
-  if (!health) return "No health check yet."
-  const parts = [
-    `Ollama ${health.ollama}`,
-    `model ${health.model_pulled === "ok" ? "pulled" : "missing"}`,
-    ...Object.entries(health.servers).map(
-      ([name, status]) => `${name} ${status}`,
-    ),
+const serviceNames: Record<string, string> = {
+  google: "Google",
+  search: "Web search",
+}
+
+function ago(value: string): string {
+  const minutes = Math.floor((Date.now() - new Date(value).getTime()) / 60000)
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  return hours < 24 ? `${hours} h ago` : "over a day ago"
+}
+
+function healthLine(health: Health | null | undefined): string | null {
+  if (!health) return null
+  const problems = [
+    ...(health.ollama === "down" ? ["The AI is not running"] : []),
+    ...(health.model_pulled === "down" ? ["The AI model is missing"] : []),
+    ...Object.entries(health.servers)
+      .filter(([, status]) => status === "down")
+      .map(([name]) => `${serviceNames[name] ?? name} is not responding`),
+    ...(health.self_email === "mismatch"
+      ? ["Emails to yourself are paused"]
+      : []),
   ]
-  if (health.self_email === "mismatch") parts.push("email-to-self paused")
-  return `${parts.join(" · ")} · checked ${clock(health.checked_at)}`
+  const summary = problems.length ? problems.join(" · ") : "All systems OK"
+  return `${summary} · checked ${ago(health.checked_at)}`
 }
 
 function SectionTitle({ children }: { children: string }) {
@@ -86,7 +102,8 @@ function FollowUpItem({ followup }: { followup: FollowUp }) {
 }
 
 export function TodayPage() {
-  const { data } = useToday()
+  const { data, isError } = useToday()
+  const line = healthLine(data?.health)
   const brief = useRunBrief()
   const digest = useRunDigest()
 
@@ -99,7 +116,9 @@ export function TodayPage() {
           description={
             data
               ? `${data.unread} unread · ${data.pending_approvals} waiting for approval`
-              : "Loading"
+              : isError
+                ? "Could not load today. Trying again shortly."
+                : "Loading"
           }
           actions={
             <>
@@ -123,12 +142,14 @@ export function TodayPage() {
           }
         />
 
-        <p
-          className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground"
-          data-testid="health-line"
-        >
-          {healthLine(data?.health)}
-        </p>
+        {line && (
+          <p
+            className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground"
+            data-testid="health-line"
+          >
+            {line}
+          </p>
+        )}
 
         {[brief.error, digest.error].filter(Boolean).map((error) => (
           <p key={String(error)} className="text-sm text-destructive">
