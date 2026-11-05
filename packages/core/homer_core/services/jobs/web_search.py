@@ -19,6 +19,7 @@ PAGE_TIMEOUT_SECONDS = 5.0
 SOURCES = 3
 NEED_PAGES = "NEED_PAGES"
 ANSWER_PROMPT = """Today is {today} and the time is {time}. Yesterday was {yesterday}.
+Tomorrow is {tomorrow}.
 Answer the user's question directly in 1-3 sentences, using the search results below. If the
 results disagree or are incomplete, give the best available answer and say what is uncertain.
 {latest}Write as if you simply know it: never mention "the text", "the pages", "the results",
@@ -35,6 +36,8 @@ LATEST = re.compile(
 )
 YESTERDAY = re.compile(r"\b(?:yesterday(?:'s)?|last night(?:'s)?)\b", re.IGNORECASE)
 TODAY = re.compile(r"\b(?:today(?:'s)?|tonight(?:'s)?)\b", re.IGNORECASE)
+TOMORROW = re.compile(r"\btomorrow(?:'s)?\b", re.IGNORECASE)
+THIS_PERIOD = re.compile(r"\bthis (?:week|month)\b", re.IGNORECASE)
 MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 MONTH = "(" + "|".join(MONTHS) + r")[a-z]*\.?"
 MONTH_FIRST = re.compile(rf"\b{MONTH}\s+(\d{{1,2}}),?\s+(20\d\d)\b", re.IGNORECASE)
@@ -43,7 +46,8 @@ AGO = re.compile(r"\b(\d+)\s+(minute|hour|day)s?\s+ago\b", re.IGNORECASE)
 NON_ANSWER = re.compile(
     r"\b(?:does not|doesn't|do not|don't)\s+(?:say|mention|contain|include|state|specify|provide"
     r"|show|list|give|report)\b|\bno (?:specific |further |clear )?(?:information|details|mention"
-    r"|data|results?|score)\b|\bnot (?:mentioned|specified|included|stated|listed|provided"
+    r"|data|results?|score|headlines|news items|dates|stories|figures)\b"
+    r"|\bnot (?:mentioned|specified|included|stated|listed|provided"
     r"|available|reported)\b|\bimpossible to (?:determine|say|tell)\b"
     r"|\b(?:cannot|can't|unable to) (?:determine|find|tell|say|confirm)\b",
     re.IGNORECASE,
@@ -61,7 +65,8 @@ SOURCE_CLAUSE = re.compile(
     re.IGNORECASE,
 )
 SOURCE_WORDS = re.compile(
-    r"\bprovided\b|\bthe (?:text|pages?|snippets?|search results|results|sources?)\b"
+    r"\bprovided\b|\bthe (?:(?:available|given|above) )?(?:text|pages?|snippets?|search results"
+    r"|results|sources?)\b"
     r"|\b(?:one|another|the other) (?:source|page|result|snippet)\b",
     re.IGNORECASE,
 )
@@ -81,16 +86,20 @@ def query_day(day: date) -> str:
 
 
 def dated_query(query: str, question: str, today: date) -> str:
-    """Writes 'yesterday', 'last night', 'today' and 'tonight' as the real date, which a search
-    engine can match, and adds the date when the question had one of them but the query not."""
+    """Writes 'yesterday', 'last night', 'today', 'tonight', 'tomorrow' and 'this week' as real
+    dates, which a search engine can match, and adds the date when the question had one of
+    them but the query not."""
     yesterday = query_day(today - timedelta(days=1))
+    tomorrow = query_day(today + timedelta(days=1))
     named = TODAY.sub(query_day(today), YESTERDAY.sub(yesterday, query))
+    named = THIS_PERIOD.sub(f"{today:%B %Y}", TOMORROW.sub(tomorrow, named))
     if named != query:
         return named
-    if YESTERDAY.search(question):
-        return f"{query} {yesterday}"
-    if TODAY.search(question):
-        return f"{query} {query_day(today)}"
+    for words, day in ((YESTERDAY, yesterday), (TODAY, query_day(today)), (TOMORROW, tomorrow)):
+        if words.search(question):
+            return f"{query} {day}"
+    if THIS_PERIOD.search(question):
+        return f"{query} {today:%B %Y}"
     return query
 
 
@@ -196,6 +205,7 @@ async def ask(turn: Turn, question: str, sources: str, fallback: str, latest: bo
         today=day_text(now.date()),
         time=f"{now:%H:%M} ({turn.user.timezone})",
         yesterday=day_text(now.date() - timedelta(days=1)),
+        tomorrow=day_text(now.date() + timedelta(days=1)),
         latest=LATEST_RULE if latest else "",
         fallback=fallback,
         sources=sources,
