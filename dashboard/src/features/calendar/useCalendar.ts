@@ -1,32 +1,70 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { getJson, postJson } from "@/lib/api"
-import type { Event, Slot } from "./types"
+import { getJson, patchJson, postJson } from "@/lib/api"
+import type { Approval } from "@/features/approvals/types"
+import type { EventFields, EventRange, Slot } from "./types"
 
-export const calendarKey = ["calendar"]
+export const eventsKey = ["calendar", "events"]
 
-export function useCalendar() {
+export function useEvents(start: Date, end: Date) {
+  const from = start.toISOString()
+  const to = end.toISOString()
   return useQuery({
-    queryKey: calendarKey,
-    queryFn: () => getJson<Event[]>("/api/calendar?days=7"),
-    refetchInterval: 30000,
+    queryKey: [...eventsKey, from, to],
+    queryFn: () =>
+      getJson<EventRange>(
+        `/api/calendar/events?start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}`,
+      ),
+    refetchOnWindowFocus: true,
+    refetchInterval: 120000,
   })
 }
 
-export function useRefreshCalendar() {
+export function useRefreshEvents() {
   const queryClient = useQueryClient()
+  return () => queryClient.invalidateQueries({ queryKey: eventsKey })
+}
+
+export function useCreateEvent() {
   return useMutation({
-    mutationFn: () => postJson<Event[]>("/api/calendar/refresh", {}),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: calendarKey })
-    },
+    mutationFn: (fields: EventFields) =>
+      postJson<Approval>("/api/calendar/events", fields),
   })
 }
 
-export function useFindSlot() {
+export function useUpdateEvent() {
   return useMutation({
-    mutationFn: (minutes: number) =>
+    mutationFn: ({
+      id,
+      change,
+    }: {
+      id: string
+      change: Partial<EventFields>
+    }) =>
+      patchJson<Approval>(
+        `/api/calendar/events/${encodeURIComponent(id)}`,
+        change,
+      ),
+  })
+}
+
+export function useCancelEvent() {
+  return useMutation({
+    mutationFn: (id: string) =>
+      postJson<Approval>(
+        `/api/calendar/events/${encodeURIComponent(id)}/cancel`,
+        {},
+      ),
+  })
+}
+
+export function useFindTimes() {
+  return useMutation({
+    mutationFn: (args: { minutes: number; attendees: string[] }) =>
       postJson<Slot[]>("/api/calendar/find-slot", {
-        duration_minutes: minutes,
+        duration_minutes: args.minutes,
+        days: 14,
+        attendees: args.attendees,
+        limit: 6,
       }),
   })
 }
