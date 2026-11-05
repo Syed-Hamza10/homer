@@ -34,6 +34,17 @@ class Message(SQLModel, table=True):
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     role: str
     content: str
+    context_json: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Fact(SQLModel, table=True):
+    __tablename__ = "facts"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    text: str
+    source: str = "user"
     created_at: datetime = Field(default_factory=utcnow)
 
 
