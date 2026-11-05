@@ -8,6 +8,7 @@ from homer_core.auth import SESSION_COOKIE, LoginLimiter, Unauthenticated, read_
 from homer_core.config import Settings
 from homer_core.db.models import User
 from homer_core.db.session import get_session
+from homer_core.services.google_account import Connector
 from homer_core.services.scheduler import Scheduler
 from homer_net import AllowlistedClient
 
@@ -26,6 +27,10 @@ def get_scheduler(request: Request) -> Scheduler:
 
 def get_http_client(request: Request) -> AllowlistedClient:
     return request.app.state.http_client
+
+
+def get_connector(request: Request) -> Connector:
+    return request.app.state.google_connector
 
 
 def get_limiter(request: Request) -> LoginLimiter:
@@ -54,6 +59,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 HttpClientDep = Annotated[AllowlistedClient, Depends(get_http_client)]
 SchedulerDep = Annotated[Scheduler, Depends(get_scheduler)]
+ConnectorDep = Annotated[Connector, Depends(get_connector)]
 LimiterDep = Annotated[LoginLimiter, Depends(get_limiter)]
 SecretDep = Annotated[str, Depends(get_secret)]
 CurrentUser = Annotated[User, Depends(current_user)]

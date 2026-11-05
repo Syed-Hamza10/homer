@@ -17,6 +17,7 @@ from homer_core.api import (
     chat,
     conversations,
     followups,
+    google,
     health,
     inbox,
     privacy,
@@ -33,6 +34,7 @@ from homer_core.llm import build_http_client, build_model
 from homer_core.mcp.manager import McpManager
 from homer_core.platform import ensure_home
 from homer_core.services.errors import DomainError
+from homer_core.services.google_account import Connector
 from homer_core.services.outbound_log import make_logger
 from homer_core.services.privacy import WEB_SEARCH_KEY
 from homer_core.services.rules import get_rules
@@ -84,6 +86,7 @@ def create_app(
 
     app = FastAPI(title="Homer", version=__version__, lifespan=lifespan)
     app.state.settings = settings
+    app.state.google_connector = Connector()
     app.middleware("http")(origin_middleware)
     app.add_middleware(
         CORSMiddleware,
@@ -106,6 +109,7 @@ def create_app(
         calendar.router,
         today.router,
         settings_api.router,
+        google.router,
     )
     for router in routers:
         app.include_router(router)

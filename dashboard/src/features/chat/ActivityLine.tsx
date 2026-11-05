@@ -1,3 +1,5 @@
+import { Link } from "react-router"
+import { Button } from "@/components/ui/button"
 import { ApprovalCard } from "@/features/approvals/ApprovalCard"
 import type { ActivityItem } from "./types"
 
@@ -16,6 +18,13 @@ export function ActivityLine({ item }: Props) {
           }}
         />
       </div>
+    )
+  }
+  if (item.kind === "reconnect") {
+    return (
+      <Button asChild variant="outline" size="sm" className="self-start">
+        <Link to={item.url}>Reconnect Google</Link>
+      </Button>
     )
   }
   const detail =

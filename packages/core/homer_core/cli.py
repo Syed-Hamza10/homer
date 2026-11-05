@@ -57,9 +57,10 @@ def doctor(
     checks = asyncio.run(run_checks(Settings(), quick=quick))
     table = Table("Check", "Result", "Detail")
     for check in checks:
-        table.add_row(check.name, "[green]ok" if check.ok else "[red]FAIL", check.detail)
+        result = "[green]ok" if check.ok else "[red]FAIL" if check.required else "[yellow]WARN"
+        table.add_row(check.name, result, check.detail)
     Console().print(table)
-    raise typer.Exit(code=0 if all(check.ok for check in checks) else 1)
+    raise typer.Exit(code=0 if all(check.ok for check in checks if check.required) else 1)
 
 
 @app.command()

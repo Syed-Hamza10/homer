@@ -122,7 +122,8 @@ async def execute(manager: McpManager, approval: Approval) -> tuple[str, Any]:
         result = await asyncio.wait_for(
             manager.call(approval.server, EXECUTOR_TOOL, args), EXECUTE_TIMEOUT
         )
-        return "done", result
+        failed = isinstance(result, dict) and "error" in result
+        return ("failed" if failed else "done"), result
     except (ExecuteFailed, ServerUnavailable) as error:
         return "failed", {"error": str(error)}
     except TimeoutError:

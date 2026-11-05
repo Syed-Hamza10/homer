@@ -83,3 +83,23 @@ def test_settings_page_saves_the_timezone(unlocked: Page, server: str) -> None:
     field.fill(original)
     page.get_by_role("button", name="Save").click()
     expect(page.get_by_text("Saved.")).to_be_visible()
+
+
+def test_empty_chat_suggests_prompts_until_a_message_exists(unlocked: Page) -> None:
+    page = unlocked
+    suggestions = page.get_by_test_id("suggested-prompts")
+    expect(suggestions.get_by_role("button")).to_have_count(4)
+    suggestions.get_by_role("button", name="What's on my calendar tomorrow?").click()
+    expect(page.get_by_test_id("message-user").first).to_have_text(
+        "What's on my calendar tomorrow?"
+    )
+    expect(suggestions).to_have_count(0)
+
+
+def test_settings_page_shows_the_google_account(unlocked: Page, server: str) -> None:
+    page = unlocked
+    page.get_by_role("link", name="Settings").click()
+    expect(page).to_have_url(f"{server}/settings")
+    card = page.get_by_test_id("google-account")
+    expect(card).to_contain_text("Google account")
+    expect(card.get_by_role("button", name=re.compile("Connect|Reconnect"))).to_be_visible()

@@ -3,6 +3,7 @@ import { Composer } from "./Composer"
 import { ConversationList } from "./ConversationList"
 import { MessageList } from "./MessageList"
 import { StatusLine } from "./StatusLine"
+import { SuggestedPrompts } from "./SuggestedPrompts"
 import { useChatStream } from "./useChatStream"
 import { useMessages } from "./useMessages"
 
@@ -36,6 +37,7 @@ export function ChatPage() {
         <MessageList messages={messages} draft={draft} activity={activity} />
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 p-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
+          {!messages.length && !streaming && <SuggestedPrompts onPick={send} />}
           <Composer disabled={streaming} onSend={send} />
           <StatusLine tokens={tokens} />
         </div>

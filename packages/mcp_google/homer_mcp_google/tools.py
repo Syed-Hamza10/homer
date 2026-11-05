@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from homer_mcp_google.auth import NotConnected
+from homer_mcp_google.auth import ReconnectRequired
 from homer_mcp_google.client import GoogleClient, GoogleError
 from homer_mcp_google.messages import build_raw, headers_of, neutral_message
 from homer_mcp_google.slots import free_slots, parse_time, parse_working_hours
@@ -50,8 +50,8 @@ def guarded(fn: Tool) -> Tool:
     async def wrapper(*args: Any, **kwargs: Any) -> dict[str, Any]:
         try:
             return await fn(*args, **kwargs)
-        except NotConnected:
-            return {"error": "google_not_connected"}
+        except ReconnectRequired:
+            return {"error": "google_reconnect_required"}
         except GoogleError as error:
             return {"error": "google_error", "status": error.status, "message": error.message}
         except BlockedHostError as error:

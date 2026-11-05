@@ -1,6 +1,6 @@
 from typing import Any
 
-from homer_mcp_google.auth import TokenStore
+from homer_mcp_google.auth import ReconnectRequired, TokenStore
 from homer_mcp_google.settings import Settings
 from homer_net import Allowlist, AllowlistedClient, SqliteLog
 from homer_net.allowlist import host_key
@@ -63,11 +63,13 @@ class GoogleClient:
             self.settings.token_url,
             data={
                 "grant_type": "refresh_token",
-                "refresh_token": token["refresh_token"],
+                "refresh_token": token.get("refresh_token", ""),
                 "client_id": token.get("client_id", ""),
                 "client_secret": token.get("client_secret", ""),
             },
         )
+        if response.status_code in (400, 401) and "invalid_grant" in response.text:
+            raise ReconnectRequired("invalid_grant")
         if response.status_code >= 400:
             raise GoogleError(response.status_code, _error_message(response))
         refreshed = {**token, "token": response.json()["access_token"]}

@@ -41,3 +41,13 @@ export type Health = {
   servers: Record<string, "ok" | "down">
   self_email: SelfEmailStatus
 }
+
+export type GoogleState = "not_connected" | "connected" | "expiring" | "expired"
+
+export type GoogleStatus = {
+  state: GoogleState
+  email: string | null
+  connected_at: string | null
+  days_left: number | null
+  connecting: boolean
+}

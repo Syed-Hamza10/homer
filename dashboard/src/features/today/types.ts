@@ -1,3 +1,5 @@
+import type { GoogleStatus } from "@/features/settings/types"
+
 export type Brief = { kind: string; day: string; content: string }
 
 export type Reminder = {
@@ -46,4 +48,5 @@ export type Today = {
   unread: number
   pending_approvals: number
   health: Health | null
+  google: GoogleStatus
 }

@@ -52,7 +52,7 @@ own account is set up the same way. Everything below is done once; it takes abou
 
 ## The 7-day rule
 
-While the consent screen is in **Testing**, Google expires the refresh token after 7 days. When
-mail or calendar tools start answering `google_not_connected` or a token error, run
-`uv run homer-mcp-google-setup` again. Moving the app to **In production** removes the limit but
+While the consent screen is in **Testing**, Google expires the refresh token after 7 days. From day 5
+the Today page and `homer doctor` warn; once it expires the chat answers "Your Google connection has
+expired". Press Reconnect in Settings (or run `uv run homer-mcp-google-setup` again). Moving the app to **In production** removes the limit but
 needs Google's verification review, which is a step for the real client account, not the throwaway.

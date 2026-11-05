@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models import Model
@@ -17,6 +18,7 @@ from homer_core.config import Settings
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
 from homer_core.services.jobs.send_email import request_send
+from homer_core.services.jobs.turn import RECONNECT
 
 from .conftest import load_fake_server
 
@@ -345,3 +347,59 @@ class TestEdit:
             assert stored_old.status == "superseded"
             assert stored_new.payload_hash != old_hash
             assert json.loads(stored_new.payload_json)["body"] == "B2"
+
+
+def refused(
+    query: str = "",
+    max_results: int = 0,
+    to: str = "",
+    subject: str = "",
+    body: str = "",
+    thread_id: str | None = None,
+    start: str = "",
+    end: str = "",
+    duration_minutes: int = 0,
+    working_hours: str = "",
+    timezone: str | None = None,
+    title: str = "",
+    attendees: list[str] | None = None,
+    description: str = "",
+    location: str = "",
+) -> dict[str, Any]:
+    return {"error": "google_reconnect_required"}
+
+
+def expired_google() -> FastMCP:
+    server = FastMCP("expired-google")
+    names = ("contacts_search", "mail_search", "mail_draft", "cal_list", "cal_find_free_slots")
+    for name in (*names, "cal_create"):
+        server.tool(refused, name=name)
+    return server
+
+
+class TestReconnect:
+    @pytest.fixture
+    def mcp(self) -> McpManager:
+        toolset = MCPToolset(Client(expired_google()), id="google", tool_error_behavior="failed")
+        return McpManager({"google": toolset})
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [[email("bob@example.test")]],
+            [[event(start="10:00")]],
+            [[{"kind": "read_calendar", "range": "tomorrow"}]],
+            [[{"kind": "read_email", "sender": "Ada", "question": "anything?"}]],
+            [
+                [
+                    {"kind": "read_calendar", "range": "today"},
+                    {"kind": "read_email", "sender": "Ada", "question": "anything?"},
+                ]
+            ],
+        ],
+    )
+    def test_every_job_asks_to_reconnect_once(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "Do the thing"})
+        assert said(frames) == RECONNECT
+        assert of(frames, "google_reconnect") == [{"url": "/settings"}]
+        assert len(calls(frames)) == 1
