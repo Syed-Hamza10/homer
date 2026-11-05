@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { GoogleAccount } from "./GoogleAccount"
 import { TimezoneSelect } from "./TimezoneSelect"
 import type { ClientRules, ModelTier, SelfEmailStatus } from "./types"
 import {
@@ -231,6 +232,7 @@ export function SettingsPage() {
             )}
           </CardContent>
         </Card>
+        <GoogleAccount />
       </main>
     </ScrollArea>
   )

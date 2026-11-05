@@ -21,7 +21,10 @@ export type ApprovalRequiredEvent = {
   payload: Record<string, unknown>
 }
 
+export type GoogleReconnectEvent = { url: string }
+
 export type ActivityItem =
   | ({ kind: "tool_call" } & ToolCallEvent)
   | ({ kind: "tool_result" } & ToolResultEvent)
   | ({ kind: "approval" } & ApprovalRequiredEvent)
+  | ({ kind: "reconnect" } & GoogleReconnectEvent)

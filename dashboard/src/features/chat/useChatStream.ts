@@ -6,6 +6,7 @@ import type {
   ApprovalRequiredEvent,
   DoneEvent,
   ErrorEvent,
+  GoogleReconnectEvent,
   MetaEvent,
   ReplaceEvent,
   TokenEvent,
@@ -59,6 +60,8 @@ export function useChatStream(
           add({ kind: "tool_result", ...(data as ToolResultEvent) }),
         approval_required: (data) =>
           add({ kind: "approval", ...(data as ApprovalRequiredEvent) }),
+        google_reconnect: (data) =>
+          add({ kind: "reconnect", ...(data as GoogleReconnectEvent) }),
         done: (data) => {
           const { input_tokens, output_tokens } = data as DoneEvent
           setTokens((n) => n + input_tokens + output_tokens)

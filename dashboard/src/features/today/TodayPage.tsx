@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Link } from "react-router"
+import { GoogleBanner } from "./GoogleBanner"
 import type { FollowUp, Health } from "./types"
 import {
   useRunBrief,
@@ -141,6 +142,8 @@ export function TodayPage() {
             </>
           }
         />
+
+        <GoogleBanner status={data?.google} />
 
         {line && (
           <p
