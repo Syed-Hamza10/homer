@@ -113,17 +113,22 @@ def tomorrow_offset() -> int:
     return (local_today() + timedelta(days=1) - monday).days
 
 
-def seeded_events() -> list[dict[str, Any]]:
+def local_offset(days: int) -> int:
+    """The simulator `weekday` value of the user's local day `days` from today."""
+    return tomorrow_offset() - 1 + days
+
+
+def seeded_events(extra: tuple[dict[str, Any], ...] = ()) -> list[dict[str, Any]]:
     seed = json.loads(DEFAULT_SEED.read_text())
-    return [*seed["events"], {**TOMORROW_EVENT, "weekday": tomorrow_offset()}]
+    return [*seed["events"], {**TOMORROW_EVENT, "weekday": tomorrow_offset()}, *extra]
 
 
 def tomorrow_titles() -> list[str]:
     return [e["summary"] for e in seeded_events() if e["weekday"] == tomorrow_offset()]
 
 
-def write_seed(home: Path) -> Path:
-    seed = {**json.loads(DEFAULT_SEED.read_text()), "events": seeded_events()}
+def write_seed(home: Path, extra: tuple[dict[str, Any], ...] = ()) -> Path:
+    seed = {**json.loads(DEFAULT_SEED.read_text()), "events": seeded_events(extra)}
     path = home / "seed.json"
     path.write_text(json.dumps(seed))
     return path
@@ -165,9 +170,11 @@ def running_simulator(seed: Path) -> tuple[subprocess.Popen[bytes], str]:
 
 
 @contextmanager
-def real_stack(home: Path, web_search: bool = False) -> Iterator[Stack]:
+def real_stack(
+    home: Path, web_search: bool = False, extra_events: tuple[dict[str, Any], ...] = ()
+) -> Iterator[Stack]:
     write_google_token(home)
-    simulator, sim_url = running_simulator(write_seed(home))
+    simulator, sim_url = running_simulator(write_seed(home, extra_events))
     env = process_env(
         home,
         free_port(),
