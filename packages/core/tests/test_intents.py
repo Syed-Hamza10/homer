@@ -353,9 +353,15 @@ async def test_whats_on_a_weekday_reads_the_calendar(given: dict[str, Any]) -> N
     assert intents == [ReadCalendar(kind="read_calendar", range="date", date="2026-11-12")]
 
 
-async def test_one_weekday_question_is_that_day() -> None:
-    given = [{"kind": "read_calendar", "range": "next_n_days", "days": 14, "start": "12:00"}]
-    intents = await run_extract(given, "am i free next tuesday afternoon?")
+@pytest.mark.parametrize(
+    "given",
+    [
+        {"kind": "read_calendar", "range": "next_n_days", "days": 14, "start": "12:00"},
+        {"kind": "read_calendar", "range": "next_week", "start": "12:00"},
+    ],
+)
+async def test_one_weekday_question_is_that_day(given: dict[str, Any]) -> None:
+    intents = await run_extract([given], "am i free next tuesday afternoon?")
     assert isinstance(intents[0], ReadCalendar)
     assert (intents[0].range, intents[0].date) == ("date", "2026-11-10")
 

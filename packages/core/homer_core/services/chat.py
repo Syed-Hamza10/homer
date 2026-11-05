@@ -29,7 +29,7 @@ from homer_core.services import approvals, briefs, calendar, drafts, followups, 
 from homer_core.services.conversations import get_conversation, list_messages, make_title
 from homer_core.services.errors import DomainError
 from homer_core.services.facts import prompt_facts
-from homer_core.services.jobs import day_summary, dispatch, edit_email, mail_status
+from homer_core.services.jobs import day_summary, dispatch, edit_email, mail_status, send_email
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
 
@@ -218,6 +218,9 @@ async def routed(turn: Turn) -> bool:
     intent call."""
     if asks_if_sent(turn.message):
         turn.say(mail_status.answer(turn))
+        return True
+    if send_email.unexplained(turn):
+        turn.say(send_email.ASK_WHO)
         return True
     if asks_for_summary(turn.message):
         turn.resolved.append({"kind": "day_summary"})

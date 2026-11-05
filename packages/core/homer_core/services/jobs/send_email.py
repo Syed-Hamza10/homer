@@ -22,9 +22,8 @@ MIN_WORDS = 8
 MIN_EDIT_WORDS = 3
 WRITE_PROMPT = """Write an email{sender} to {recipient}. Points to make: {instructions}
 Write it as the sender, in the first person: "I" is the sender and {first} is "you". Turn each
-point into what the sender says to {first} directly, so "tell her I can call Thursday if she
-wants" becomes "I can do a call on Thursday if that works for you." Never call {first} "she",
-"he", "her", "him" or "them".
+point into what the sender says to {first} directly: "if she wants" becomes "if that works for
+you". Never call {first} "she", "he", "her", "him" or "them". Make only the points above.
 Write 2 to 4 sentences in your own words, in a {tone} tone, that make every point.
 Do not copy the points word for word. No greeting, no sign-off, no placeholders like [Name].
 Do not invent facts, dates or promises. The subject is 3 to 7 words naming the topic.{reply}"""
@@ -38,8 +37,8 @@ Subject: {subject}
 Body:
 {body}
 Keep every point unless asked to drop it. Write the full new subject and body.
-The body stays in the sender's first person and speaks to {first} as "you": "add that I can call
-Thursday if she wants" becomes "I can do a call on Thursday if that works for you."
+The body stays in the sender's first person and speaks to {first} as "you": "if she wants"
+becomes "if that works for you".
 No greeting, no sign-off, no placeholders like [Name]. Do not invent facts.{length}"""
 LENGTH_RULE = """
 Change the tone only: add no new points and keep it about {words} words long."""
@@ -258,6 +257,11 @@ def by_pronoun(turn: Turn, intent: SendEmail) -> bool:
     """The user named the recipient only as "her", "him" or "them"."""
     first = intent.to.split("@")[0].split()[0].lower() if intent.to.strip() else ""
     return bool(PRONOUN_TO.search(turn.message)) and first not in turn.message.lower()
+
+
+def unexplained(turn: Turn) -> bool:
+    """A first message that emails "her" or "him": nothing in the chat says who that is."""
+    return not turn.history and PRONOUN_TO.search(turn.message) is not None
 
 
 def vague(turn: Turn, intent: SendEmail) -> bool:

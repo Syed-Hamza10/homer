@@ -435,7 +435,7 @@ def one_day(intent: Intent, message: str, today: date) -> Intent:
     if (
         not isinstance(intent, ReadCalendar)
         or day is None
-        or intent.range != "next_n_days"
+        or intent.range not in ("next_n_days", "this_week", "next_week")
         or re.search(r"\bweeks?\b", message, re.IGNORECASE)
     ):
         return intent

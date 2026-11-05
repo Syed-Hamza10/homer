@@ -705,3 +705,9 @@ class TestDaySummary:
         frames = post_chat({"message": "what did I send today?"})
         assert said(frames) == "Nothing sent or booked today, and nothing is waiting on you."
         assert frames[-1][1]["input_tokens"] == 0
+
+
+def test_a_pronoun_first_message_asks_without_the_model(post_chat: PostChat) -> None:
+    frames = post_chat({"message": "email her about it"})
+    assert said(frames) == "Who should I email, and what about?"
+    assert frames[-1][1]["input_tokens"] == 0
