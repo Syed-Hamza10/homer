@@ -19,7 +19,9 @@ PERSONAL = re.compile(r"\b(?:my|mine|me)\b", re.IGNORECASE)
 
 async def run(turn: Turn, intent: ChatIntent) -> None:
     instructions = render_prompt(turn.user.name, turn.user.timezone, turn.now, turn.facts)
-    index = await turn.stream(turn.message, instructions, turn.history[-HISTORY_MESSAGES:])
+    index = await turn.stream(
+        turn.message, instructions, turn.history[-HISTORY_MESSAGES:], guarded=False
+    )
     text = turn.segments[index]
     reviewed = review(text, acted=False)
     if reviewed != text:

@@ -7,8 +7,9 @@ COMMAND = re.compile(
 )
 APPROVE_WORDS = frozenset(
     {"send", "approve", "approved", "lgtm", "confirm", "confirmed", "yes", "yep", "yeah", "ahead"}
-    | {"do", "create", "book", "ship"}
+    | {"do", "create", "book", "ship", "fire"}
 )
+APPROVE_PHRASES = frozenset({"go for it", "ok go for it", "yes go for it", "go for it then"})
 REJECT_WORDS = frozenset(
     {"no", "nope", "nah", "cancel", "discard", "reject", "rejected", "dont", "not", "scrap"}
     | {"delete"}
@@ -18,6 +19,7 @@ FILLER_WORDS = frozenset(
     | {"please", "pls", "plz", "thanks", "thank", "you", "the", "email", "mail", "draft", "that"}
     | {"this", "go", "just", "then", "and", "alright", "cool", "nice", "all", "right", "sounds"}
     | {"lets", "off", "away", "out", "event", "meeting", "invite", "message", "k", "awesome"}
+    | {"for"}
 )
 CONVERSATIONAL = frozenset({"yes", "yep", "yeah", "ok", "okay", "sure", "no", "nope", "nah"})
 EDIT = re.compile(
@@ -38,6 +40,14 @@ NEW_REQUEST = re.compile(
 SENT_QUESTION = re.compile(
     r"^(?:so\s+|and\s+|but\s+|hey\s+)?(?:did|have|has|was|is|were)\s+"
     r"(?:you|it|that|this|they|the\s+\w+|my\s+\w+)\b.*\b(?:send|sent|go(?:ne)? out|went out)\b",
+    re.IGNORECASE,
+)
+DAY_SUMMARY = re.compile(
+    r"\bwhat (?:did|have) i (?:get |got |gotten )?"
+    r"(?:done|do|did|accomplish(?:ed)?|send|sent|finish(?:ed)?)\b"
+    r"|\bwhat(?:'s| is| else is)? (?:still )?(?:open|left|pending|outstanding|waiting on me)\b"
+    r"|\b(?:waiting|pending) on me\b|\bend[- ]of[- ]day (?:summary|recap|digest|review)\b"
+    r"|\b(?:recap|wrap[- ]up|summary) of (?:my|the) day\b|\bsummari[sz]e my day\b",
     re.IGNORECASE,
 )
 RECIPIENT = re.compile(r"\bto\s+([\w.+-]+(?:@[\w.-]+)?)", re.IGNORECASE)
@@ -65,12 +75,14 @@ def words(message: str) -> list[str]:
 
 def parse_decision(message: str) -> Decision | None:
     """Approve or reject from a short typed reply made only of decision and filler words."""
+    if " ".join(words(message)) in APPROVE_PHRASES:
+        return "approve"
     found = set(words(message))
     if not found or not found <= APPROVE_WORDS | REJECT_WORDS | FILLER_WORDS:
         return None
     if found & REJECT_WORDS:
         return "reject"
-    if found & APPROVE_WORDS and found != {"do"}:
+    if found & APPROVE_WORDS and found not in ({"do"}, {"do", "for"}):
         return "approve"
     return None
 
@@ -89,6 +101,11 @@ def is_edit(message: str) -> bool:
 
 def asks_if_sent(message: str) -> bool:
     return SENT_QUESTION.match(message.strip()) is not None
+
+
+def asks_for_summary(message: str) -> bool:
+    """True for "what did I get done today", "what's still open", "what's waiting on me"."""
+    return DAY_SUMMARY.search(message) is not None
 
 
 def asked_recipient(message: str) -> str | None:

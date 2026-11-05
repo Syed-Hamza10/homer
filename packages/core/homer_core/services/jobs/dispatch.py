@@ -6,6 +6,7 @@ from homer_core.services.jobs import (
     change_event,
     chat,
     create_event,
+    day_summary,
     memory,
     read_calendar,
     read_email,
@@ -26,6 +27,7 @@ RUNNERS: dict[str, Callable[[Turn, Any], Awaitable[None]]] = {
     "remind": remind.run,
     "remember": memory.remember,
     "forget": memory.drop,
+    "day_summary": day_summary.run,
     "chat": chat.run,
 }
 

@@ -1,3 +1,4 @@
+import re
 import time
 from dataclasses import dataclass
 from email.utils import parseaddr
@@ -58,12 +59,40 @@ def matching(people: list[Person], who: str) -> list[Person]:
     return list(unique.values())
 
 
-async def resolve(turn: Turn, who: str) -> Person:
-    """Finds one address for a name or address; asks the user when there are none or several."""
+def typed(turn: Turn, email: str) -> bool:
+    return email.lower() in turn.message.lower()
+
+
+def as_words(email: str) -> str:
+    """The name words in an address the model made up: 'accounts@harbor&pine.com' gives
+    'accounts harbor pine'."""
+    local, _, domain = email.lower().partition("@")
+    labels = domain.split(".")[:-1] if "." in domain else [domain]
+    return " ".join(w for w in re.split(r"[^a-z0-9]+", " ".join([local, *labels])) if w)
+
+
+async def name_for(turn: Turn, email: str) -> str:
+    """The person's name from contacts or from the headers of mail they sent, else ''."""
+    for source in (contacts, recent_senders):
+        for person in await source(turn, email):
+            if person.email == email and person.name:
+                return person.name
+    return ""
+
+
+async def resolve(turn: Turn, who: str, from_header: bool = False) -> Person:
+    """Finds one address for a name or address; asks the user when there are none or several.
+    An address is used only as the user typed it or as a mail header carries it; one the model
+    wrote is searched for by its words instead, so no address is ever made up."""
     who = who.strip()
     if "@" in who:
         name, email = parseaddr(who)
-        return Person(name, email.lower())
+        email = email.lower()
+        if from_header:
+            return Person(name, email)
+        if typed(turn, email):
+            return Person(name or await name_for(turn, email), email)
+        who = as_words(email)
     if not who:
         raise JobError("Who should it go to? Give me a name or an email address.")
     first = who.split()[0]

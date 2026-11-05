@@ -192,7 +192,9 @@ class TestChangeEvent:
     @pytest.mark.parametrize("intents", [[[update(match="pitch", new_date=day(3).isoformat())]]])
     def test_nothing_matching_says_so(self, post_chat: PostChat) -> None:
         frames = post_chat({"message": "reschedule the pitch rehearsal to monday"})
-        assert said(frames) == "I found no event matching 'pitch' in the next 30 days."
+        assert said(frames) == (
+            "I found no event matching 'pitch' between last week and next month."
+        )
         assert of(frames, "approval_required") == []
 
     @pytest.mark.parametrize("intents", [[[update(match="workshop", new_date=day(3).isoformat())]]])
@@ -345,3 +347,156 @@ class TestSearchDates:
         instructions = str(getattr(seen[-1][-1], "instructions", ""))
         assert f"Yesterday was {yesterday:%A} {yesterday.day} {yesterday:%B %Y}." in instructions
         assert "at most 80 words" in instructions
+
+
+def next_on(weekday: int) -> int:
+    """Days from today to the next given weekday, at least one."""
+    return (weekday - today().weekday() - 1) % 7 + 1
+
+
+MONDAY, TUESDAY = next_on(0), next_on(1)
+ELENA_CALL = entry(
+    "c1", "call with Elena Marchetti", MONDAY, "12:00", "12:45", "elena@example.test"
+)
+STUDIO = entry("s1", "Studio visit with Elena Marchetti", 2, "10:00", "11:00")
+ADMIN = entry("a1", "Admin block: invoices", MONDAY, "09:00", "11:00")
+
+
+def at(offset: int, clock: str) -> str:
+    return f"{day(offset).isoformat()}T{clock}:00+05:00"
+
+
+def booked(**fields: Any) -> dict[str, Any]:
+    return {"kind": "create_event", "title": "call with Elena Marchetti", **fields}
+
+
+class TestMove:
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [booked(date=day(MONDAY).isoformat(), start="12:00", duration_minutes=45)],
+                [booked(date=day(TUESDAY).isoformat(), window_start="09:00", window_end="12:00")],
+            ]
+        ],
+    )
+    def test_moving_a_proposed_event_replaces_its_card_and_keeps_its_length(
+        self, post_chat: PostChat, logged_in: TestClient
+    ) -> None:
+        first = post_chat({"message": "schedule a call with Elena Monday at noon, 45 minutes"})
+        chat = first[0][1]["conversation_id"]
+        frames = post_chat(
+            {"message": "actually move it to Tuesday morning, same length", "conversation_id": chat}
+        )
+        card = of(frames, "approval_required")[0]
+        assert card["action"] == "cal_create"
+        assert (card["payload"]["start"], card["payload"]["end"]) == (
+            at(TUESDAY, "09:00"),
+            at(TUESDAY, "09:45"),
+        )
+        assert said(frames).startswith("Moved it: 'call with Elena Marchetti' on ")
+        assert [a["id"] for a in logged_in.get("/api/approvals").json()] == [card["approval_id"]]
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [
+                    update(
+                        match="Monday call with Elena",
+                        new_date=day(TUESDAY).isoformat(),
+                        new_start="9am",
+                    )
+                ]
+            ],
+            [
+                [
+                    update(
+                        match="call with Elena",
+                        date=day(TUESDAY).isoformat(),
+                        new_date=day(TUESDAY).isoformat(),
+                        new_start="9am",
+                    )
+                ]
+            ],
+        ],
+    )
+    def test_the_old_day_and_person_find_it_and_the_new_day_never_filters(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.EVENTS[:] = [WORKSHOP, ELENA_CALL]
+        frames = post_chat({"message": "move my Monday call with Elena to Tuesday 9am"})
+        assert of(frames, "approval_required")[0]["payload"] == {
+            "event_id": "c1",
+            "changes": {"start": at(TUESDAY, "09:00"), "end": at(TUESDAY, "09:45")},
+        }
+
+    @pytest.mark.parametrize("intents", [[[update(match="the call with Elena", new_start="4pm")]]])
+    def test_a_partial_title_still_finds_the_one_event(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.EVENTS[:] = [WORKSHOP, STUDIO]
+        payload = of(post_chat({"message": "push the call with Elena to 4pm"}), "approval_required")
+        assert payload[0]["payload"]["event_id"] == "s1"
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [booked(date=day(MONDAY).isoformat(), start="12:00", end="12:45")],
+                [{"kind": "chat"}],
+                [update(match="the call we just booked", new_start="4pm")],
+            ]
+        ],
+    )
+    def test_it_means_the_event_booked_turns_ago(
+        self, post_chat: PostChat, logged_in: TestClient, fake_google: ModuleType
+    ) -> None:
+        first = post_chat({"message": "book a call with Elena monday 12 to 12:45"})
+        chat = first[0][1]["conversation_id"]
+        card = of(first, "approval_required")[0]["approval_id"]
+        logged_in.post(f"/api/approvals/{card}/approve", headers=ORIGIN)
+        post_chat({"message": "thanks", "conversation_id": chat})
+        frames = post_chat(
+            {"message": "move the call we just booked to 4pm", "conversation_id": chat}
+        )
+        moved = of(frames, "approval_required")[0]
+        assert moved["action"] == "cal_update"
+        assert moved["payload"]["event_id"] == "evt_new1"
+        assert moved["payload"]["changes"] == {
+            "start": at(MONDAY, "16:00"),
+            "end": at(MONDAY, "16:45"),
+        }
+
+    @pytest.mark.parametrize(
+        "intents", [[[{"kind": "cancel_event", "match": "admin block monday"}]]]
+    )
+    def test_drop_the_admin_block_monday(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.EVENTS[:] = [ADMIN, WORKSHOP]
+        frames = post_chat({"message": "dont need the admin block monday anymore, drop it"})
+        assert of(frames, "approval_required")[0]["payload"] == {"event_id": "a1"}
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [booked(date=day(3).isoformat(), start="11:00", end="12:00")],
+                [booked(date=day(3).isoformat(), start="2pm")],
+            ]
+        ],
+    )
+    def test_a_time_only_correction_keeps_the_length(self, post_chat: PostChat) -> None:
+        chat = post_chat({"message": "book a 1 hour review at 11am"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "make it 2pm instead", "conversation_id": chat})
+        payload = of(frames, "approval_required")[0]["payload"]
+        assert payload["end"].startswith(f"{day(3).isoformat()}T15:00")
+
+
+class TestNextMeeting:
+    @pytest.mark.parametrize("intents", [[[read(range="today")]]])
+    def test_names_only_the_next_one(self, post_chat: PostChat) -> None:
+        assert said(post_chat({"message": "when's my next meeting?"})) == (
+            f"Your next one is Workshop prep for Meridian Roast, {day(1):%A %d %B} 09:30-10:30."
+        )

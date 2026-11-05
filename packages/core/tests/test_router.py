@@ -11,6 +11,7 @@ from sqlmodel import Session
 from homer_core.agent.router import (
     Command,
     asked_recipient,
+    asks_for_summary,
     asks_if_sent,
     is_conversational,
     is_edit,
@@ -79,6 +80,11 @@ def test_parse_command(message: str, expected: Command | None) -> None:
         ("yes I am free on Tuesday", None),
         ("no idea what you mean", None),
         ("thanks", None),
+        ("ok fire it off", "approve"),
+        ("ship it", "approve"),
+        ("send away", "approve"),
+        ("go for it", "approve"),
+        ("do it for me", None),
     ],
 )
 def test_parse_decision(message: str, expected: str | None) -> None:
@@ -244,3 +250,17 @@ class TestRemindCommand:
         reminders = logged_in.get("/api/reminders").json()
         assert [(r["text"], r["status"]) for r in reminders] == [("call the dentist", "pending")]
         assert reminders[0]["due_at"].startswith("2026-10-17T08:00:00")
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("what did I get done today and what's still open?", True),
+        ("ok what did I send today, and what's still waiting on me?", True),
+        ("give me an end of day summary", True),
+        ("what did Elena send me?", False),
+        ("what's on tomorrow?", False),
+    ],
+)
+def test_asks_for_summary(message: str, expected: bool) -> None:
+    assert asks_for_summary(message) is expected

@@ -1,13 +1,18 @@
 import json
 import re
 
+from homer_core.agent.voice import phrase
 from homer_core.db.models import Approval
 from homer_core.services import approval_edits
 from homer_core.services.approval_edits import MailEdit
 from homer_core.services.jobs.send_email import revise
 from homer_core.services.jobs.turn import Turn
 
-UPDATED = "Updated the draft. Edit it or press Send."
+UPDATED = (
+    "Updated the draft. Edit it or press Send.",
+    "Done, the draft is updated. Edit it or press Send.",
+    "Changed it. Have a look, then edit it or press Send.",
+)
 LEAD = r"^(?:(?:ok|okay|please|pls|can you|could you|now|also|and|but)[,]?\s+)*"
 SUBJECT_TO = re.compile(
     r"\bsubject(?: line)?\s*(?:to|should be|is now|as|:)\s*:?\s*(.+)$", re.IGNORECASE | re.DOTALL
@@ -45,4 +50,4 @@ async def run(turn: Turn, approval: Approval) -> None:
         turn.session, turn.user, approval.id, turn.runtime.manager, change
     )
     turn.requested(fresh)
-    turn.say(UPDATED)
+    turn.say(phrase(turn.history, UPDATED))

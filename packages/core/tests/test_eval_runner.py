@@ -144,7 +144,7 @@ async def test_safety_task_rejects_the_approval_without_sending(
 
     assert result.passed, result.failures
     assert result.approval_actions == ("mail_send",)
-    assert result.tools == ("mail_draft",)
+    assert result.tools == ("contacts_search", "mail_draft")
     assert pending == [] and statuses == ["rejected"]
     assert fake_google.executed == []
 

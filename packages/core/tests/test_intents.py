@@ -259,6 +259,8 @@ def test_clock_refuses_nonsense() -> None:
         "Your meeting has been moved to 4pm.",
         "I rescheduled the pitch rehearsal.",
         "Got it. Event 'Call with Rosa' on Fri 11 Nov 15:00-15:30 is ready.",
+        "The email to ops@example.test has been sent.",
+        "Your reply to Rosa has been sent.",
     ],
 )
 def test_claims_without_an_action_are_replaced(text: str) -> None:
@@ -273,36 +275,101 @@ def test_plain_text_passes(text: str) -> None:
     assert review(text, acted=False) == text
 
 
-async def test_changing_a_proposed_event_rebooks_it() -> None:
-    previous = [
+async def run_extract(given: list[dict[str, Any]], message: str) -> list[Any]:
+    intents, _ = await extract(build_intent_agent(answering(given)), message, [], NOW)
+    return intents
+
+
+async def test_a_move_verb_never_creates_an_event() -> None:
+    given = [
         {
             "kind": "create_event",
-            "title": "Call with Maya",
-            "date": "2026-11-11",
-            "start": "15:00",
-            "end": "15:30",
-            "attendees": ["Maya"],
-            "approval_id": 3,
+            "title": "call with Elena Marchetti",
+            "date": "2026-11-10",
+            "window_start": "09:00",
+            "window_end": "12:00",
         }
     ]
+    intents = await run_extract(given, "actually move it to Tuesday morning, same length")
+    assert intents == [
+        UpdateEvent(
+            kind="update_event",
+            match="call with Elena Marchetti",
+            new_date="2026-11-10",
+            new_start="09:00",
+        )
+    ]
+
+
+async def test_a_correction_stays_an_update() -> None:
     update = [{"kind": "update_event", "match": "call with Maya", "new_date": "2026-11-12"}]
-    intents, _ = await extract(
-        build_intent_agent(answering(update)),
-        "no, I meant Friday",
-        [],
-        NOW,
-        Background(previous=previous),
-    )
+    intents = await run_extract(update, "no, I meant Friday")
+    assert isinstance(intents[0], UpdateEvent) and intents[0].new_date == "2026-11-13"
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["respond to tomas about the invoice, say it goes out friday", "reply to Tomas: paid"],
+)
+async def test_reply_verbs_reply_to_the_latest_email(message: str) -> None:
+    given = [{"kind": "send_email", "to": "Tomas", "body_instructions": "it goes out friday"}]
+    intents = await run_extract(given, message)
+    assert isinstance(intents[0], SendEmail) and intents[0].reply_to_latest_from == "Tomas"
+
+
+async def test_identical_intents_run_once() -> None:
+    read = {"kind": "read_calendar", "range": "today"}
+    assert len(await run_extract([read, read], "what did I do today")) == 1
+
+
+async def test_find_me_time_books_a_slot() -> None:
+    given = [
+        {
+            "kind": "read_calendar",
+            "range": "date",
+            "date": "2026-11-09",
+            "person": "Rosa",
+            "start": "14:00",
+            "end": "17:00",
+        }
+    ]
+    intents = await run_extract(given, "find me 45 mins with Rosa on monday between 2 and 5pm")
     assert intents == [
         CreateEvent(
             kind="create_event",
-            title="Call with Maya",
-            date="2026-11-13",
-            start="15:00",
-            end="15:30",
-            attendees=["Maya"],
+            title="Meeting with Rosa",
+            date="2026-11-09",
+            window_start="14:00",
+            window_end="17:00",
+            duration_minutes=45,
+            attendees=["Rosa"],
         )
     ]
+
+
+@pytest.mark.parametrize("given", [{"kind": "web_search", "query": "thursday"}, {"kind": "chat"}])
+async def test_whats_on_a_weekday_reads_the_calendar(given: dict[str, Any]) -> None:
+    intents = await run_extract([given], "morning! quick q, whats on thursday?")
+    assert intents == [ReadCalendar(kind="read_calendar", range="date", date="2026-11-12")]
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        {"kind": "read_calendar", "range": "next_n_days", "days": 14, "start": "12:00"},
+        {"kind": "read_calendar", "range": "next_week", "start": "12:00"},
+    ],
+)
+async def test_one_weekday_question_is_that_day(given: dict[str, Any]) -> None:
+    intents = await run_extract([given], "am i free next tuesday afternoon?")
+    assert isinstance(intents[0], ReadCalendar)
+    assert (intents[0].range, intents[0].date) == ("date", "2026-11-10")
+
+
+async def test_next_meeting_looks_two_weeks_ahead() -> None:
+    intents = await run_extract([{"kind": "read_calendar"}], "when's my next meeting?")
+    assert isinstance(intents[0], ReadCalendar)
+    assert (intents[0].range, intents[0].days) == ("next_n_days", 14)
 
 
 async def test_a_person_without_a_time_looks_two_weeks_ahead() -> None:

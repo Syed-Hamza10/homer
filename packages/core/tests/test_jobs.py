@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import Callable
 from types import ModuleType
 from typing import Any
@@ -101,7 +102,7 @@ class TestSendEmail:
     ) -> None:
         frames = post_chat({"message": "Email bob@example.test that the invoice is paid"})
         assert said(frames) == READY.format(who="bob@example.test")
-        assert calls(frames) == ["mail_draft"]
+        assert calls(frames) == ["contacts_search", "mail_search", "mail_draft"]
         assert fake_google.drafted == [
             {
                 "to": "bob@example.test",
@@ -550,3 +551,163 @@ class TestSendStatus:
 )
 def test_claim_guard_catches_send_and_edit_claims(text: str, claims: bool) -> None:
     assert (review(text, acted=False) == HONEST) is claims
+
+
+class TestVoice:
+    @pytest.mark.parametrize("intents", [[[email("Rosa")]]])
+    def test_a_pronoun_in_a_fresh_chat_asks_who_and_what(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        frames = post_chat({"message": "email her about it"})
+        assert said(frames) == "Who should I email, and what about?"
+        assert fake_google.drafted == []
+
+    @pytest.mark.parametrize(
+        "intents", [[[event(title="Call with Ada")], [email("Ada", body_instructions="moved")]]]
+    )
+    def test_a_pronoun_from_context_names_who_and_what(self, post_chat: PostChat) -> None:
+        chat = post_chat({"message": "book a call with Ada"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "email her about it", "conversation_id": chat})
+        assert said(frames) == "Draft to Ada about invoice is ready. Edit it or press Send."
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [
+                    [
+                        email(
+                            "Ada",
+                            body_instructions="tell her I can do a call Thursday if she wants",
+                        )
+                    ]
+                ],
+                [{"subject": "Call", "body": "I can do a call on Thursday if she wants to talk."}],
+            )
+        ],
+    )
+    def test_relayed_instructions_become_first_person(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email Ada, tell her I can do a call Thursday if she wants"})
+        body = fake_google.drafted[0]["body"]
+        assert "I can do a call on Thursday if that works for you." in body
+        assert " she " not in body
+
+    @pytest.mark.parametrize(
+        "intents", [[[{"kind": "send_email", "to": "Ada", "body_instructions": "read it"}]]]
+    )
+    def test_respond_to_replies_in_the_thread_on_that_topic(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "respond to Ada about the proposal, say I read it"})
+        draft = fake_google.drafted[0]
+        assert (draft["subject"], draft["thread_id"]) == ("Re: Proposal follow-up", "t3")
+
+    @pytest.mark.parametrize("intents", [[[email("accounts@harbor&pine.com")]]])
+    def test_an_address_the_model_made_up_is_looked_up_instead(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.MESSAGES["m5"] = {
+            "id": "m5",
+            "thread_id": "t5",
+            "from": '"Accounts, Harbor & Pine" <accounts@harborpine.example.test>',
+            "subject": "Invoice DW-1",
+            "labels": ["INBOX"],
+            "body": "<untrusted>Invoice attached.</untrusted>",
+        }
+        post_chat({"message": "email accounts at harbor & pine that the invoice is paid"})
+        assert fake_google.drafted[0]["to"] == "accounts@harborpine.example.test"
+        assert fake_google.drafted[0]["body"].startswith("Hi Accounts,")
+
+    @pytest.mark.parametrize("intents", [[[email("ada@example.test")]]])
+    def test_a_typed_address_gets_the_known_name(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email ada@example.test that the invoice is paid"})
+        assert fake_google.drafted[0]["body"].startswith("Hi Ada,\n\n")
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")]],
+                [
+                    {"subject": "Invoice", "body": PAID},
+                    {"subject": "Invoice", "body": " ".join(["Warm thanks again,"] * 8)},
+                    {"subject": "Invoice", "body": "Good news, the invoice was paid this morning."},
+                ],
+            )
+        ],
+    )
+    def test_warmer_keeps_the_length(self, post_chat: PostChat) -> None:
+        chat = post_chat({"message": "email Ada the invoice is paid"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "make it warmer", "conversation_id": chat})
+        body = of(frames, "approval_required")[0]["payload"]["body"]
+        assert "Good news, the invoice was paid this morning." in body
+
+    @pytest.mark.parametrize("intents", [[[email("bob@example.test")]]])
+    def test_fire_it_off_sends_the_waiting_draft(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        chat = post_chat({"message": "email bob"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "ok fire it off", "conversation_id": chat})
+        assert said(frames).endswith("(mail_send): done.")
+        assert fake_google.executed[0]["action"] == "mail_send"
+
+    @pytest.mark.parametrize(
+        "text", ["Based on the provided text, your dog is called Biscuit and loves long walks."]
+    )
+    def test_scaffolding_is_scrubbed(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "tell me about my dog"})
+        assert of(frames, "replace")[-1]["text"] == (
+            "Your dog is called Biscuit and loves long walks."
+        )
+
+    @pytest.mark.parametrize("text", ["The email to bob@example.test has been sent."])
+    def test_a_send_claim_in_any_answer_is_replaced(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "what did ada say about the invoice?"})
+        assert of(frames, "replace")[-1]["text"] == HONEST
+
+
+class TestDaySummary:
+    def sent_today(self, fake_google: ModuleType) -> None:
+        stamp = str(int(time.time() * 1000))
+        fake_google.MESSAGES["m9"] = {
+            "id": "m9",
+            "thread_id": "t9",
+            "from": "tester@example.test",
+            "to": "Ada Example <ada@example.test>",
+            "subject": "Budget",
+            "labels": ["SENT"],
+            "metadata": {"internal_date": stamp},
+            "body": "<untrusted>Here it is.</untrusted>",
+        }
+
+    @pytest.mark.parametrize("text", ["You haven't sent any email today."])
+    def test_is_grounded_in_sent_mail_and_open_items(
+        self, post_chat: PostChat, fake_google: ModuleType, app: FastAPI
+    ) -> None:
+        self.sent_today(fake_google)
+        fake_google.MESSAGES["m4"]["metadata"] = {"internal_date": "1700000000000"}
+        with Session(app.state.engine) as session:
+            request_send(session, 1, "d7", "sam@example.test", "Lunch", "Hi", "")
+        frames = post_chat({"message": "what did I get done today and what's still open?"})
+        assert calls(frames) == ["mail_profile", "mail_search", "mail_search"]
+        shown = of(frames, "replace")[-1]["text"]
+        assert 'Sent to Ada Example: "Budget" at ' in shown
+        assert 'Draft to sam@example.test "Lunch" waits for Send' in shown
+        assert 'ada@example.test is waiting on your reply: "Invoice 42"' in shown
+        assert "Proposal follow-up" not in shown
+
+    def test_nothing_needs_no_model(self, post_chat: PostChat, fake_google: ModuleType) -> None:
+        fake_google.MESSAGES.clear()
+        frames = post_chat({"message": "what did I send today?"})
+        assert said(frames) == "Nothing sent or booked today, and nothing is waiting on you."
+        assert frames[-1][1]["input_tokens"] == 0
+
+
+def test_a_pronoun_first_message_asks_without_the_model(post_chat: PostChat) -> None:
+    frames = post_chat({"message": "email her about it"})
+    assert said(frames) == "Who should I email, and what about?"
+    assert frames[-1][1]["input_tokens"] == 0

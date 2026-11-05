@@ -3,15 +3,16 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from homer_core.agent.dates import monday_of
-from homer_core.agent.intents import ReadCalendar
+from homer_core.agent.intents import NEXT_EVENT, ReadCalendar
 from homer_core.services.jobs.recipients import listed
 from homer_core.services.jobs.turn import Turn
 
 LONG_LIST = 25
 DEFAULT_DAYS = 7
 INSTANT_MINUTES = 30
-PHRASE_PROMPT = """Answer the user's question about their calendar from this list of events only.
-Never mention an event that is not in the list. Be brief.
+PHRASE_PROMPT = """Answer the person's question about their calendar, talking to them as "you",
+from this list of events only. Never mention an event that is not in the list, "the list" or
+"the user". Be brief.
 {period}:
 {events}"""
 
@@ -124,6 +125,19 @@ def availability(intent: ReadCalendar, busy: bool) -> str:
     return f"{'Yes' if yes else 'No'}, you are {'busy' if busy else 'free'}."
 
 
+def next_one(turn: Turn, events: list[dict[str, Any]], period: str, zone: ZoneInfo) -> str:
+    """Only the next event that has not started yet."""
+    ahead = [event for event in events if bounds(event, zone)[0] >= turn.now]
+    if not ahead:
+        return f"Nothing else on your calendar for {period[:1].lower()}{period[1:]}."
+    event = min(ahead, key=lambda e: bounds(e, zone)[0])
+    opens, closes = bounds(event, zone)
+    day = "today" if opens.date() == turn.now.date() else f"{opens:%A %d %B}"
+    where = f" ({event['location']})" if event.get("location") else ""
+    title = event.get("title") or "(no title)"
+    return f"Your next one is {title}{where}, {day} {opens:%H:%M}-{closes:%H:%M}."
+
+
 async def run(turn: Turn, intent: ReadCalendar) -> None:
     zone = ZoneInfo(turn.user.timezone)
     first, after, period = days_of(intent, turn.now.date())
@@ -137,6 +151,9 @@ async def run(turn: Turn, intent: ReadCalendar) -> None:
     window = hours(intent)
     if window is not None:
         events = [event for event in events if in_hours(event, zone, window)]
+    if NEXT_EVENT.search(turn.message):
+        turn.say(next_one(turn, events, period, zone))
+        return
     title = heading(intent, period, window)
     lead = f"{availability(intent, bool(events))} " if intent.asks_if else ""
     if not events:

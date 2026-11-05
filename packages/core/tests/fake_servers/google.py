@@ -87,8 +87,14 @@ def health() -> dict[str, Any]:
 @server.tool
 def mail_search(query: str, max_results: int = 10) -> list[dict[str, Any]]:
     """Searches mail. Returns the matching messages."""
-    sender = query.removeprefix("from:").lower() if query.startswith("from:") else ""
-    found = [m for m in MESSAGES.values() if sender in m["from"].lower()]
+    terms = dict(term.partition(":")[::2] for term in query.split() if ":" in term)
+    sender = terms.get("from", "").lower()
+    label = "SENT" if terms.get("in", "").lower() == "sent" else ""
+    found = [
+        m
+        for m in MESSAGES.values()
+        if sender in m["from"].lower() and (not label or label in m.get("labels", []))
+    ]
     return found[:max_results]
 
 
@@ -242,6 +248,8 @@ async def execute(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         await asyncio.sleep(float(payload["hang"]))
     record = {"action": action, "payload": payload}
     executed.append(record)
+    if action == "cal_create":
+        return {"id": f"evt_new{len(executed)}", **payload}
     return {"ok": True, **record}
 
 
