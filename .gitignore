@@ -28,3 +28,6 @@ token*.json
 # Editors
 .idea/
 .vscode/
+
+# QA transcripts may contain real addresses
+docs/qa/
