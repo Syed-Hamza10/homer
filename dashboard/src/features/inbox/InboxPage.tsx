@@ -1,175 +1,190 @@
-import { Fragment } from "react"
-import { PageHeader } from "@/components/PageHeader"
+import { Keyboard, PenLine } from "lucide-react"
+import { useRef, useState } from "react"
+import { ShortcutsHelp } from "@/components/ShortcutsHelp"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import type { Email } from "./types"
-import {
-  useArchive,
-  useDraft,
-  useFollowUp,
-  useInbox,
-  useRefreshInbox,
-} from "./useInbox"
+import { errorText } from "@/lib/errorText"
+import { useTimezone } from "@/features/settings/useTimezone"
+import { stepId, useShortcuts } from "@/lib/shortcuts"
+import { cn } from "@/lib/utils"
+import { FolderList } from "./FolderList"
+import { MailComposer } from "./MailComposer"
+import { ReadingPane } from "./ReadingPane"
+import { inboxShortcuts } from "./shortcuts"
+import { ThreadList } from "./ThreadList"
+import { useFolders, useLabelChange, useSortInbox, useThreads } from "./useMail"
 
-function InboxRow({ email }: { email: Email }) {
-  const archive = useArchive(email.message_id)
-  const followUp = useFollowUp(email.message_id)
-  const draft = useDraft(email.message_id)
-  const busy = archive.isPending || followUp.isPending || draft.isPending
-  const error = archive.error ?? followUp.error ?? draft.error
-
-  return (
-    <Fragment>
-      <tr className="border-t border-border/70 align-top transition-colors hover:bg-muted/30">
-        <td className="px-3 py-2.5">
-          <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-[10px] tracking-[0.08em] uppercase text-muted-foreground">
-            {email.category}
-          </span>
-          {email.priority && (
-            <span className="ml-1.5 text-[10px] font-medium tracking-[0.16em] uppercase text-destructive">
-              Priority
-            </span>
-          )}
-        </td>
-        <td className="max-w-40 truncate px-3 py-2.5 text-muted-foreground">
-          {email.sender}
-        </td>
-        <td className="px-3 py-2.5">
-          <p className={email.unread ? "font-medium" : undefined}>
-            {email.subject}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">
-            {email.snippet}
-          </p>
-        </td>
-        <td className="px-3 py-2.5 text-xs whitespace-nowrap text-muted-foreground">
-          {new Date(email.received_at).toLocaleDateString()}
-        </td>
-        <td className="px-3 py-2.5">
-          <div className="flex justify-end gap-1">
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={busy}
-              onClick={() => draft.mutate()}
-            >
-              Draft
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={busy}
-              onClick={() => followUp.mutate()}
-            >
-              Follow up
-            </Button>
-            <Button
-              size="xs"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => archive.mutate()}
-            >
-              Archive
-            </Button>
-          </div>
-        </td>
-      </tr>
-      {error && (
-        <tr>
-          <td colSpan={5} className="px-3 pb-2 text-xs text-destructive">
-            {error.message}
-          </td>
-        </tr>
-      )}
-      {followUp.data && (
-        <tr>
-          <td colSpan={5} className="px-3 pb-2 text-xs text-muted-foreground">
-            Follow-up #{followUp.data.id} due{" "}
-            {new Date(followUp.data.due_at).toLocaleDateString()}.
-          </td>
-        </tr>
-      )}
-      {draft.data && (
-        <tr>
-          <td colSpan={5} className="px-3 pb-3">
-            <Card size="sm">
-              <CardContent className="flex flex-col gap-1">
-                <p className="text-[10px] tracking-[0.14em] uppercase text-muted-foreground">
-                  Draft {draft.data.draft_id} to {draft.data.to} ·{" "}
-                  {draft.data.subject}
-                </p>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {draft.data.body}
-                </p>
-              </CardContent>
-            </Card>
-          </td>
-        </tr>
-      )}
-    </Fragment>
-  )
-}
-
-function count(total: number): string {
-  if (total === 0) return "No messages yet"
-  return total === 1 ? "1 message" : `${total} messages`
-}
+const blankDraft = { to: "", subject: "", body: "", thread_id: null }
+const fallbackFolders = [
+  { id: "inbox", name: "Inbox", kind: "folder" as const, unread: 0, total: 0 },
+]
 
 export function InboxPage() {
-  const { data: messages = [], isPending } = useInbox()
-  const refresh = useRefreshInbox()
+  const timeZone = useTimezone()
+  const folders = useFolders()
+  const sort = useSortInbox()
+  const markRead = useLabelChange()
+  const [folder, setFolder] = useState("inbox")
+  const [query, setQuery] = useState("")
+  const [selected, setSelected] = useState<string | null>(null)
+  const [composing, setComposing] = useState(false)
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [help, setHelp] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const threads = useThreads(folder, query)
+  const rows = threads.data?.pages.flatMap((page) => page.threads) ?? []
+  const list = folders.data ?? fallbackFolders
+  const userLabels = list
+    .filter((item) => item.kind !== "folder")
+    .map((item) => item.name)
+  const detailOpen = selected !== null || composing
+  const open = (id: string, unread: boolean) => {
+    setComposing(false)
+    setSelected(id)
+    setCursor(id)
+    if (unread) markRead.mutate({ threadId: id, remove: ["UNREAD"] })
+  }
+  const openId = (id: string | null) => {
+    const row = rows.find((thread) => thread.id === id)
+    if (row) open(row.id, row.unread)
+  }
+  const move = (delta: number) => {
+    const next = stepId(
+      rows.map((thread) => thread.id),
+      cursor ?? selected,
+      delta,
+    )
+    if (selected) openId(next)
+    else setCursor(next)
+  }
+  const compose = () => {
+    setSelected(null)
+    setComposing(true)
+  }
+
+  useShortcuts(
+    help
+      ? {}
+      : {
+          j: () => move(1),
+          k: () => move(-1),
+          Enter: () => openId(cursor),
+          u: () => {
+            setSelected(null)
+            setComposing(false)
+          },
+          c: compose,
+          "/": () => searchRef.current?.focus(),
+          "?": () => setHelp(true),
+        },
+  )
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <main className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-        <PageHeader
-          eyebrow="Mail"
-          title="Inbox"
-          description={`${count(messages.length)}${
-            refresh.data
-              ? ` · ${refresh.data.labeled} sorted, ${refresh.data.failed} failed`
-              : ""
-          }`}
-          actions={
-            <Button
-              size="sm"
-              disabled={refresh.isPending}
-              onClick={() => refresh.mutate()}
-            >
-              Refresh inbox
-            </Button>
-          }
-        />
-        {refresh.error && (
-          <p className="text-sm text-destructive">{refresh.error.message}</p>
-        )}
-        <div className="overflow-x-auto rounded-lg border border-border bg-card/60 shadow-[inset_0_1px_0_var(--marble-1)]">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/40 text-left text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2.5 font-medium">Category</th>
-                <th className="px-3 py-2.5 font-medium">From</th>
-                <th className="px-3 py-2.5 font-medium">Subject</th>
-                <th className="px-3 py-2.5 font-medium">Received</th>
-                <th className="px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {messages.map((email) => (
-                <InboxRow key={email.message_id} email={email} />
-              ))}
-              {!isPending && messages.length === 0 && (
-                <tr className="border-t border-border/70">
-                  <td colSpan={5} className="px-3 py-6 text-muted-foreground">
-                    No messages yet. Choose Refresh inbox to load your mail.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <div className="flex items-baseline gap-3">
+          <p className="text-[9px] font-medium tracking-[0.32em] uppercase text-muted-foreground">
+            Mail
+          </p>
+          <h1 className="font-heading text-2xl leading-none tracking-tight">
+            Inbox
+          </h1>
         </div>
-      </main>
-    </ScrollArea>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={sort.isPending}
+            onClick={() => sort.mutate()}
+          >
+            {sort.isPending ? "Sorting…" : "Sort with Homer"}
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Keyboard shortcuts"
+            onClick={() => setHelp(true)}
+          >
+            <Keyboard />
+          </Button>
+          <Button size="sm" onClick={compose}>
+            <PenLine /> New message
+          </Button>
+        </div>
+      </header>
+      {(folders.error ?? sort.error) && (
+        <p className="border-b border-border px-5 py-2 text-sm text-destructive">
+          {errorText(folders.error ?? sort.error)}
+        </p>
+      )}
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[13rem_minmax(18rem,24rem)_minmax(0,1fr)]">
+        <aside className="flex flex-col gap-3 border-b border-border p-3 lg:overflow-y-auto lg:border-r lg:border-b-0">
+          <FolderList
+            folders={list}
+            selected={folder}
+            onSelect={(id) => {
+              setFolder(id)
+              setQuery("")
+              setSelected(null)
+              setCursor(null)
+            }}
+          />
+        </aside>
+        <div
+          className={cn(
+            "min-h-0 flex-col border-border lg:flex lg:border-r",
+            detailOpen ? "hidden" : "flex",
+          )}
+        >
+          <ThreadList
+            key={folder}
+            threads={threads}
+            folder={folder}
+            query={query}
+            timeZone={timeZone}
+            selected={selected}
+            cursor={cursor}
+            searchRef={searchRef}
+            onSearch={setQuery}
+            onOpen={open}
+          />
+        </div>
+        <div
+          className={cn(
+            "min-h-0 flex-col lg:flex",
+            detailOpen ? "flex" : "hidden",
+          )}
+        >
+          {composing ? (
+            <div className="overflow-y-auto p-4">
+              <MailComposer
+                initial={blankDraft}
+                title="New message"
+                onClose={() => setComposing(false)}
+              />
+            </div>
+          ) : selected ? (
+            <ReadingPane
+              key={selected}
+              threadId={selected}
+              timeZone={timeZone}
+              userLabels={userLabels}
+              shortcuts={!help}
+              onClose={() => setSelected(null)}
+            />
+          ) : (
+            <div className="hidden flex-1 items-center justify-center p-6 text-sm text-muted-foreground lg:flex">
+              Choose a conversation to read it here.
+            </div>
+          )}
+        </div>
+      </div>
+      {help && (
+        <ShortcutsHelp
+          title="Inbox"
+          shortcuts={inboxShortcuts}
+          onClose={() => setHelp(false)}
+        />
+      )}
+    </main>
   )
 }
