@@ -1,12 +1,19 @@
 from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 Span = tuple[datetime, datetime]
 WEEKEND = {5, 6}
 
 
-def parse_time(value: str) -> datetime:
+def parse_time(value: str, timezone: str | None = None) -> datetime:
+    """Parses ISO 8601; a time without an offset is read in `timezone`, or UTC when none."""
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    if parsed.tzinfo:
+        return parsed
+    try:
+        return parsed.replace(tzinfo=ZoneInfo(timezone) if timezone else UTC)
+    except ZoneInfoNotFoundError as error:
+        raise ValueError(f"unknown timezone {timezone!r}") from error
 
 
 def parse_working_hours(value: str) -> tuple[time, time]:

@@ -78,7 +78,13 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
     pending = await call(mcp, "mail_send", draft_id=draft["draft_id"])
     assert pending["approval_required"] is True
     assert pending["action"] == "mail_send"
-    assert pending["payload"] == {"draft_id": draft["draft_id"]}
+    assert pending["payload"] == {
+        "draft_id": draft["draft_id"],
+        "to": "maya.lindqvist@example.test",
+        "subject": "Re: Kickoff for the Northwind website redesign",
+        "body": "Thursday 14:00 works for us.",
+        "thread_id": KICKOFF_THREAD,
+    }
     assert "maya.lindqvist@example.test" in pending["preview"]
     assert "Thursday 14:00" in pending["preview"]
     assert sim.get("/_sim/state").json()["sent"] == before["sent"]
@@ -178,6 +184,101 @@ async def test_calendar_list_and_free_slots(mcp: Client, sim: httpx.Client) -> N
         end=(weekend + timedelta(days=2)).isoformat(),
     )
     assert none["slots"] == []
+
+
+async def test_slots_and_event_in_the_users_timezone(mcp: Client, sim: httpx.Client) -> None:
+    """09:00-11:00 Asia/Karachi on this week's Tuesday: the seeded 10:00 UTC event is 15:00 there,
+    so the window is free and the slot comes back with the +05:00 offset the request used."""
+    monday, _ = this_week()
+    day = f"{monday + timedelta(days=1):%Y-%m-%d}"
+    with_offset = await call(
+        mcp,
+        "cal_find_free_slots",
+        start=f"{day}T09:00:00+05:00",
+        end=f"{day}T11:00:00+05:00",
+        duration_minutes=60,
+        working_hours="09:00-11:00",
+    )
+    assert with_offset["slots"] == [
+        {"start": f"{day}T09:00:00+05:00", "end": f"{day}T10:00:00+05:00"}
+    ]
+    naive = await call(
+        mcp,
+        "cal_find_free_slots",
+        start=f"{day}T09:00:00",
+        end=f"{day}T11:00:00",
+        duration_minutes=60,
+        working_hours="09:00-11:00",
+        timezone="Asia/Karachi",
+    )
+    assert naive == with_offset
+
+    slot = with_offset["slots"][0]
+    pending = await call(
+        mcp,
+        "cal_create",
+        title="Pitch prep",
+        start=slot["start"],
+        end=slot["end"],
+        attendees=["maya.lindqvist@example.test"],
+    )
+    assert pending["approval_required"] and pending["action"] == "cal_create"
+    assert pending["payload"]["attendees"] == ["maya.lindqvist@example.test"]
+    assert pending["payload"]["start"] == f"{day}T09:00:00+05:00"
+    assert "09:00-10:00 (UTC+05:00) with maya.lindqvist@example.test" in pending["preview"]
+    localised = await call(
+        mcp,
+        "cal_create",
+        title="Pitch prep",
+        start=f"{day}T09:00:00",
+        end=f"{day}T10:00:00",
+        attendees=["maya.lindqvist@example.test"],
+        timezone="Asia/Karachi",
+    )
+    assert localised["payload"] == pending["payload"]
+    created = await call(mcp, "execute", action="cal_create", payload=pending["payload"])
+    assert created["start"] == f"{day}T09:00:00+05:00"
+    assert created["attendees"] == ["maya.lindqvist@example.test"]
+    bad = await call(
+        mcp, "cal_find_free_slots", start=f"{day}T09:00:00", end=f"{day}T11:00:00", timezone="Mars"
+    )
+    assert bad == {"error": "invalid_argument", "message": "unknown timezone 'Mars'"}
+
+
+async def test_draft_update_keeps_the_id_and_delete_removes_it(
+    mcp: Client, sim: httpx.Client
+) -> None:
+    draft = await call(
+        mcp,
+        "mail_draft",
+        to="maya.lindqvist@example.test",
+        subject="Re: Kickoff for the Northwind website redesign",
+        body="Thursday works.",
+        thread_id=KICKOFF_THREAD,
+    )
+    drafts_before = sim.get("/_sim/state").json()["drafts"]
+    updated = await call(
+        mcp,
+        "mail_draft_update",
+        draft_id=draft["draft_id"],
+        to="tomas.keller@example.test",
+        subject="Changed",
+        body="Friday works better.",
+        thread_id=KICKOFF_THREAD,
+    )
+    assert updated["draft_id"] == draft["draft_id"]
+    assert updated["thread_id"] == KICKOFF_THREAD
+    assert sim.get("/_sim/state").json()["drafts"] == drafts_before
+    pending = await call(mcp, "mail_send", draft_id=draft["draft_id"])
+    assert pending["payload"]["to"] == "tomas.keller@example.test"
+    assert pending["payload"]["body"] == "Friday works better."
+    assert await call(mcp, "mail_draft_delete", draft_id=draft["draft_id"]) == {
+        "deleted": True,
+        "draft_id": draft["draft_id"],
+    }
+    assert sim.get("/_sim/state").json()["drafts"] == drafts_before - 1
+    gone = await call(mcp, "mail_send", draft_id=draft["draft_id"])
+    assert gone["error"] == "draft_not_found"
 
 
 async def test_calendar_write_tools_need_approval(mcp: Client, sim: httpx.Client) -> None:

@@ -271,3 +271,23 @@ def test_insert_and_trash(client: TestClient) -> None:
         f"{GMAIL}/messages", params={"q": "subject:Inserted -in:trash"}, headers=AUTH
     )
     assert [m["id"] for m in found.json()["messages"]] == [reply["id"]]
+
+
+def test_draft_update_keeps_the_id_and_delete_removes_it(client: TestClient) -> None:
+    raw = raw_draft("maya.lindqvist@example.test", "Re: Kickoff", "Thursday works.")
+    draft = client.post(f"{GMAIL}/drafts", json={"message": {"raw": raw}}, headers=AUTH).json()
+    messages = client.get("/_sim/state").json()["messages"]
+    new_raw = raw_draft("tomas.keller@example.test", "Changed", "Friday works.")
+    updated = client.put(
+        f"{GMAIL}/drafts/{draft['id']}", json={"message": {"raw": new_raw}}, headers=AUTH
+    ).json()
+    assert updated["id"] == draft["id"]
+    assert updated["message"]["threadId"] == draft["message"]["threadId"]
+    counts = client.get("/_sim/state").json()
+    assert counts["drafts"] == 1 and counts["messages"] == messages
+    full = client.get(f"{GMAIL}/drafts/{draft['id']}", headers=AUTH).json()
+    headers = {h["name"]: h["value"] for h in full["message"]["payload"]["headers"]}
+    assert headers["To"] == "tomas.keller@example.test" and headers["Subject"] == "Changed"
+    assert client.delete(f"{GMAIL}/drafts/{draft['id']}", headers=AUTH).status_code == 200
+    assert client.get("/_sim/state").json()["drafts"] == 0
+    assert client.delete(f"{GMAIL}/drafts/{draft['id']}", headers=AUTH).status_code == 404
