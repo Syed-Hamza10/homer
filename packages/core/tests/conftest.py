@@ -5,9 +5,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from pydantic import SecretStr
 from pydantic_ai.mcp import MCPToolset
@@ -19,8 +21,16 @@ from homer_core.agent.intents import OUTPUT_TOOL as INTENT_TOOL
 from homer_core.config import Settings
 from homer_core.main import create_app
 from homer_core.mcp.manager import McpManager
+from homer_mcp_google.auth import TokenStore
+from homer_mcp_google.client import GoogleClient
+from homer_mcp_google.settings import Settings as GoogleSettings
+from homer_mcp_google.tools import GoogleTools, register
+from homer_net import Allowlist, AllowlistedClient
+from homer_sim.app import create_app as create_sim_app
+from homer_sim.state import KNOWN_TOKEN
 
 FAKE_SERVERS = Path(__file__).parent / "fake_servers"
+SIM_BASE = "http://sim.test"
 
 PASSPHRASE = "test-pass"
 ORIGIN = {"Origin": "http://127.0.0.1:8000"}
@@ -119,6 +129,33 @@ async def live_mcp(fake_google: ModuleType) -> AsyncIterator[McpManager]:
     await manager.start()
     yield manager
     await manager.stop()
+
+
+def sim_google_server(home: Path, sim: FastAPI) -> FastMCP:
+    """The real google MCP server, in process, with its HTTP routed to the simulator app."""
+    settings = GoogleSettings(home=home, api_base=SIM_BASE, token_url=f"{SIM_BASE}/token")
+    settings.token_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.token_path.write_text(json.dumps({"token": KNOWN_TOKEN, "refresh_token": "r"}))
+    client = GoogleClient(settings, TokenStore(settings.token_path))
+    client.http = AllowlistedClient(
+        Allowlist({"sim.test"}), transport=httpx.ASGITransport(app=sim), timeout=30.0
+    )
+    server = FastMCP("homer-google")
+    register(server, GoogleTools(client))
+    return server
+
+
+@pytest.fixture
+def sim() -> FastAPI:
+    return create_sim_app()
+
+
+@pytest.fixture
+def sim_mcp(tmp_path: Path, sim: FastAPI) -> McpManager:
+    server = sim_google_server(tmp_path / "google", sim)
+    return McpManager(
+        {"google": MCPToolset(Client(server), id="google", tool_error_behavior="failed")}
+    )
 
 
 @pytest.fixture
