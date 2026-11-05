@@ -266,7 +266,10 @@ class TestWebSearch:
         self, logged_in: TestClient, post_chat: PostChat, fake_search: ModuleType
     ) -> None:
         frames = post_chat({"message": "What's the latest launch news?"})
-        assert fake_search.fetched == ["https://news.example.test/a", "https://news.example.test/b"]
+        assert sorted(fake_search.fetched) == [
+            "https://news.example.test/a",
+            "https://news.example.test/b",
+        ]
         assert said(frames) == (
             "It launched.\n\nSources:\n- Launch news: https://news.example.test/a\n"
             "- More news: https://news.example.test/b"

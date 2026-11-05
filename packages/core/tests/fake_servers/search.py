@@ -12,6 +12,7 @@ RESULTS = [
     {"title": "Old news", "url": "https://news.example.test/c", "snippet": "Snippet C"},
 ]
 fetched: list[str] = []
+queries: list[str] = []
 
 
 @server.tool
@@ -23,6 +24,7 @@ def health() -> dict[str, Any]:
 @server.tool
 def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
     """Searches the web."""
+    queries.append(query)
     if "off" in query.split():
         return {"error": "web_search_off"}
     return {"results": RESULTS[:max_results]}
