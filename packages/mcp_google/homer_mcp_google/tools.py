@@ -1,3 +1,4 @@
+import asyncio
 import functools
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
@@ -8,7 +9,16 @@ from fastmcp import FastMCP
 
 from homer_mcp_google.auth import ReconnectRequired
 from homer_mcp_google.client import GoogleClient, GoogleError
-from homer_mcp_google.messages import build_raw, headers_of, neutral_message
+from homer_mcp_google.messages import (
+    attachments_of,
+    build_raw,
+    has_attachment,
+    headers_of,
+    html_body,
+    neutral_message,
+    plain_snippet,
+    untrusted,
+)
 from homer_mcp_google.slots import free_slots, parse_time, parse_working_hours
 from homer_net import BlockedHostError
 
@@ -19,12 +29,18 @@ PEOPLE = "/v1/people:searchContacts"
 MAX_RESULTS = 25
 PREVIEW_BODY_CHARS = 300
 RECENT_DRAFTS = 5
+PARALLEL_READS = 5
+MAX_SLOTS = 10
+FOLDER_LABELS = {"INBOX", "STARRED", "SENT", "DRAFT"}
 TIER_1 = {"mail_send", "cal_create", "cal_update", "cal_delete"}
 TOOL_NAMES = [
     "health",
     "mail_search",
     "mail_get",
     "mail_thread",
+    "mail_list_threads",
+    "mail_labels",
+    "mail_thread_label",
     "mail_changes_since",
     "mail_draft",
     "mail_draft_update",
@@ -33,6 +49,7 @@ TOOL_NAMES = [
     "mail_label",
     "mail_archive",
     "cal_list",
+    "cal_get",
     "cal_find_free_slots",
     "cal_create",
     "cal_update",
@@ -66,15 +83,34 @@ def approval(action: str, payload: dict[str, Any], preview: str) -> dict[str, An
     return {"approval_required": True, "action": action, "payload": payload, "preview": preview}
 
 
+def video_link(event: dict[str, Any]) -> str:
+    entry_points = (event.get("conferenceData") or {}).get("entryPoints", [])
+    videos = [e.get("uri", "") for e in entry_points if e.get("entryPointType") == "video"]
+    return event.get("hangoutLink") or next(iter(videos), "")
+
+
 def neutral_event(event: dict[str, Any]) -> dict[str, Any]:
+    attendees = event.get("attendees", [])
     return {
         "id": event["id"],
         "title": event.get("summary", ""),
         "start": event["start"].get("dateTime") or event["start"].get("date"),
         "end": event["end"].get("dateTime") or event["end"].get("date"),
+        "all_day": "dateTime" not in event["start"],
         "location": event.get("location", ""),
         "description": event.get("description", ""),
-        "attendees": [a["email"] for a in event.get("attendees", [])],
+        "attendees": [a["email"] for a in attendees],
+        "people": [
+            {
+                "email": a["email"],
+                "name": a.get("displayName", ""),
+                "response": a.get("responseStatus", "needsAction"),
+                "organizer": bool(a.get("organizer")),
+            }
+            for a in attendees
+        ],
+        "organizer": (event.get("organizer") or {}).get("email", ""),
+        "video_link": video_link(event),
         "metadata": {"status": event.get("status"), "html_link": event.get("htmlLink")},
     }
 
@@ -99,6 +135,49 @@ def check_span(start: str, end: str, timezone: str | None = None) -> tuple[datet
     if closes <= opens:
         raise ValueError("end must be after start")
     return opens, closes
+
+
+async def bounded(calls: list[Awaitable[dict[str, Any]]]) -> list[dict[str, Any]]:
+    gate = asyncio.Semaphore(PARALLEL_READS)
+
+    async def one(call: Awaitable[dict[str, Any]]) -> dict[str, Any]:
+        async with gate:
+            return await call
+
+    return list(await asyncio.gather(*(one(call) for call in calls)))
+
+
+def full_message(message: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
+    payload = message.get("payload", {})
+    return {
+        **neutral_message(message, names, with_body=True),
+        "cc": headers_of(message).get("cc", ""),
+        "body_html": untrusted(html_body(payload)),
+        "attachments": attachments_of(payload),
+    }
+
+
+def thread_summary(thread: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
+    messages = thread.get("messages", [])
+    first, latest = headers_of(messages[0]), headers_of(messages[-1])
+    label_ids = sorted({label for m in messages for label in m.get("labelIds", [])})
+    senders = list(dict.fromkeys(headers_of(m).get("from", "") for m in messages))
+    return {
+        "id": thread["id"],
+        "subject": first.get("subject", ""),
+        "from": latest.get("from", ""),
+        "to": latest.get("to", ""),
+        "senders": senders,
+        "date": latest.get("date", ""),
+        "internal_date": messages[-1].get("internalDate"),
+        "snippet": untrusted(plain_snippet(messages[-1])),
+        "message_count": len(messages),
+        "unread": "UNREAD" in label_ids,
+        "starred": "STARRED" in label_ids,
+        "has_attachment": any(has_attachment(m) for m in messages),
+        "labels": [names.get(label, label) for label in label_ids],
+        "label_ids": label_ids,
+    }
 
 
 class GoogleTools:
@@ -133,12 +212,69 @@ class GoogleTools:
         return await self._message(message_id, await self._label_names())
 
     @guarded
-    async def mail_thread(self, thread_id: str) -> dict[str, Any]:
-        """Returns every message in a thread, oldest first."""
+    async def mail_thread(self, thread_id: str, html: bool = False) -> dict[str, Any]:
+        """Returns every message in a thread, oldest first. With html, each message also carries
+        cc, its raw HTML body and its attachment names."""
         thread = await self.client.get(f"{GMAIL}/threads/{thread_id}", format="full")
         names = await self._label_names()
+        if html:
+            return {
+                "id": thread_id,
+                "messages": [full_message(m, names) for m in thread["messages"]],
+            }
         messages = [neutral_message(m, names, with_body=True) for m in thread["messages"]]
         return {"id": thread_id, "messages": messages}
+
+    async def _thread_summary(self, thread_id: str, names: dict[str, str]) -> dict[str, Any]:
+        thread = await self.client.get(f"{GMAIL}/threads/{thread_id}", format="metadata")
+        return thread_summary(thread, names)
+
+    @guarded
+    async def mail_list_threads(
+        self,
+        query: str = "",
+        label: str | None = None,
+        page_token: str | None = None,
+        max_results: int = 20,
+    ) -> dict[str, Any]:
+        """Lists conversations newest first by Gmail query and optional label id, one page at a
+        time. Pass next_page_token back as page_token for the next page."""
+        params: dict[str, Any] = {"q": query, "maxResults": min(max_results, MAX_RESULTS)}
+        if label:
+            params["labelIds"] = label
+        if page_token:
+            params["pageToken"] = page_token
+        listing = await self.client.get(f"{GMAIL}/threads", **params)
+        names = await self._label_names()
+        reads = [self._thread_summary(t["id"], names) for t in listing.get("threads", [])]
+        return {
+            "threads": await bounded(reads),
+            "next_page_token": listing.get("nextPageToken"),
+            "estimate": listing.get("resultSizeEstimate", 0),
+        }
+
+    @guarded
+    async def mail_labels(self) -> dict[str, Any]:
+        """Lists the main folders and the user's labels with conversation totals and unread
+        counts."""
+        listing = await self.client.get(f"{GMAIL}/labels")
+        wanted = [
+            label["id"]
+            for label in listing.get("labels", [])
+            if label.get("type") == "user" or label["id"] in FOLDER_LABELS
+        ]
+        details = await bounded([self.client.get(f"{GMAIL}/labels/{i}") for i in wanted])
+        labels = [
+            {
+                "id": label["id"],
+                "name": label["name"],
+                "type": label.get("type", "user"),
+                "unread": label.get("threadsUnread", 0),
+                "total": label.get("threadsTotal", 0),
+            }
+            for label in details
+        ]
+        return {"labels": labels}
 
     async def _fresh_cursor(self, stale: bool) -> dict[str, Any]:
         profile = await self.client.get(f"{GMAIL}/profile")
@@ -253,9 +389,10 @@ class GoogleTools:
         }
         return approval("mail_send", payload, preview)
 
-    async def _modify_labels(
-        self, message_id: str, add: list[str] | None, remove: list[str] | None
-    ) -> dict[str, Any]:
+    async def _label_change(
+        self, add: list[str] | None, remove: list[str] | None
+    ) -> tuple[dict[str, str], dict[str, list[str]]]:
+        """Label names to ids, creating missing labels to add; returns the names by id too."""
         names = await self._label_names()
         ids = {name.lower(): label_id for label_id, name in names.items()}
         add_ids = []
@@ -266,10 +403,13 @@ class GoogleTools:
                 names[created["id"]] = name
             add_ids.append(ids[name.lower()])
         remove_ids = [ids[name.lower()] for name in remove or [] if name.lower() in ids]
-        modified = await self.client.post(
-            f"{GMAIL}/messages/{message_id}/modify",
-            {"addLabelIds": add_ids, "removeLabelIds": remove_ids},
-        )
+        return names, {"addLabelIds": add_ids, "removeLabelIds": remove_ids}
+
+    async def _modify_labels(
+        self, message_id: str, add: list[str] | None, remove: list[str] | None
+    ) -> dict[str, Any]:
+        names, change = await self._label_change(add, remove)
+        modified = await self.client.post(f"{GMAIL}/messages/{message_id}/modify", change)
         return neutral_message(modified, names, with_body=False)
 
     @guarded
@@ -278,6 +418,17 @@ class GoogleTools:
     ) -> dict[str, Any]:
         """Adds and removes labels by name on one message, creating missing labels to add."""
         return await self._modify_labels(message_id, add, remove)
+
+    @guarded
+    async def mail_thread_label(
+        self, thread_id: str, add: list[str] | None = None, remove: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Adds and removes labels by name on every message of a thread, creating missing labels
+        to add."""
+        names, change = await self._label_change(add, remove)
+        modified = await self.client.post(f"{GMAIL}/threads/{thread_id}/modify", change)
+        label_ids = sorted({x for m in modified.get("messages", []) for x in m.get("labelIds", [])})
+        return {"id": thread_id, "labels": [names.get(x, x) for x in label_ids]}
 
     @guarded
     async def mail_archive(self, message_id: str) -> dict[str, Any]:
@@ -301,6 +452,11 @@ class GoogleTools:
         return {"events": [neutral_event(e) for e in await self._events(start, end)]}
 
     @guarded
+    async def cal_get(self, event_id: str) -> dict[str, Any]:
+        """Returns one event with attendee responses, organizer and video link."""
+        return neutral_event(await self.client.get(f"{CALENDAR}/{event_id}"))
+
+    @guarded
     async def cal_find_free_slots(
         self,
         start: str,
@@ -308,21 +464,22 @@ class GoogleTools:
         duration_minutes: int = 30,
         working_hours: str = "09:00-17:00",
         timezone: str | None = None,
+        attendees: list[str] | None = None,
+        limit: int = 3,
     ) -> dict[str, Any]:
-        """Proposes up to three free slots of the given length inside working hours on weekdays.
-        Times without an offset are read in `timezone` (IANA name), else UTC."""
+        """Proposes free slots (three unless `limit` says otherwise) of the given length inside
+        working hours on weekdays when the user and any attendees are all free; times without an
+        offset are read in `timezone` (IANA name), else UTC."""
         opens, closes = check_span(start, end, timezone)
+        calendars = [{"id": "primary"}, *({"id": email} for email in attendees or [])]
         result = await self.client.post(
             FREE_BUSY,
-            {
-                "timeMin": opens.isoformat(),
-                "timeMax": closes.isoformat(),
-                "items": [{"id": "primary"}],
-            },
+            {"timeMin": opens.isoformat(), "timeMax": closes.isoformat(), "items": calendars},
         )
         busy = [
             (parse_time(b["start"]), parse_time(b["end"]))
-            for b in result["calendars"]["primary"].get("busy", [])
+            for calendar in result["calendars"].values()
+            for b in calendar.get("busy", [])
         ]
         slots = free_slots(
             opens,
@@ -330,6 +487,7 @@ class GoogleTools:
             busy,
             timedelta(minutes=duration_minutes),
             parse_working_hours(working_hours),
+            min(max(limit, 1), MAX_SLOTS),
         )
         return {"slots": [{"start": s.isoformat(), "end": e.isoformat()} for s, e in slots]}
 

@@ -404,3 +404,80 @@ async def test_server_only_ever_contacted_the_simulator(
         .fetchall()
     )
     assert hosts == [(sim_url.removeprefix("http://"),)]
+
+
+async def test_list_threads_pages_and_summaries(mcp: Client, sim: httpx.Client) -> None:
+    first = await call(mcp, "mail_list_threads", label="INBOX", max_results=3)
+    assert first["next_page_token"] == "3" and first["estimate"] == 5
+    newest = first["threads"][0]
+    assert newest["subject"] == "Quarterly review deck" and newest["message_count"] == 2
+    assert newest["unread"] is True and newest["starred"] is False
+    assert newest["snippet"].startswith("<untrusted>")
+    rest = await call(mcp, "mail_list_threads", label="INBOX", page_token="3")
+    assert rest["next_page_token"] is None
+    both = [*first["threads"], *rest["threads"]]
+    assert len({t["id"] for t in both}) == 5
+    invoice = next(t for t in both if t["subject"].startswith("Invoice"))
+    assert invoice["has_attachment"] is True and "Invoices" in invoice["labels"]
+    found = await call(mcp, "mail_list_threads", query="from:maya")
+    assert [t["id"] for t in found["threads"]] == [KICKOFF_THREAD]
+
+
+async def test_labels_carry_counts(mcp: Client, sim: httpx.Client) -> None:
+    labels = {label["id"]: label for label in (await call(mcp, "mail_labels"))["labels"]}
+    assert set(labels) == {"INBOX", "STARRED", "SENT", "DRAFT", "Label_1", "Label_2", "Label_3"}
+    assert labels["INBOX"]["unread"] == 4 and labels["INBOX"]["total"] == 5
+    assert labels["Label_1"] == {
+        "id": "Label_1",
+        "name": "Clients",
+        "type": "user",
+        "unread": 1,
+        "total": 2,
+    }
+
+
+async def test_thread_with_html_and_thread_labels(mcp: Client, sim: httpx.Client) -> None:
+    thread = await call(mcp, "mail_thread", thread_id="5378fcbd5bd7dbed", html=True)
+    proposal = thread["messages"][0]
+    assert "<script>" in proposal["body_html"] and proposal["cc"] == ""
+    invoice = await call(mcp, "mail_thread", thread_id="8273f4fcf6b11f03", html=True)
+    assert invoice["messages"][0]["attachments"] == [
+        {"filename": "invoice-2026-041.pdf", "mime_type": "application/pdf", "size": 48213}
+    ]
+    plain = await call(mcp, "mail_thread", thread_id="5378fcbd5bd7dbed")
+    assert "body_html" not in plain["messages"][0]
+    changed = await call(
+        mcp, "mail_thread_label", thread_id=KICKOFF_THREAD, add=["STARRED"], remove=["UNREAD"]
+    )
+    assert "STARRED" in changed["labels"] and "UNREAD" not in changed["labels"]
+    archived = await call(mcp, "mail_thread_label", thread_id=KICKOFF_THREAD, remove=["INBOX"])
+    assert "INBOX" not in archived["labels"] and "Clients" in archived["labels"]
+
+
+async def test_event_detail_and_slots_with_attendees(mcp: Client, sim: httpx.Client) -> None:
+    call_event = await call(mcp, "cal_get", event_id="evt_003")
+    assert call_event["people"] == [
+        {
+            "email": "samuel.okafor@example.test",
+            "name": "",
+            "response": "accepted",
+            "organizer": False,
+        }
+    ]
+    assert call_event["all_day"] is False and call_event["organizer"]
+    kickoff = await call(mcp, "cal_get", event_id="evt_002")
+    assert kickoff["video_link"] == "https://meet.example.test/abc-defg-hij"
+    monday, _ = this_week()
+    wednesday = monday + timedelta(days=2)
+    slots = (
+        await call(
+            mcp,
+            "cal_find_free_slots",
+            start=f"{wednesday:%Y-%m-%d}T13:00:00+00:00",
+            end=f"{wednesday:%Y-%m-%d}T17:00:00+00:00",
+            duration_minutes=60,
+            attendees=["samuel.okafor@example.test"],
+            limit=5,
+        )
+    )["slots"]
+    assert [s["start"][11:16] for s in slots] == ["13:00", "15:00"]

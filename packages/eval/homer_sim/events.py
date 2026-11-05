@@ -10,12 +10,19 @@ def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def moment(edge: dict[str, str]) -> datetime:
+    """A timed edge as given; an all-day edge as midnight UTC of its date."""
+    if "dateTime" in edge:
+        return parse_time(edge["dateTime"])
+    return datetime.fromisoformat(edge["date"]).replace(tzinfo=UTC)
+
+
 def event_start(event: dict[str, Any]) -> datetime:
-    return parse_time(event["start"]["dateTime"])
+    return moment(event["start"])
 
 
 def event_end(event: dict[str, Any]) -> datetime:
-    return parse_time(event["end"]["dateTime"])
+    return moment(event["end"])
 
 
 class Calendar:
@@ -36,7 +43,10 @@ class Calendar:
                     "location": item["location"],
                     "start": {"dateTime": _at(day, item["start"]), "timeZone": TIMEZONE},
                     "end": {"dateTime": _at(day, item["end"]), "timeZone": TIMEZONE},
-                    "attendees": [{"email": email} for email in item["attendees"]],
+                    "attendees": [
+                        a if isinstance(a, dict) else {"email": a} for a in item["attendees"]
+                    ],
+                    **({"hangoutLink": item["hangout_link"]} if "hangout_link" in item else {}),
                 },
                 now,
             )
@@ -61,6 +71,7 @@ class Calendar:
             "start": body["start"],
             "end": body["end"],
             "attendees": attendees,
+            **({"hangoutLink": body["hangoutLink"]} if "hangoutLink" in body else {}),
         }
 
     def get(self, event_id: str) -> dict[str, Any]:
@@ -84,7 +95,7 @@ class Calendar:
 
     def insert(self, body: dict[str, Any], now: datetime) -> dict[str, Any]:
         for key in ("start", "end"):
-            if "dateTime" not in body.get(key, {}):
+            if not {"dateTime", "date"} & set(body.get(key, {})):
                 raise ApiError(400, f"Missing {key} time.")
         self.counter += 1
         event = self._build(f"evt_{self.counter:04d}", body, now)
@@ -105,10 +116,13 @@ class Calendar:
     def delete(self, event_id: str) -> None:
         self.get(event_id)["status"] = "cancelled"
 
-    def busy(self, time_min: str, time_max: str) -> list[dict[str, str]]:
+    def busy(self, time_min: str, time_max: str, calendar: str = "primary") -> list[dict[str, str]]:
+        """Busy times of the owner's calendar, or of the events another address attends."""
         return [
-            {"start": event["start"]["dateTime"], "end": event["end"]["dateTime"]}
+            {"start": event_start(event).isoformat(), "end": event_end(event).isoformat()}
             for event in self.between(time_min, time_max)
+            if calendar in ("primary", self.owner)
+            or calendar in [a["email"] for a in event.get("attendees", [])]
         ]
 
 

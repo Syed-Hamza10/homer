@@ -291,3 +291,87 @@ def test_draft_update_keeps_the_id_and_delete_removes_it(client: TestClient) -> 
     assert client.delete(f"{GMAIL}/drafts/{draft['id']}", headers=AUTH).status_code == 200
     assert client.get("/_sim/state").json()["drafts"] == 0
     assert client.delete(f"{GMAIL}/drafts/{draft['id']}", headers=AUTH).status_code == 404
+
+
+def test_threads_list_by_label_with_pages(client: TestClient) -> None:
+    first = client.get(
+        f"{GMAIL}/threads", params={"labelIds": "INBOX", "maxResults": 2}, headers=AUTH
+    ).json()
+    assert [t["id"] for t in first["threads"]][0] == "f9623318d52f5445"
+    assert first["nextPageToken"] == "2" and first["resultSizeEstimate"] == 5
+    rest = client.get(
+        f"{GMAIL}/threads",
+        params={"labelIds": "INBOX", "maxResults": 10, "pageToken": "2"},
+        headers=AUTH,
+    ).json()
+    assert len(rest["threads"]) == 3 and "nextPageToken" not in rest
+    starred = client.get(f"{GMAIL}/threads", params={"labelIds": "STARRED"}, headers=AUTH)
+    assert starred.json()["threads"] == []
+
+
+def test_trash_stays_out_of_lists_unless_asked(client: TestClient) -> None:
+    client.post(f"{GMAIL}/messages/5cc2f1f78a46377d/trash", headers=AUTH)
+    ids = [m["id"] for m in client.get(f"{GMAIL}/messages", headers=AUTH).json()["messages"]]
+    assert "5cc2f1f78a46377d" not in ids
+    trash = client.get(f"{GMAIL}/messages", params={"labelIds": "TRASH"}, headers=AUTH).json()
+    assert [m["id"] for m in trash["messages"]] == ["5cc2f1f78a46377d"]
+
+
+def test_label_counts_and_thread_modify(client: TestClient) -> None:
+    inbox = client.get(f"{GMAIL}/labels/INBOX", headers=AUTH).json()
+    assert inbox["threadsTotal"] == 5 and inbox["threadsUnread"] == 4
+    modified = client.post(
+        f"{GMAIL}/threads/{KICKOFF_THREAD}/modify",
+        json={"removeLabelIds": ["UNREAD"], "addLabelIds": ["STARRED"]},
+        headers=AUTH,
+    ).json()
+    assert all("STARRED" in m["labelIds"] for m in modified["messages"])
+    after = client.get(f"{GMAIL}/labels/INBOX", headers=AUTH).json()
+    assert after["threadsUnread"] == 3
+    assert client.get(f"{GMAIL}/labels/Nope", headers=AUTH).status_code == 404
+
+
+def test_attachments_and_html_snippets(client: TestClient) -> None:
+    invoice = client.get(f"{GMAIL}/messages/aed89caf9a7af277", headers=AUTH).json()
+    assert invoice["payload"]["mimeType"] == "multipart/mixed"
+    assert invoice["payload"]["parts"][1]["filename"] == "invoice-2026-041.pdf"
+    meta = client.get(
+        f"{GMAIL}/messages/aed89caf9a7af277", params={"format": "metadata"}, headers=AUTH
+    ).json()
+    assert meta["payload"]["mimeType"] == "multipart/mixed" and "parts" not in meta["payload"]
+    proposal = client.get(f"{GMAIL}/messages/81b178b5ebec82bd", headers=AUTH).json()
+    assert proposal["snippet"].startswith("Proposal Hi Jordan") and "<" not in proposal["snippet"]
+
+
+def test_free_busy_per_attendee(client: TestClient) -> None:
+    now = datetime.now(UTC)
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0)
+    span = {"timeMin": monday.isoformat(), "timeMax": (monday + timedelta(days=7)).isoformat()}
+    items = [{"id": "primary"}, {"id": "samuel.okafor@example.test"}]
+    calendars = client.post(
+        "/calendar/v3/freeBusy", json={**span, "items": items}, headers=AUTH
+    ).json()["calendars"]
+    assert len(calendars["primary"]["busy"]) == 6
+    assert len(calendars["samuel.okafor@example.test"]["busy"]) == 1
+    call = client.get(f"{CAL}/evt_003", headers=AUTH).json()
+    assert call["attendees"][0]["responseStatus"] == "accepted"
+    assert client.get(f"{CAL}/evt_002", headers=AUTH).json()["hangoutLink"]
+
+
+def test_all_day_events(client: TestClient) -> None:
+    today = datetime.now(UTC).date()
+    body = {
+        "summary": "Offsite",
+        "start": {"date": today.isoformat()},
+        "end": {"date": (today + timedelta(days=1)).isoformat()},
+    }
+    created = client.post(CAL, json=body, headers=AUTH).json()
+    found = client.get(
+        CAL,
+        params={
+            "timeMin": f"{today.isoformat()}T00:00:00Z",
+            "timeMax": f"{(today + timedelta(days=1)).isoformat()}T00:00:00Z",
+        },
+        headers=AUTH,
+    ).json()["items"]
+    assert created["id"] in [event["id"] for event in found]
