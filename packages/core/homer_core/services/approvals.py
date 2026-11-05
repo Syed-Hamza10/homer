@@ -17,6 +17,8 @@ log = structlog.get_logger(__name__)
 APPROVAL_TTL = timedelta(hours=24)
 EXECUTE_TIMEOUT = 60.0
 CHANNEL_WEB = "web"
+SEND_ACTION = "mail_send"
+DRAFT_DELETE_TOOL = "mail_draft_delete"
 
 
 class NotPending(DomainError):
@@ -32,23 +34,33 @@ def payload_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def create_from_tool_result(
-    session: Session, user_id: int, server: str, result: dict[str, Any]
+def create(
+    session: Session,
+    user_id: int,
+    server: str,
+    action: str,
+    payload: dict[str, Any],
+    preview: str,
 ) -> Approval:
-    payload = result["payload"]
     approval = Approval(
         user_id=user_id,
         server=server,
-        action=result["action"],
+        action=action,
         payload_json=json.dumps(payload),
         payload_hash=payload_hash(payload),
-        preview=result["preview"],
+        preview=preview,
         channel=CHANNEL_WEB,
     )
     session.add(approval)
     session.commit()
     session.refresh(approval)
     return approval
+
+
+def create_from_tool_result(
+    session: Session, user_id: int, server: str, result: dict[str, Any]
+) -> Approval:
+    return create(session, user_id, server, result["action"], result["payload"], result["preview"])
 
 
 def get_approval(session: Session, user: User, approval_id: int) -> Approval:
@@ -132,4 +144,16 @@ async def approve(session: Session, user: User, approval_id: int, manager: McpMa
 def reject(session: Session, user: User, approval_id: int) -> Approval:
     approval = get_approval(session, user, approval_id)
     transition_from_pending(session, approval, "rejected")
+    return approval
+
+
+async def discard(session: Session, user: User, approval_id: int, manager: McpManager) -> Approval:
+    """Rejects the approval and deletes the Gmail draft a rejected send leaves behind."""
+    approval = reject(session, user, approval_id)
+    draft_id = json.loads(approval.payload_json).get("draft_id")
+    if approval.action == SEND_ACTION and draft_id:
+        try:
+            await manager.call(approval.server, DRAFT_DELETE_TOOL, {"draft_id": draft_id})
+        except (ExecuteFailed, ServerUnavailable):
+            log.warning("draft_delete_failed", approval_id=approval.id, draft_id=draft_id)
     return approval

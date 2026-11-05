@@ -4,14 +4,17 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
 
+from homer_core.agent.intents import OUTPUT_TOOL as INTENT_TOOL
+from homer_core.config import Settings
 from homer_core.db.models import Message, TokenCounter
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
+JobModel = Callable[..., Model]
 
 
 def test_sse_order_and_persistence(
@@ -71,15 +74,8 @@ class TestHistory:
         return []
 
     @pytest.fixture
-    def model(self, seen: list[list[ModelMessage]]) -> Model:
-        def classify(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-            return ModelResponse(parts=[TextPart(content="system")])
-
-        async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-            seen.append(messages)
-            yield "ok"
-
-        return FunctionModel(function=classify, stream_function=respond)
+    def model(self, jobs: JobModel, seen: list[list[ModelMessage]]) -> Model:
+        return jobs([], text="ok", seen=seen)
 
     def test_second_message_carries_history(
         self, logged_in: TestClient, post_chat: PostChat, seen: list[list[ModelMessage]]
@@ -90,22 +86,51 @@ class TestHistory:
         assert frames[-1][0] == "done"
 
         texts = [part.content for message in seen[-1] for part in message.parts]
-        assert texts[:3] == ["first", "ok", "second"]
+        assert [text for text in texts if text in ("first", "ok", "second")] == [
+            "first",
+            "ok",
+            "second",
+        ]
         rows = logged_in.get(f"/api/conversations/{conversation_id}/messages").json()
         assert [m["content"] for m in rows] == ["first", "ok", "second", "ok"]
+
+
+class TestPlaceholderName:
+    @pytest.fixture
+    def seen(self) -> list[list[ModelMessage]]:
+        return []
+
+    @pytest.fixture
+    def settings(self, settings: Settings) -> Settings:
+        return settings.model_copy(update={"user_name": "there"})
+
+    @pytest.fixture
+    def model(self, jobs: JobModel, seen: list[list[ModelMessage]]) -> Model:
+        return jobs([], text="Nice to meet you, Omar.", seen=seen)
+
+    def test_the_prompt_never_names_the_user_there(
+        self, logged_in: TestClient, post_chat: PostChat, seen: list[list[ModelMessage]]
+    ) -> None:
+        post_chat({"message": "Hello, I'm Omar"})
+        instructions = [
+            message.instructions
+            for message in seen[-1]
+            if isinstance(message, ModelRequest) and message.instructions
+        ]
+        assert instructions and "name is" not in instructions[0]
 
 
 class TestModelFailure:
     @pytest.fixture
     def model(self) -> Model:
-        def classify(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-            return ModelResponse(parts=[TextPart(content="mail")])
+        def chat(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[ToolCallPart(INTENT_TOOL, {"intents": [{"kind": "chat"}]})])
 
         async def explode(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
             raise RuntimeError("secret internal detail")
             yield ""
 
-        return FunctionModel(function=classify, stream_function=explode)
+        return FunctionModel(function=chat, stream_function=explode)
 
     def test_model_failure_yields_generic_error_event(
         self, logged_in: TestClient, app: FastAPI, post_chat: PostChat

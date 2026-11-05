@@ -3,6 +3,7 @@ from typing import Any
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 
+from homer_core.agent.prompt import known_name
 from homer_core.db.models import User
 from homer_core.mcp.manager import McpManager
 from homer_core.services.errors import DomainError, NotFound
@@ -37,7 +38,7 @@ async def draft_reply(
     body = clean(message.get("body", ""))
     prompt = PROMPT.format(
         tone=rules.tone,
-        signature=rules.signature or user.name,
+        signature=rules.signature or known_name(user.name) or "a short sign-off with no name",
         sender=sender,
         subject=subject,
         body=body,

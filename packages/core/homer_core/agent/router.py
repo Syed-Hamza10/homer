@@ -1,23 +1,24 @@
 import re
 from dataclasses import dataclass
-
-from pydantic_ai import Agent
-from pydantic_ai.models import Model
-from pydantic_ai.usage import RunUsage
-
-from homer_core.agent.toolsets import DEFAULT_TOOLSET, TOOLSETS
+from typing import Literal
 
 COMMAND = re.compile(
     r"^/(brief|inbox|digest|slot|draft|followup|remind|approve|reject)\b\s*(.*)$", re.DOTALL
 )
-WORD = re.compile(r"[a-z+]+")
-
-CLASSIFY_PROMPT = (
-    "You pick which tools an assistant needs for a user message. "
-    f"Answer with exactly one word from this list and nothing else: {', '.join(TOOLSETS)}. "
-    "mail is email only; calendar is events and free slots; mail+calendar is both or unclear; "
-    "search is the web; system is the current time or a reminder."
+POLITE = r"(?:\s*,?\s*(?:please|now|thanks))*[.!]*"
+APPROVE = re.compile(
+    r"^(?:(?:yes|yep|ok|okay|sure)[,.!]?\s*)?(?:send it|send|approved?|confirm(?:ed)?|go ahead"
+    rf"|create it|do it|book it|yes){POLITE}$",
+    re.IGNORECASE,
 )
+REJECT = re.compile(
+    r"^(?:no|nope|cancel(?: it)?|discard(?: it)?|reject(?:ed)?|don'?t send(?: it)?"
+    rf"|do not send(?: it)?){POLITE}$",
+    re.IGNORECASE,
+)
+CONVERSATIONAL = re.compile(r"^(?:yes|yep|ok|okay|sure|no|nope)[.!]*$", re.IGNORECASE)
+
+Decision = Literal["approve", "reject"]
 
 
 @dataclass(frozen=True)
@@ -33,15 +34,15 @@ def parse_command(message: str) -> Command | None:
     return Command(match.group(1), match.group(2).strip())
 
 
-def build_classifier(model: Model) -> Agent[None, str]:
-    return Agent(model, output_type=str, instructions=CLASSIFY_PROMPT)
+def parse_decision(message: str) -> Decision | None:
+    text = message.strip()
+    if APPROVE.match(text):
+        return "approve"
+    if REJECT.match(text):
+        return "reject"
+    return None
 
 
-def normalise(answer: str) -> str:
-    words = WORD.findall(answer.lower())
-    return next((word for word in words if word in TOOLSETS), DEFAULT_TOOLSET)
-
-
-async def classify(classifier: Agent[None, str], message: str) -> tuple[str, RunUsage]:
-    result = await classifier.run(message)
-    return normalise(result.output), result.usage
+def is_conversational(message: str) -> bool:
+    """True for a bare yes or no, which may answer something other than an approval."""
+    return CONVERSATIONAL.match(message.strip()) is not None

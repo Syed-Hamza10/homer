@@ -8,7 +8,6 @@ from fastmcp.client import Client
 from fastmcp.client.transports import StdioTransport
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, FilteredToolset
 
 from homer_core.config import Settings
 from homer_core.services.errors import DomainError
@@ -18,7 +17,6 @@ log = structlog.get_logger(__name__)
 SERVERS = ("google", "search", "system")
 EXECUTOR_TOOL = "execute"
 PROFILE_TOOL = "mail_profile"
-HIDDEN_TOOLS = frozenset({EXECUTOR_TOOL, PROFILE_TOOL, "health"})
 INIT_TIMEOUT = 30.0
 
 
@@ -81,13 +79,6 @@ class McpManager:
     async def stop(self) -> None:
         for toolset in self.toolsets.values():
             await toolset.__aexit__(None, None, None)
-
-    def model_toolset(self) -> AbstractToolset[Any]:
-        visible = [
-            FilteredToolset(toolset, lambda ctx, tool: tool.name not in HIDDEN_TOOLS)
-            for toolset in self.toolsets.values()
-        ]
-        return CombinedToolset(visible)
 
     async def call(self, server: str, tool: str, args: dict[str, Any]) -> Any:
         toolset = self.toolsets.get(server)

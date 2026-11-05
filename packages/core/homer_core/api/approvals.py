@@ -4,7 +4,8 @@ from fastapi import APIRouter
 
 from homer_core.api.deps import CurrentUser, RuntimeDep, SessionDep
 from homer_core.api.schemas.approvals import ApprovalOut
-from homer_core.services import approvals
+from homer_core.services import approval_edits, approvals
+from homer_core.services.approval_edits import EventEdit, MailEdit
 
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 
@@ -26,5 +27,22 @@ async def approve(
 
 
 @router.post("/{approval_id}/reject")
-def reject(approval_id: int, user: CurrentUser, session: SessionDep) -> ApprovalOut:
-    return ApprovalOut.from_row(approvals.reject(session, user, approval_id))
+async def reject(
+    approval_id: int, user: CurrentUser, session: SessionDep, runtime: RuntimeDep
+) -> ApprovalOut:
+    return ApprovalOut.from_row(
+        await approvals.discard(session, user, approval_id, runtime.manager)
+    )
+
+
+@router.post("/{approval_id}/edit")
+async def edit(
+    approval_id: int,
+    body: MailEdit | EventEdit,
+    user: CurrentUser,
+    session: SessionDep,
+    runtime: RuntimeDep,
+) -> ApprovalOut:
+    return ApprovalOut.from_row(
+        await approval_edits.edit(session, user, approval_id, runtime.manager, body)
+    )
