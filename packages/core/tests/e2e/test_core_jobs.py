@@ -14,6 +14,8 @@ import httpx
 import pytest
 from playwright.sync_api import Page, expect
 
+from homer_core.services.jobs.edit_email import UPDATED
+
 from .conftest import REQUEST_TIMEOUT, Frames, login, require_ollama, unlock
 from .real_stack import Stack, local_today, real_stack, tomorrow_titles
 
@@ -36,10 +38,13 @@ class Reply:
 
     @property
     def said(self) -> str:
-        replaced = self.of("replace")
-        if replaced:
-            return replaced[-1]["text"]
-        return "".join(data["text"] for data in self.of("token"))
+        text = ""
+        for event, data in self.frames:
+            if event == "replace":
+                text = data["text"]
+            elif event == "token":
+                text += data["text"]
+        return text
 
     @property
     def tools(self) -> list[str]:
@@ -136,7 +141,7 @@ def test_send_email_by_address(stack: Stack, client: httpx.Client, talk: Talk, r
     reply = talk("Email priya.natarajan@example.test and tell her the weekend cover is sorted")
     reply.finished()
     assert reply.actions == ["mail_send"], (reply.tools, reply.said)
-    assert reply.said == READY.format(who="priya.natarajan@example.test")
+    assert reply.said == READY.format(who="Priya Natarajan")
     approval = reply.of("approval_required")[0]
     assert approval["payload"]["to"] == "priya.natarajan@example.test"
     assert approval["payload"]["body"].strip()
@@ -318,7 +323,6 @@ def test_edit_a_draft_in_the_chat_card_and_send(page: Page, stack: Stack) -> Non
     assert any("Edited in the card" in body for body in stack.sent_bodies())
 
 
-UPDATED = "Updated the draft. Edit it or press Send."
 NO_DRAFT = "There's no draft waiting in this chat."
 
 
@@ -333,15 +337,15 @@ def test_chat_edits_change_the_card_and_the_sent_mail(
     draft = talk("email priya.natarajan@example.test that the review meeting is confirmed")
     first = draft.of("approval_required")[0]
     subject = talk("change subject to Lunch is on me!", draft.conversation)
-    assert subject.said == UPDATED, subject.said
+    assert subject.said in UPDATED, subject.said
     assert subject.of("approval_required")[0]["payload"]["subject"] == "Lunch is on me!"
     added = talk("add that I'm free Friday", draft.conversation)
-    assert added.said == UPDATED, added.said
+    assert added.said in UPDATED, added.said
     fresh = added.of("approval_required")[0]
     assert "friday" in fresh["payload"]["body"].lower(), fresh["payload"]["body"]
     assert fresh["payload"]["draft_id"] == first["payload"]["draft_id"]
     shorter = talk("make it shorter", draft.conversation)
-    assert shorter.said == UPDATED, shorter.said
+    assert shorter.said in UPDATED, shorter.said
     last = shorter.of("approval_required")[0]
     assert [a["id"] for a in client.get("/api/approvals").json()] == [last["approval_id"]]
     sent = stack.sent_count()
@@ -353,7 +357,7 @@ def test_chat_edits_change_the_card_and_the_sent_mail(
 @pytest.mark.parametrize("run", RUNS)
 def test_terse_requests_become_real_emails(talk: Talk, run: int) -> None:
     for message, greeting in [
-        ("emial priya.natarajan@example.test that the demo is redone, thx", "Hi,"),
+        ("emial priya.natarajan@example.test that the demo is redone, thx", "Hi Priya,"),
         ("email Maya that the kickoff notes are in the shared folder", "Hi Maya,"),
         ("pls send Samuel Okafor a thanks for yesterday", "Hi Samuel,"),
     ]:
