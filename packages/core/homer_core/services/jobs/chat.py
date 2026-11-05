@@ -3,7 +3,7 @@ import re
 from homer_core.agent.claims import review
 from homer_core.agent.intents import ChatIntent
 from homer_core.agent.prompt import render_prompt
-from homer_core.services.jobs import web_search
+from homer_core.services.jobs import mail_status, web_search
 from homer_core.services.jobs.turn import Turn
 
 HISTORY_MESSAGES = 10
@@ -20,8 +20,8 @@ async def run(turn: Turn, intent: ChatIntent) -> None:
     instructions = render_prompt(turn.user.name, turn.user.timezone, turn.now)
     index = await turn.stream(turn.message, instructions, turn.history[-HISTORY_MESSAGES:])
     text = turn.segments[index]
-    reviewed = review(text, bool(turn.approvals))
+    reviewed = review(text, acted=False)
     if reviewed != text:
-        turn.replace(index, reviewed)
+        turn.replace(index, mail_status.honest(turn) or reviewed)
     elif UNKNOWN.search(text) and SEARCH_SERVER in turn.runtime.manager.toolsets:
         await web_search.answer(turn, turn.message, turn.message)

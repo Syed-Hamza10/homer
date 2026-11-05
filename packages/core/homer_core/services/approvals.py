@@ -19,6 +19,7 @@ EXECUTE_TIMEOUT = 60.0
 CHANNEL_WEB = "web"
 SEND_ACTION = "mail_send"
 DRAFT_DELETE_TOOL = "mail_draft_delete"
+SUPERSEDED = "superseded"
 
 
 class NotPending(DomainError):
@@ -82,14 +83,41 @@ def expire_stale(session: Session) -> int:
     return count
 
 
-def list_pending(session: Session, user: User) -> list[Approval]:
+def list_pending(
+    session: Session, user: User, conversation_id: int | None = None
+) -> list[Approval]:
+    """Every pending approval of the user, or only those of one conversation when given."""
     expire_stale(session)
     statement = (
         select(Approval)
         .where(Approval.user_id == user.id, Approval.status == "pending")
         .order_by(Approval.id)
     )
+    if conversation_id is not None:
+        statement = statement.where(Approval.conversation_id == conversation_id)
     return list(session.exec(statement))
+
+
+def latest_send(
+    session: Session, user: User, conversation_id: int | None, recipient: str | None
+) -> Approval | None:
+    """The newest live email approval to the recipient, or in the conversation without one."""
+    expire_stale(session)
+    statement = (
+        select(Approval)
+        .where(
+            Approval.user_id == user.id,
+            Approval.action == SEND_ACTION,
+            Approval.status != SUPERSEDED,
+        )
+        .order_by(Approval.id.desc())
+    )
+    if recipient is None:
+        statement = statement.where(Approval.conversation_id == conversation_id)
+    for approval in session.exec(statement):
+        if recipient is None or recipient in json.loads(approval.payload_json).get("to", ""):
+            return approval
+    return None
 
 
 def transition_from_pending(session: Session, approval: Approval, status: str) -> None:

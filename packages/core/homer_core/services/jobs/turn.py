@@ -64,6 +64,7 @@ class Turn:
     segments: list[str] = field(default_factory=list)
     usage: RunUsage = field(default_factory=RunUsage)
     approvals: list[Approval] = field(default_factory=list)
+    conversation_id: int | None = None
 
     @property
     def answer(self) -> str:
@@ -97,6 +98,10 @@ class Turn:
         return result
 
     def requested(self, approval: Approval) -> None:
+        approval.conversation_id = self.conversation_id
+        self.session.add(approval)
+        self.session.commit()
+        self.session.refresh(approval)
         self.approvals.append(approval)
         self.emit(
             "approval_required",

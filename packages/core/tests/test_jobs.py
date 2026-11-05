@@ -13,20 +13,22 @@ from pydantic_ai.models import Model
 from sqlmodel import Session
 from structlog.testing import capture_logs
 
-from homer_core.agent.claims import HONEST
+from homer_core.agent.claims import HONEST, review
 from homer_core.config import Settings
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
 from homer_core.services.jobs.send_email import request_send
 from homer_core.services.jobs.turn import RECONNECT
 
-from .conftest import load_fake_server
+from .conftest import ORIGIN, TEXT, load_fake_server
 
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
 JobModel = Callable[..., Model]
 KARACHI = "Asia/Karachi"
 READY = "Draft to {who} is ready. Edit it or press Send."
+PAID = "The invoice was paid in full this morning."
+PAID_BODY = f"Hi,\n\n{PAID}\n\nBest,\nTester"
 
 
 def of(frames: Frames, name: str) -> list[dict[str, Any]]:
@@ -81,8 +83,15 @@ def text() -> str:
 
 
 @pytest.fixture
-def model(jobs: JobModel, intents: list[list[dict[str, Any]]], text: str) -> Model:
-    return jobs(intents, text=text, email={"subject": "Invoice", "body": "It is paid."})
+def written() -> list[dict[str, str]]:
+    return [{"subject": "Invoice", "body": PAID}]
+
+
+@pytest.fixture
+def model(
+    jobs: JobModel, intents: list[list[dict[str, Any]]], text: str, written: list[dict[str, str]]
+) -> Model:
+    return jobs(intents, text=text, email=written)
 
 
 class TestSendEmail:
@@ -97,7 +106,7 @@ class TestSendEmail:
             {
                 "to": "bob@example.test",
                 "subject": "Invoice",
-                "body": "It is paid.",
+                "body": PAID_BODY,
                 "thread_id": None,
             }
         ]
@@ -107,7 +116,7 @@ class TestSendEmail:
             "draft_id": "d1",
             "to": "bob@example.test",
             "subject": "Invoice",
-            "body": "It is paid.",
+            "body": PAID_BODY,
             "thread_id": "",
         }
         assert requested["preview"].startswith("Send email to bob@example.test\nSubject: Invoice")
@@ -403,3 +412,138 @@ class TestReconnect:
         assert said(frames) == RECONNECT
         assert of(frames, "google_reconnect") == [{"url": "/settings"}]
         assert len(calls(frames)) == 1
+
+
+class TestDraftQuality:
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")]],
+                [
+                    {"subject": "the invoice is paid", "body": "the invoice is paid"},
+                    {"subject": "Invoice paid", "body": f"Dear [Name],\n\n{PAID}\n\nBest,\n[Name]"},
+                ],
+            )
+        ],
+    )
+    def test_echo_is_rewritten_and_placeholders_are_dropped(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email Ada the invoice is paid"})
+        assert fake_google.drafted[0]["subject"] == "Invoice paid"
+        assert fake_google.drafted[0]["body"] == f"Hi Ada,\n\n{PAID}\n\nBest,\nTester"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [([[email("bob@example.test")]], [{"subject": "Note", "body": "Paid, see [link]."}])],
+    )
+    def test_a_second_bad_draft_is_cleaned_and_signed_with_the_signature(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        settings = logged_in.get("/api/settings").json()
+        logged_in.put("/api/settings", json={**settings, "signature": "Cheers, Jo"}, headers=ORIGIN)
+        post_chat({"message": "email bob paid"})
+        assert fake_google.drafted[0]["body"] == "Hi,\n\nPaid, see.\n\nCheers, Jo"
+
+
+class TestChatEdit:
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")]],
+                [
+                    {"subject": "Invoice", "body": PAID},
+                    {"subject": "Paid", "body": "Paid in full this morning."},
+                ],
+            )
+        ],
+    )
+    def test_make_it_shorter_updates_the_same_draft_and_the_card(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        first = post_chat({"message": "email Ada the invoice is paid"})
+        chat = first[0][1]["conversation_id"]
+        old = of(first, "approval_required")[0]
+        frames = post_chat({"message": "make it shorter", "conversation_id": chat})
+        assert said(frames) == "Updated the draft. Edit it or press Send."
+        fresh = of(frames, "approval_required")[0]
+        assert fresh["approval_id"] != old["approval_id"]
+        assert fresh["payload"]["draft_id"] == old["payload"]["draft_id"]
+        assert fresh["payload"]["body"] == "Hi Ada,\n\nPaid in full this morning.\n\nBest,\nTester"
+        assert fake_google.updated[0]["body"] == fresh["payload"]["body"]
+        pending = logged_in.get("/api/approvals").json()
+        assert [a["id"] for a in pending] == [fresh["approval_id"]]
+
+    @pytest.mark.parametrize("intents", [[[email("bob@example.test")]]])
+    def test_subject_change_is_literal_and_needs_no_model(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        chat = post_chat({"message": "email bob"})[0][1]["conversation_id"]
+        frames = post_chat(
+            {"message": "change subject to Lunch is on me!", "conversation_id": chat}
+        )
+        payload = of(frames, "approval_required")[0]["payload"]
+        assert payload["subject"] == "Lunch is on me!" and payload["body"] == PAID_BODY
+        assert frames[-1][1]["input_tokens"] == 0
+
+    def test_edit_words_without_a_draft_go_to_the_intent_call(
+        self, logged_in: TestClient, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "make it shorter"})
+        assert of(frames, "approval_required") == [] and said(frames) == TEXT
+
+
+class TestSendStatus:
+    @pytest.mark.parametrize("intents", [[[email("bob@example.test")]]])
+    def test_answers_from_the_approvals(
+        self, logged_in: TestClient, post_chat: PostChat, origin: dict[str, str]
+    ) -> None:
+        first = post_chat({"message": "email bob"})
+        chat = first[0][1]["conversation_id"]
+        status = post_chat({"message": "did you send it?", "conversation_id": chat})
+        assert said(status) == (
+            "Not yet. The draft to bob@example.test is waiting for you to press Send."
+        )
+        approval_id = of(first, "approval_required")[0]["approval_id"]
+        logged_in.post(f"/api/approvals/{approval_id}/approve", headers=origin)
+        sent = said(post_chat({"message": "did you send my email to Bob?"}))
+        assert sent.startswith("Yes, sent to bob@example.test at ")
+        assert said(post_chat({"message": "did you send it?"})) == (
+            "No. Nothing has been sent from this chat."
+        )
+        assert said(post_chat({"message": "did you send it to Zed?"})) == (
+            "No. I have not sent anything to zed."
+        )
+
+    @pytest.mark.parametrize(
+        ("intents", "text"), [([[email("bob@example.test")]], "Sending it now. Done.")]
+    )
+    def test_claim_with_a_draft_waiting_tells_the_truth(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        chat = post_chat({"message": "email bob"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "hm, ship that thing over", "conversation_id": chat})
+        assert of(frames, "replace") == [
+            {
+                "text": "I have not sent it. The draft to bob@example.test is waiting for you "
+                "to press Send."
+            }
+        ]
+        assert fake_google.executed == []
+
+
+@pytest.mark.parametrize(
+    ("text", "claims"),
+    [
+        ('Sending email to bob@example.test with subject "Budget". Done.', True),
+        ('Subject changed to "Lunch is on me!". Ready to send.', True),
+        ('Added "I\'m free Friday" to the draft. Press Send when ready.', True),
+        ("I've updated the draft to be shorter.", True),
+        ("Rosa sent you two emails about the proposal.", False),
+        ("Your name is Omar.", False),
+    ],
+)
+def test_claim_guard_catches_send_and_edit_claims(text: str, claims: bool) -> None:
+    assert (review(text, acted=False) == HONEST) is claims
