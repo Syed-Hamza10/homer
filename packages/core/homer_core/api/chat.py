@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -17,8 +18,9 @@ def sse_frame(event: chat.ChatEvent) -> str:
 
 
 async def frames(events: AsyncIterator[chat.ChatEvent]) -> AsyncIterator[str]:
-    async for event in events:
-        yield sse_frame(event)
+    async with aclosing(events):
+        async for event in events:
+            yield sse_frame(event)
 
 
 @router.post("/chat")

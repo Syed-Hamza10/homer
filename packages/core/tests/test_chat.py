@@ -1,4 +1,6 @@
+import asyncio
 from collections.abc import AsyncIterator, Callable
+from contextlib import suppress
 from typing import Any
 
 import pytest
@@ -11,7 +13,8 @@ from sqlmodel import Session, select
 
 from homer_core.agent.intents import OUTPUT_TOOL as INTENT_TOOL
 from homer_core.config import Settings
-from homer_core.db.models import Message, TokenCounter
+from homer_core.db.models import Message, TokenCounter, User
+from homer_core.services import chat
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
 JobModel = Callable[..., Model]
@@ -141,3 +144,72 @@ class TestModelFailure:
         with Session(app.state.engine) as session:
             roles = [m.role for m in session.exec(select(Message))]
         assert roles == ["user"]
+
+
+class TestStop:
+    @pytest.fixture
+    def cancelled(self) -> list[bool]:
+        return []
+
+    @pytest.fixture
+    def model(self, cancelled: list[bool]) -> Model:
+        def chat_intent(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[ToolCallPart(INTENT_TOOL, {"intents": [{"kind": "chat"}]})])
+
+        async def hang(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+            yield "Half an ans"
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.append(True)
+                raise
+
+        return FunctionModel(function=chat_intent, stream_function=hang)
+
+    @staticmethod
+    def saved(app: FastAPI) -> list[tuple[str, str, bool]]:
+        with Session(app.state.engine) as session:
+            rows = session.exec(select(Message).order_by(Message.id))
+            return [(m.role, m.content, m.stopped) for m in rows]
+
+    async def test_cancelled_run_saves_the_partial_answer_as_stopped(
+        self, logged_in: TestClient, app: FastAPI, cancelled: list[bool]
+    ) -> None:
+        first_token = asyncio.Event()
+        with Session(app.state.engine) as session:
+            user = session.get(User, 1)
+            assert user is not None
+            events = chat.stream(session, user, app.state.runtime, None, "Tell me a story")
+
+            async def consume() -> None:
+                async for event in events:
+                    if event.name == "token":
+                        first_token.set()
+
+            task = asyncio.create_task(consume())
+            await first_token.wait()
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            await asyncio.sleep(0.05)
+
+        assert self.saved(app) == [
+            ("user", "Tell me a story", False),
+            ("assistant", "Half an ans", True),
+        ]
+        assert cancelled == [True]
+
+    async def test_closed_stream_saves_the_partial_answer_as_stopped(
+        self, logged_in: TestClient, app: FastAPI, cancelled: list[bool]
+    ) -> None:
+        with Session(app.state.engine) as session:
+            user = session.get(User, 1)
+            assert user is not None
+            events = chat.stream(session, user, app.state.runtime, None, "Tell me a story")
+            while (await anext(events)).name != "token":
+                pass
+            await events.aclose()
+            await asyncio.sleep(0.05)
+
+        assert self.saved(app)[-1] == ("assistant", "Half an ans", True)
+        assert cancelled == [True]
