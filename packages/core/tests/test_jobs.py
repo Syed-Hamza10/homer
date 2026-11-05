@@ -263,17 +263,14 @@ class TestWebSearch:
         ("intents", "text"),
         [([[{"kind": "web_search", "query": "launch news"}]], "It launched.")],
     )
-    def test_reads_two_pages_and_ends_with_sources(
+    def test_answers_from_the_snippets_and_ends_with_sources(
         self, logged_in: TestClient, post_chat: PostChat, fake_search: ModuleType
     ) -> None:
         frames = post_chat({"message": "What's the latest launch news?"})
-        assert sorted(fake_search.fetched) == [
-            "https://news.example.test/a",
-            "https://news.example.test/b",
-        ]
+        assert calls(frames)[0] == "web_search"
         assert said(frames) == (
-            "It launched.\n\nSources:\n- Launch news: https://news.example.test/a\n"
-            "- More news: https://news.example.test/b"
+            "It launched.\n\n**Sources**\n- [Launch news](https://news.example.test/a)\n"
+            "- [More news](https://news.example.test/b)\n- [Old news](https://news.example.test/c)"
         )
 
     @pytest.mark.parametrize("intents", [[[{"kind": "web_search", "query": "news off"}]]])
@@ -286,7 +283,7 @@ class TestWebSearch:
     ) -> None:
         frames = post_chat({"message": "Who won yesterday?"})
         assert calls(frames)[0] == "web_search"
-        assert said(frames).endswith("- More news: https://news.example.test/b")
+        assert said(frames).endswith("- [Old news](https://news.example.test/c)")
 
 
 class TestClaimGuard:

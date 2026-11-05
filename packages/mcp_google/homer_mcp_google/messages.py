@@ -119,6 +119,7 @@ def neutral_message(
             "history_id": message.get("historyId"),
             "internal_date": message.get("internalDate"),
             "message_id_header": headers.get("message-id", ""),
+            "list_unsubscribe": bool(headers.get("list-unsubscribe")),
         },
     }
     if with_body:

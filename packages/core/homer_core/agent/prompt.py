@@ -18,7 +18,10 @@ def remembered(facts: list[str]) -> str:
     if not facts:
         return ""
     listed = "\n".join(f"- {fact}" for fact in facts)
-    return f"The user asked you to remember these facts; answer from them when asked:\n{listed}"
+    return (
+        'The user asked you to remember these facts ("you" and "your" in them mean the user); '
+        f"answer from them when asked:\n{listed}"
+    )
 
 
 def render_prompt(

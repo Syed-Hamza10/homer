@@ -3,6 +3,7 @@ from typing import Any
 
 from homer_core.agent.intents import Intent
 from homer_core.services.jobs import (
+    calculate,
     change_event,
     chat,
     create_event,
@@ -28,6 +29,8 @@ RUNNERS: dict[str, Callable[[Turn, Any], Awaitable[None]]] = {
     "remember": memory.remember,
     "forget": memory.drop,
     "day_summary": day_summary.run,
+    "recall": memory.recall,
+    "calculate": calculate.run,
     "chat": chat.run,
 }
 

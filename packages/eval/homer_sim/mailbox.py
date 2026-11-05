@@ -10,8 +10,14 @@ from typing import Any
 from homer_sim.errors import ApiError
 from homer_sim.query import matches
 
-SYSTEM_LABELS = ["INBOX", "SENT", "DRAFT", "UNREAD", "IMPORTANT", "STARRED", "SPAM", "TRASH"]
-HEADER_NAMES = ["From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"]
+SYSTEM_LABELS = [
+    *("INBOX", "SENT", "DRAFT", "UNREAD", "IMPORTANT", "STARRED", "SPAM", "TRASH"),
+    *("CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES"),
+]
+HEADER_NAMES = [
+    *("From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"),
+    "List-Unsubscribe",
+]
 SNIPPET_LENGTH = 100
 HIDDEN_LABELS = {"SPAM", "TRASH"}
 TAG = re.compile(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", re.IGNORECASE | re.DOTALL)

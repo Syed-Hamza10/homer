@@ -12,6 +12,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
 
+from homer_core.agent import routing
 from homer_core.agent.intents import Background, extract
 from homer_core.agent.router import (
     Command,
@@ -260,10 +261,13 @@ async def jobs(turn: Turn) -> None:
     except (JobError, DomainError) as error:
         turn.say(str(error))
         return
-    recent = turn.history[-INTENT_HISTORY:]
-    known = Background(turn.previous, turn.facts, turn.date_format)
-    intents, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
-    turn.usage.incr(usage)
+    intents = routing.routed(turn.message, turn.facts)
+    if intents is None:
+        recent = turn.history[-INTENT_HISTORY:]
+        known = Background(turn.previous, turn.facts, turn.date_format)
+        found, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
+        turn.usage.incr(usage)
+        intents = routing.refined(found, turn.message, turn.previous)
     log.info("intents", kinds=[intent.kind for intent in intents])
     for intent in intents:
         try:

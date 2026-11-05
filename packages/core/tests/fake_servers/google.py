@@ -87,14 +87,13 @@ def health() -> dict[str, Any]:
 @server.tool
 def mail_search(query: str, max_results: int = 10) -> list[dict[str, Any]]:
     """Searches mail. Returns the matching messages."""
-    terms = dict(term.partition(":")[::2] for term in query.split() if ":" in term)
-    sender = terms.get("from", "").lower()
-    label = "SENT" if terms.get("in", "").lower() == "sent" else ""
-    found = [
-        m
-        for m in MESSAGES.values()
-        if sender in m["from"].lower() and (not label or label in m.get("labels", []))
-    ]
+    found = list(MESSAGES.values())
+    for term in query.lower().split():
+        key, _, value = term.partition(":")
+        if key in ("from", "to"):
+            found = [m for m in found if value in m.get(key, "").lower()]
+        elif term in ("is:unread", "is:starred", "in:sent"):
+            found = [m for m in found if value.upper() in m.get("labels", [])]
     return found[:max_results]
 
 

@@ -28,6 +28,12 @@ def _term_matches(
             return value.upper() in labels
         case "label":
             return label_ids.get(value, value.upper()) in labels
+        case "category":
+            return f"CATEGORY_{value.upper()}" in labels
+        case "after":
+            return _sent_at(message) >= _moment(value)
+        case "before":
+            return _sent_at(message) < _moment(value)
         case "newer_than":
             return _sent_at(message) >= now - _span(value)
         case "older_than":
@@ -40,6 +46,13 @@ def _term_matches(
 
 def _span(value: str) -> timedelta:
     return timedelta(days=int(value[:-1]) * UNITS[value[-1]])
+
+
+def _moment(value: str) -> datetime:
+    """Gmail's after:/before: value: epoch seconds, or a YYYY/MM/DD date read as UTC midnight."""
+    if value.isdigit():
+        return datetime.fromtimestamp(int(value), tz=UTC)
+    return datetime.strptime(value.replace("-", "/"), "%Y/%m/%d").replace(tzinfo=UTC)
 
 
 def _sent_at(message: dict[str, Any]) -> datetime:
