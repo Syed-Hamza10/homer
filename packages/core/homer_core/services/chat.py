@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -22,7 +23,7 @@ from homer_core.agent.router import (
 from homer_core.agent.runtime import Runtime
 from homer_core.db.models import Conversation, Message, TokenCounter, User, utcnow
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
-from homer_core.services.conversations import get_conversation, list_messages
+from homer_core.services.conversations import get_conversation, list_messages, make_title
 from homer_core.services.errors import DomainError
 from homer_core.services.jobs import dispatch, edit_email, mail_status
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
@@ -30,7 +31,6 @@ from homer_core.services.rules import get_rules
 
 log = structlog.get_logger(__name__)
 
-TITLE_LENGTH = 60
 INTENT_HISTORY = 6
 GENERIC_ERROR = "The assistant could not answer. Please try again."
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
@@ -42,6 +42,16 @@ NOTHING_PENDING = "There's no draft waiting in this chat."
 class Outcome:
     answer: str = ""
     usage: RunUsage = field(default_factory=RunUsage)
+    shown: str = ""
+    created_approval: bool = False
+
+    def track(self, event: ChatEvent) -> None:
+        if event.name == "token":
+            self.shown += event.data["text"]
+        elif event.name == "replace":
+            self.shown = event.data["text"]
+        elif event.name == "approval_required":
+            self.created_approval = True
 
 
 def to_history(messages: list[Message]) -> list[ModelMessage]:
@@ -55,15 +65,28 @@ def to_history(messages: list[Message]) -> list[ModelMessage]:
 
 
 def start_conversation(session: Session, user: User, message: str) -> Conversation:
-    conversation = Conversation(user_id=user.id, title=message[:TITLE_LENGTH])
+    conversation = Conversation(user_id=user.id, title=make_title(message))
     session.add(conversation)
     session.commit()
     session.refresh(conversation)
     return conversation
 
 
-def save_message(session: Session, conversation: Conversation, role: str, content: str) -> Message:
-    message = Message(conversation_id=conversation.id, role=role, content=content)
+def save_message(
+    session: Session,
+    conversation: Conversation,
+    role: str,
+    content: str,
+    stopped: bool = False,
+    created_approval: bool = False,
+) -> Message:
+    message = Message(
+        conversation_id=conversation.id,
+        role=role,
+        content=content,
+        stopped=stopped,
+        created_approval=created_approval,
+    )
     conversation.updated_at = utcnow()
     session.add(message)
     session.add(conversation)
@@ -207,9 +230,12 @@ async def run_jobs(turn: Turn) -> None:
 
 async def run_turn(turn: Turn, outcome: Outcome) -> AsyncIterator[ChatEvent]:
     task = asyncio.create_task(run_jobs(turn))
-    while (event := await turn.events.get()) is not None:
-        yield event
-    await task
+    try:
+        while (event := await turn.events.get()) is not None:
+            yield event
+        await task
+    finally:
+        task.cancel()
     outcome.answer = turn.answer
     outcome.usage.incr(turn.usage)
 
@@ -246,8 +272,9 @@ async def respond(
         now=datetime.now(ZoneInfo(user.timezone)),
         conversation_id=conversation_id,
     )
-    async for event in run_turn(turn, outcome):
-        yield event
+    async with aclosing(run_turn(turn, outcome)) as events:
+        async for event in events:
+            yield event
 
 
 async def stream(
@@ -267,16 +294,30 @@ async def stream(
 
     outcome = Outcome()
     try:
-        async for event in respond(
-            session, user, runtime, conversation.id, history, message, outcome
-        ):
-            yield event
+        async with aclosing(
+            respond(session, user, runtime, conversation.id, history, message, outcome)
+        ) as events:
+            async for event in events:
+                outcome.track(event)
+                yield event
+    except (asyncio.CancelledError, GeneratorExit):
+        save_message(
+            session, conversation, "assistant", outcome.shown, True, outcome.created_approval
+        )
+        log.info("chat_stopped", conversation_id=conversation.id)
+        raise
     except Exception:
         log.exception("chat_failed", conversation_id=conversation.id)
         yield ChatEvent("error", {"message": GENERIC_ERROR})
         return
 
-    save_message(session, conversation, "assistant", outcome.answer)
+    save_message(
+        session,
+        conversation,
+        "assistant",
+        outcome.answer,
+        created_approval=outcome.created_approval,
+    )
     usage = outcome.usage
     count_tokens(session, user, usage.input_tokens, usage.output_tokens)
     yield ChatEvent(

@@ -8,6 +8,8 @@ type Props = {
   messages: Message[]
   draft: { user: string; assistant: string } | null
   activity: ActivityItem[]
+  status: string | null
+  onRegenerate: () => void
 }
 
 function draftStart(messages: Message[], user: string): number {
@@ -18,7 +20,13 @@ function draftStart(messages: Message[], user: string): number {
   return -1
 }
 
-export function MessageList({ messages, draft, activity }: Props) {
+export function MessageList({
+  messages,
+  draft,
+  activity,
+  status,
+  onRegenerate,
+}: Props) {
   const end = useRef<HTMLDivElement>(null)
   const start = draft ? draftStart(messages, draft.user) : -1
   const stored = draft && start >= 0 ? messages.slice(0, start + 1) : messages
@@ -26,25 +34,44 @@ export function MessageList({ messages, draft, activity }: Props) {
   const showDraftUser = draft && start < 0
   const answered = !draft && activity.length > 0 && last?.role === "assistant"
   const shown = answered ? stored.slice(0, -1) : stored
+  const regenerable =
+    !draft &&
+    last?.role === "assistant" &&
+    !last.created_approval &&
+    !activity.some((item) => item.kind === "approval")
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })
-  }, [messages, draft, activity])
+  }, [messages, draft, activity, status])
+
+  const bubble = (m: Message) => (
+    <MessageBubble
+      key={m.id}
+      role={m.role}
+      content={m.content}
+      createdAt={m.created_at}
+      stopped={m.stopped}
+      onRegenerate={regenerable && m === last ? onRegenerate : undefined}
+    />
+  )
 
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto flex max-w-3xl flex-col gap-3 p-4">
-        {shown.map((m) => (
-          <MessageBubble key={m.id} role={m.role} content={m.content} />
-        ))}
+        {shown.map(bubble)}
         {showDraftUser && <MessageBubble role="user" content={draft.user} />}
         {activity.map((item, index) => (
           <ActivityLine key={index} item={item} />
         ))}
-        {answered && last && (
-          <MessageBubble role={last.role} content={last.content} />
+        {answered && last && bubble(last)}
+        {draft && (
+          <MessageBubble
+            role="assistant"
+            content={draft.assistant}
+            status={status}
+            pending
+          />
         )}
-        {draft && <MessageBubble role="assistant" content={draft.assistant} />}
         <div ref={end} />
       </div>
     </ScrollArea>

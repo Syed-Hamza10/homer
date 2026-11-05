@@ -40,14 +40,25 @@ export async function putJson<T>(url: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export async function patchJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await send(url, jsonInit(body, "PATCH"))
+  return res.json() as Promise<T>
+}
+
+export async function del(url: string): Promise<void> {
+  await send(url, { method: "DELETE" })
+}
+
 export async function streamSse(
   url: string,
   body: unknown,
   handlers: SseHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await send(url, {
     ...jsonInit(body),
     headers: { ...jsonInit(body).headers, Accept: "text/event-stream" },
+    signal,
   })
   if (!res.body) throw new ApiError(res.status)
   const parser = createSseParser(handlers)

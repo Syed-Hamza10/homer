@@ -34,6 +34,8 @@ class Message(SQLModel, table=True):
     conversation_id: int = Field(foreign_key="conversations.id", index=True)
     role: str
     content: str
+    stopped: bool = False
+    created_approval: bool = False
     created_at: datetime = Field(default_factory=utcnow)
 
 

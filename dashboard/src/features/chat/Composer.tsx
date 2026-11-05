@@ -1,15 +1,20 @@
+import { Square } from "lucide-react"
 import { useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
-type Props = { disabled: boolean; onSend: (message: string) => void }
+type Props = {
+  streaming: boolean
+  onSend: (message: string) => void
+  onStop: () => void
+}
 
-export function Composer({ disabled, onSend }: Props) {
+export function Composer({ streaming, onSend, onStop }: Props) {
   const [value, setValue] = useState("")
 
   const submit = () => {
     const message = value.trim()
-    if (!message || disabled) return
+    if (!message || streaming) return
     onSend(message)
     setValue("")
   }
@@ -35,9 +40,16 @@ export function Composer({ disabled, onSend }: Props) {
         <span className="hidden pb-1 text-[9px] font-medium tracking-[0.2em] uppercase text-muted-foreground sm:block">
           Enter to send · Shift+Enter for a new line
         </span>
-        <Button onClick={submit} disabled={disabled || !value.trim()}>
-          Send
-        </Button>
+        {streaming ? (
+          <Button variant="outline" onClick={onStop}>
+            <Square className="size-3 fill-current" strokeWidth={1.8} />
+            Stop
+          </Button>
+        ) : (
+          <Button onClick={submit} disabled={!value.trim()}>
+            Send
+          </Button>
+        )}
       </div>
     </div>
   )
