@@ -34,7 +34,9 @@ export function AppShell() {
               Homer
             </span>
             <span className="mt-1.5 text-[8px] font-medium tracking-[0.16em] uppercase text-muted-foreground">
-              Your AI assistant at home
+              {"Your AI assistant,"}
+              <br />
+              {"right at home."}
             </span>
           </span>
         </div>
