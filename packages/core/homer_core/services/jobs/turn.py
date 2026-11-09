@@ -47,8 +47,22 @@ def failure(tool: str, result: Any) -> str | None:
     if not isinstance(result, dict) or "error" not in result:
         return None
     error = str(result["error"])
-    detail = result.get("message") or result.get("detail") or ""
-    return ERRORS.get(error, f"{tool} failed: {error} {detail}".strip())
+    if error in ERRORS:
+        return ERRORS[error]
+    detail = str(result.get("message") or result.get("detail") or "")
+    structlog.get_logger().warning("tool_failed", tool=tool, error=error, detail=detail[:500])
+    return (
+        f"Something went wrong talking to {service_name(tool)}, so I stopped. "
+        "Nothing was sent or changed. Try again in a moment."
+    )
+
+
+def service_name(tool: str) -> str:
+    if tool.startswith("cal_"):
+        return "Google Calendar"
+    if tool.startswith(("mail_", "contacts_")):
+        return "Gmail"
+    return "the web" if tool in {"web_search", "fetch_page"} else "a service"
 
 
 def summarise(content: Any) -> str:
