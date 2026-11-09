@@ -33,10 +33,8 @@ export function AppShell() {
             <span className="font-heading text-[1.35rem] tracking-[0.16em] uppercase">
               Homer
             </span>
-            <span className="mt-1.5 text-[8px] font-medium tracking-[0.16em] uppercase text-muted-foreground">
-              {"Your AI assistant,"}
-              <br />
-              {"right at home."}
+            <span className="mt-1.5 text-[7.5px] font-medium tracking-[0.04em] whitespace-nowrap text-muted-foreground">
+              Your AI assistant, right at home.
             </span>
           </span>
         </div>

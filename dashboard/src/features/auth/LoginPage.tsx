@@ -46,7 +46,7 @@ export function LoginPage() {
             <Landmark className="size-6" strokeWidth={1.25} />
           </span>
           <div>
-            <p className="text-[9px] font-medium tracking-[0.4em] uppercase text-muted-foreground">
+            <p className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground">
               Your AI assistant, right at home.
             </p>
             <h1 className="mt-1.5 font-heading text-4xl tracking-[0.14em] uppercase">
