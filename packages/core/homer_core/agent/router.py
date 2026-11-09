@@ -50,6 +50,13 @@ DAY_SUMMARY = re.compile(
     r"|\b(?:recap|wrap[- ]up|summary) of (?:my|the) day\b|\bsummari[sz]e my day\b",
     re.IGNORECASE,
 )
+SHOW_DRAFT = re.compile(
+    r"^(?:(?:ok|okay|so|and|hey|please|pls|can you|could you|can i|let me)[,]?\s+)*"
+    r"(?:(?:show|see|open)(?: me)?(?: the| my| that| this)?"
+    r" (?:draft|email|mail|message|card|it|that|this)(?: again| please)?"
+    r"|where(?:'s| is)(?: the| my| that)? (?:draft|email|mail|card|it))\s*[?.!]*$",
+    re.IGNORECASE,
+)
 RECIPIENT = re.compile(r"\bto\s+([\w.+-]+(?:@[\w.-]+)?)", re.IGNORECASE)
 NOT_RECIPIENTS = frozenset({"the", "my", "him", "her", "them", "it", "send", "me", "go"})
 
@@ -97,6 +104,11 @@ def is_edit(message: str) -> bool:
     """True when the message asks to change the email waiting in the conversation."""
     text = message.strip()
     return bool(EDIT.search(text)) and not NEW_REQUEST.match(text) and not NOT_MAIL.search(text)
+
+
+def asks_for_draft(message: str) -> bool:
+    """True for "show me the draft", "show it", "where is it" and the like."""
+    return SHOW_DRAFT.match(message.strip()) is not None
 
 
 def asks_if_sent(message: str) -> bool:

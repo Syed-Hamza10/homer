@@ -53,7 +53,7 @@ function healthLine(health: Health | null | undefined): string | null {
 
 function SectionTitle({ children }: { children: string }) {
   return (
-    <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+    <h2 className="font-sans text-xs font-medium text-muted-foreground">
       {children}
     </h2>
   )
@@ -116,7 +116,6 @@ export function TodayPage() {
     <ScrollArea className="min-h-0 flex-1">
       <main className="mx-auto flex max-w-3xl flex-col gap-7 p-6">
         <PageHeader
-          eyebrow="Daily"
           title="Today"
           description={
             data
@@ -151,7 +150,7 @@ export function TodayPage() {
 
         {line && (
           <p
-            className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground"
+            className="text-xs text-muted-foreground"
             data-testid="health-line"
           >
             {line}

@@ -18,6 +18,8 @@ class ApprovalOut(BaseModel):
     created_at: datetime
     decided_at: datetime | None
     result: Any | None
+    conversation_id: int | None
+    message_id: int | None
 
     @classmethod
     def from_row(cls, approval: Approval) -> "ApprovalOut":
@@ -32,4 +34,6 @@ class ApprovalOut(BaseModel):
             created_at=approval.created_at,
             decided_at=approval.decided_at,
             result=json.loads(approval.result_json) if approval.result_json else None,
+            conversation_id=approval.conversation_id,
+            message_id=approval.message_id,
         )

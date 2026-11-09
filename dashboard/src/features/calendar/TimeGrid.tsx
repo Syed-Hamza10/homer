@@ -167,7 +167,7 @@ export function TimeGrid({
               <div
                 key={dateKey(day)}
                 className={cn(
-                  "border-l border-border/70 px-2 py-1.5 text-[10px] tracking-[0.16em] uppercase text-muted-foreground",
+                  "border-l border-border/70 px-2 py-1.5 text-xs text-muted-foreground",
                   today && "font-semibold text-foreground",
                 )}
               >
@@ -180,7 +180,7 @@ export function TimeGrid({
           className="grid border-t border-border/70"
           style={{ gridTemplateColumns: template }}
         >
-          <div className="px-1 py-1 text-right text-[9px] tracking-[0.12em] uppercase text-muted-foreground">
+          <div className="px-1 py-1 text-right text-[11px] text-muted-foreground">
             All day
           </div>
           {days.map((day) => (

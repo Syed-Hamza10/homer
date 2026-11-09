@@ -26,12 +26,11 @@ export function ApprovalsPage() {
     <ScrollArea className="min-h-0 flex-1">
       <main className="mx-auto flex max-w-3xl flex-col gap-7 p-6">
         <PageHeader
-          eyebrow="Consent"
           title="Approvals"
           description="Actions that need your signature before Homer carries them out."
         />
         <section className="flex flex-col gap-3">
-          <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+          <h2 className="font-sans text-xs font-medium text-muted-foreground">
             Pending
           </h2>
           {isPending &&
@@ -63,7 +62,7 @@ export function ApprovalsPage() {
         </section>
         {decided.length > 0 && (
           <section className="flex flex-col gap-2">
-            <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+            <h2 className="font-sans text-xs font-medium text-muted-foreground">
               Decided this session
             </h2>
             <ul className="flex flex-col gap-1 text-sm">

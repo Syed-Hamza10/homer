@@ -14,6 +14,7 @@ import type {
   ToolCallEvent,
   ToolResultEvent,
 } from "./types"
+import { approvalsKey } from "@/features/approvals/useApprovals"
 import { conversationsKey } from "./useConversations"
 
 type Draft = { user: string; assistant: string }
@@ -54,10 +55,9 @@ export function useChatStream(
         body,
         {
           meta: (data) => {
-            const { conversation_id } = data as MetaEvent
-            setRun((r) => ({ ...r, conversation: conversation_id }))
-            if (conversation_id !== conversationId)
-              onConversation(conversation_id)
+            const id = String((data as MetaEvent).conversation_id)
+            setRun((r) => ({ ...r, conversation: id }))
+            if (id !== conversationId) onConversation(id)
           },
           status: (data) => setStatus((data as StatusEvent).text),
           token: (data) => {
@@ -73,8 +73,10 @@ export function useChatStream(
             add({ kind: "tool_call", ...(data as ToolCallEvent) }),
           tool_result: (data) =>
             add({ kind: "tool_result", ...(data as ToolResultEvent) }),
-          approval_required: (data) =>
-            add({ kind: "approval", ...(data as ApprovalRequiredEvent) }),
+          approval_required: (data) => {
+            add({ kind: "approval", ...(data as ApprovalRequiredEvent) })
+            void queryClient.invalidateQueries({ queryKey: approvalsKey })
+          },
           google_reconnect: (data) =>
             add({ kind: "reconnect", ...(data as GoogleReconnectEvent) }),
           done: (data) => {
@@ -95,7 +97,10 @@ export function useChatStream(
         )
     }
     controller.current = null
-    await queryClient.invalidateQueries({ queryKey: conversationsKey })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: conversationsKey }),
+      queryClient.invalidateQueries({ queryKey: approvalsKey }),
+    ])
     setStatus(null)
     setDraft(null)
   }

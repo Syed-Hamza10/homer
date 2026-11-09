@@ -36,7 +36,7 @@ export function DayRow({
         <span className="flex items-baseline gap-2">
           <span className="truncate">{title}</span>
           {badge && (
-            <span className="shrink-0 text-[10px] font-medium tracking-[0.12em] text-accent-foreground uppercase">
+            <span className="shrink-0 text-xs font-medium text-accent-foreground">
               {badge}
             </span>
           )}

@@ -127,7 +127,12 @@ and search server defaults.
    saves the text shown so far (tokens, or the last `replace`) as an assistant message with
    `stopped=true` and re-raises. `run_turn` cancels the jobs task in a `finally`, so the model call
    stops too. No `done` frame and no token count for a stopped turn. Every assistant message also
-   stores `created_approval` (an `approval_required` event was sent during the turn).
+   stores `created_approval` (an `approval_required` event was sent during the turn), and every
+   approval shown in the turn gets that message's id as `approvals.message_id`. The dashboard loads
+   `GET /api/approvals?conversation_id=N` (all statuses but `superseded`) and draws each card under
+   its message, so cards survive a reload. "show me the draft" with a pending approval re-sends the
+   card with "Here's the draft." and no model call. After the first turn the title becomes a short
+   one from the resolved intent (`services/conversations.title_for`).
 8. Regenerate: `POST /api/conversations/{id}/regenerate` deletes the last user/assistant pair and
    returns the user text; the browser sends it again through `/api/chat`. A reply with
    `created_approval` is 409 and the button is hidden for it.
@@ -139,7 +144,8 @@ and search server defaults.
   `reply_to_latest_from` replies in that sender's newest thread. One `write_email` structured call
   writes subject and body in the client's tone; `mail_draft`; a `mail_send` approval created
   through `services/approvals.create` with payload `{draft_id, to, subject, body, thread_id}`;
-  then "Draft to <name> is ready. Edit it or press Send."
+  then "Here's your email to <name>. Press Send when it looks right." The payload also carries
+  `to_name` when the recipient came from contacts.
 - `create_event`: attendees resolved like recipients (an unknown one is left off and asked
   about); an explicit start is used as given (end = end or start + duration, default 30 min); a
   window (default business hours) goes to `cal_find_free_slots` with the user's `timezone` and the

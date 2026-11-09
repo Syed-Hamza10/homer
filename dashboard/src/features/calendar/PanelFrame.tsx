@@ -15,9 +15,7 @@ export function PanelFrame({ eyebrow, testId, onClose, children }: Props) {
     <Card size="sm" data-testid={testId}>
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
-            {eyebrow}
-          </p>
+          <p className="text-xs font-medium text-muted-foreground">{eyebrow}</p>
           <Button
             size="icon-xs"
             variant="ghost"

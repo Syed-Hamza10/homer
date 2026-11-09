@@ -16,7 +16,7 @@ function clock(value: string): string {
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1" aria-label={title}>
-      <h3 className="pb-1 font-sans text-[9px] font-medium tracking-[0.3em] text-muted-foreground uppercase">
+      <h3 className="pb-1 font-sans text-xs font-medium text-muted-foreground">
         {title}
       </h3>
       <ul className="flex flex-col text-sm">{children}</ul>
@@ -45,9 +45,7 @@ export function DayCard({ card, now }: Props) {
     <Card className="animate-enter" data-testid="day-card">
       <CardContent className="flex flex-col gap-5">
         <div className="flex flex-col gap-1">
-          <p className="text-[9px] font-medium tracking-[0.32em] text-muted-foreground uppercase">
-            Your day
-          </p>
+          <p className="text-xs font-medium text-muted-foreground">Your day</p>
           <h2 className="font-heading text-2xl leading-tight">
             {card.greeting}
           </h2>

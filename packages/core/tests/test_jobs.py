@@ -27,7 +27,7 @@ Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
 JobModel = Callable[..., Model]
 KARACHI = "Asia/Karachi"
-READY = "Draft to {who} is ready. Edit it or press Send."
+READY = "Here's your email to {who}. Press Send when it looks right."
 PAID = "The invoice was paid in full this morning."
 PAID_BODY = f"Hi,\n\n{PAID}\n\nBest,\nTester"
 
@@ -130,6 +130,7 @@ class TestSendEmail:
         frames = post_chat({"message": "Email Ada that the invoice is paid"})
         assert said(frames) == READY.format(who="Ada Example")
         assert calls(frames) == ["contacts_search", "mail_draft"]
+        assert of(frames, "approval_required")[0]["payload"]["to_name"] == "Ada Example"
         assert of(frames, "approval_required")[0]["payload"]["to"] == "ada@example.test"
 
     @pytest.mark.parametrize("intents", [[[email("Sara")]]])
@@ -568,7 +569,10 @@ class TestVoice:
     def test_a_pronoun_from_context_names_who_and_what(self, post_chat: PostChat) -> None:
         chat = post_chat({"message": "book a call with Ada"})[0][1]["conversation_id"]
         frames = post_chat({"message": "email her about it", "conversation_id": chat})
-        assert said(frames) == "Draft to Ada about invoice is ready. Edit it or press Send."
+        assert (
+            said(frames)
+            == "Here's your email to Ada about invoice. Press Send when it looks right."
+        )
 
     @pytest.mark.parametrize(
         ("intents", "written"),

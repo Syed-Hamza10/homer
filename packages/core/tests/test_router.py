@@ -11,6 +11,7 @@ from sqlmodel import Session
 from homer_core.agent.router import (
     Command,
     asked_recipient,
+    asks_for_draft,
     asks_for_summary,
     asks_if_sent,
     is_conversational,
@@ -230,6 +231,28 @@ class TestTypedDecisions:
         assert said == "There's no draft waiting in this chat."
         assert fake_google.executed == []
 
+    @pytest.mark.parametrize("message", ["show me the draft", "Show it", "where is it?"])
+    def test_show_the_draft_reshows_the_card_without_the_model(
+        self, logged_in: TestClient, app: FastAPI, post_chat: PostChat, message: str
+    ) -> None:
+        chat = start_chat(app)
+        approval_id = create_send_approval(app, chat)
+        frames = post_chat({"message": message, "conversation_id": chat})
+        assert tokens(frames) == "Here's the draft."
+        shown = [data["approval_id"] for name, data in frames if name == "approval_required"]
+        assert shown == [approval_id]
+        assert frames[-1][1]["input_tokens"] == 0
+        listed = logged_in.get(f"/api/approvals?conversation_id={chat}").json()
+        messages = logged_in.get(f"/api/conversations/{chat}/messages").json()
+        assert listed[0]["message_id"] == messages[-1]["id"]
+
+    def test_show_the_draft_with_nothing_pending_reaches_the_model(
+        self, app: FastAPI, post_chat: PostChat
+    ) -> None:
+        chat = start_chat(app)
+        said = tokens(post_chat({"message": "show me the draft", "conversation_id": chat}))
+        assert said.startswith("Reminder set")
+
     def test_bare_yes_with_nothing_pending_reaches_the_model(
         self, logged_in: TestClient, post_chat: PostChat
     ) -> None:
@@ -250,6 +273,23 @@ class TestRemindCommand:
         reminders = logged_in.get("/api/reminders").json()
         assert [(r["text"], r["status"]) for r in reminders] == [("call the dentist", "pending")]
         assert reminders[0]["due_at"].startswith("2026-10-17T08:00:00")
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("show me the draft", True),
+        ("can you show me the email again?", True),
+        ("where's the draft", True),
+        ("let me see it", True),
+        ("show me my calendar", False),
+        ("where is the meeting", False),
+        ("show me emails from Rosa", False),
+        ("show me", False),
+    ],
+)
+def test_asks_for_draft(message: str, expected: bool) -> None:
+    assert asks_for_draft(message) is expected
 
 
 @pytest.mark.parametrize(

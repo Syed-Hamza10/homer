@@ -12,13 +12,13 @@ function textOf(node: Node | undefined): string {
 }
 
 const components: Components = {
-  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
   a: ({ href, children }) => (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-ring underline underline-offset-2 hover:text-foreground"
+      className="text-brand underline underline-offset-2 hover:text-foreground"
     >
       {children}
     </a>

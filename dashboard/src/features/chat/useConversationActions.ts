@@ -3,7 +3,7 @@ import { del, patchJson } from "@/lib/api"
 import type { Conversation } from "./types"
 import { conversationsKey } from "./useConversations"
 
-type Rename = { id: string; title: string }
+type Rename = { id: number; title: string }
 
 export function useConversationActions() {
   const queryClient = useQueryClient()
@@ -15,7 +15,7 @@ export function useConversationActions() {
     onSuccess: refresh,
   })
   const remove = useMutation({
-    mutationFn: (id: string) => del(`/api/conversations/${id}`),
+    mutationFn: (id: number) => del(`/api/conversations/${id}`),
     onSuccess: refresh,
   })
   return { rename, remove }

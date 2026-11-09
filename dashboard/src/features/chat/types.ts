@@ -1,7 +1,7 @@
-export type Conversation = { id: string; title: string; updated_at: string }
+export type Conversation = { id: number; title: string; updated_at: string }
 
 export type Message = {
-  id: string
+  id: number
   role: "user" | "assistant"
   content: string
   stopped?: boolean
@@ -9,7 +9,7 @@ export type Message = {
   created_at: string
 }
 
-export type MetaEvent = { conversation_id: string; message_id: string }
+export type MetaEvent = { conversation_id: number; message_id: number }
 export type TokenEvent = { text: string }
 export type ReplaceEvent = { text: string }
 export type StatusEvent = { text: string }

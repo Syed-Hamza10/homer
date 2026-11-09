@@ -71,9 +71,8 @@ SIGN_OFF = re.compile(
     re.IGNORECASE,
 )
 READY = (
-    "Draft to {who} is ready. Edit it or press Send.",
-    "Here's the draft to {who}. Edit it or press Send.",
-    "Your email to {who} is drafted. Edit it or press Send.",
+    "Here's your email to {who}. Press Send when it looks right.",
+    "Here's the email to {who}. Press Send when it looks right.",
 )
 ASK_WHO = "Who should I email, and what about?"
 PRONOUN_TO = re.compile(
@@ -95,7 +94,14 @@ def mail_preview(to: str, subject: str, body: str) -> str:
 
 
 def request_send(
-    session: Session, user_id: int, draft_id: str, to: str, subject: str, body: str, thread: str
+    session: Session,
+    user_id: int,
+    draft_id: str,
+    to: str,
+    subject: str,
+    body: str,
+    thread: str,
+    name: str = "",
 ) -> Approval:
     payload = {
         "draft_id": draft_id,
@@ -104,6 +110,8 @@ def request_send(
         "body": body,
         "thread_id": thread,
     }
+    if name:
+        payload["to_name"] = name
     return create(session, user_id, "google", "mail_send", payload, mail_preview(to, subject, body))
 
 
@@ -278,7 +286,7 @@ def ready(turn: Turn, intent: SendEmail, person: Person, subject: str) -> str:
         topic = subject.removeprefix("Re: ")
         topic = topic[:1].lower() + topic[1:] if topic[1:2].islower() else topic
         who = first_name(person) or person.shown
-        return f"Draft to {who} about {topic} is ready. Edit it or press Send."
+        return f"Here's your email to {who} about {topic}. Press Send when it looks right."
     return phrase(turn.history, READY, who=person.shown)
 
 
@@ -309,6 +317,7 @@ async def run(turn: Turn, intent: SendEmail) -> None:
         subject,
         text.body,
         str(draft.get("thread_id") or thread or ""),
+        person.name,
     )
     turn.requested(approval)
     turn.say(ready(turn, intent, person, subject))

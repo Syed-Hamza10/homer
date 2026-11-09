@@ -39,7 +39,7 @@ export function FolderList({ folders, selected, onSelect }: Props) {
           if (members.length === 0) return null
           return (
             <div key={kind} className="flex flex-col gap-0.5">
-              <p className="px-2 pb-1 text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+              <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">
                 {title}
               </p>
               {members.map((folder) => (
