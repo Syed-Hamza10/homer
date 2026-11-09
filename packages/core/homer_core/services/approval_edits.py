@@ -119,6 +119,7 @@ async def edit(
         transition_from_pending(session, fresh, SUPERSEDED)
         raise
     fresh.conversation_id = approval.conversation_id
+    fresh.message_id = approval.message_id
     session.add(fresh)
     session.commit()
     session.refresh(fresh)

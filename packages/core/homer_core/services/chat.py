@@ -16,6 +16,7 @@ from homer_core.agent.intents import Background, extract
 from homer_core.agent.router import (
     Command,
     Decision,
+    asks_for_draft,
     asks_for_summary,
     asks_if_sent,
     is_conversational,
@@ -24,7 +25,7 @@ from homer_core.agent.router import (
     parse_decision,
 )
 from homer_core.agent.runtime import Runtime
-from homer_core.db.models import Conversation, Message, TokenCounter, User, utcnow
+from homer_core.db.models import Approval, Conversation, Message, TokenCounter, User, utcnow
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
 from homer_core.services.conversations import get_conversation, list_messages, make_title
 from homer_core.services.errors import DomainError
@@ -41,6 +42,7 @@ GENERIC_ERROR = "The assistant could not answer. Please try again."
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
 NOTHING_PENDING = "There's no draft waiting in this chat."
+HERE_IS_THE_DRAFT = "Here's the draft."
 
 
 @dataclass
@@ -50,6 +52,7 @@ class Outcome:
     shown: str = ""
     created_approval: bool = False
     context: list[dict[str, Any]] = field(default_factory=list)
+    approval_ids: list[int] = field(default_factory=list)
 
     def track(self, event: ChatEvent) -> None:
         if event.name == "token":
@@ -58,6 +61,7 @@ class Outcome:
             self.shown = event.data["text"]
         elif event.name == "approval_required":
             self.created_approval = True
+            self.approval_ids.append(event.data["approval_id"])
 
 
 def to_history(messages: list[Message]) -> list[ModelMessage]:
@@ -125,6 +129,18 @@ def count_tokens(session: Session, user: User, input_tokens: int, output_tokens:
     counter.requests += 1
     session.add(counter)
     session.commit()
+
+
+def approval_event(approval: Approval) -> ChatEvent:
+    return ChatEvent(
+        "approval_required",
+        {
+            "approval_id": approval.id,
+            "action": approval.action,
+            "preview": approval.preview,
+            "payload": json.loads(approval.payload_json),
+        },
+    )
 
 
 def text_event(outcome: Outcome, text: str) -> ChatEvent:
@@ -307,6 +323,13 @@ async def respond(
         return
     if command is not None and command.name == "remind":
         message = f"Remind me {command.arg}"
+    if asks_for_draft(message):
+        waiting = approvals.list_pending(session, user, conversation_id)
+        if waiting:
+            yield text_event(outcome, HERE_IS_THE_DRAFT)
+            for approval in waiting:
+                yield approval_event(approval)
+            return
     settled = await decide_pending(session, user, runtime, conversation_id, message)
     if settled is not None:
         yield text_event(outcome, settled)
@@ -366,9 +389,10 @@ async def stream(
                 outcome.track(event)
                 yield event
     except (asyncio.CancelledError, GeneratorExit):
-        save_message(
+        reply = save_message(
             session, conversation, "assistant", outcome.shown, True, outcome.created_approval
         )
+        approvals.attach(session, outcome.approval_ids, reply.id)
         log.info("chat_stopped", conversation_id=conversation.id)
         raise
     except Exception:
@@ -376,7 +400,7 @@ async def stream(
         yield ChatEvent("error", {"message": GENERIC_ERROR})
         return
 
-    save_message(
+    reply = save_message(
         session,
         conversation,
         "assistant",
@@ -384,6 +408,7 @@ async def stream(
         created_approval=outcome.created_approval,
         context=outcome.context,
     )
+    approvals.attach(session, outcome.approval_ids, reply.id)
     usage = outcome.usage
     count_tokens(session, user, usage.input_tokens, usage.output_tokens)
     yield ChatEvent(

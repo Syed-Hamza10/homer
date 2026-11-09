@@ -12,9 +12,18 @@ router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 
 @router.get("")
 def list_approvals(
-    user: CurrentUser, session: SessionDep, status: Literal["pending"] = "pending"
+    user: CurrentUser,
+    session: SessionDep,
+    status: Literal["pending"] = "pending",
+    conversation_id: int | None = None,
 ) -> list[ApprovalOut]:
-    return [ApprovalOut.from_row(row) for row in approvals.list_pending(session, user)]
+    """Pending approvals, or every approval of one conversation with its current status."""
+    rows = (
+        approvals.list_pending(session, user)
+        if conversation_id is None
+        else approvals.list_for_conversation(session, user, conversation_id)
+    )
+    return [ApprovalOut.from_row(row) for row in rows]
 
 
 @router.post("/{approval_id}/approve")

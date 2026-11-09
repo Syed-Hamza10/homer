@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 from sqlalchemy import update
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from homer_core.db.models import Approval, User, utcnow
 from homer_core.mcp.manager import EXECUTOR_TOOL, ExecuteFailed, McpManager, ServerUnavailable
@@ -96,6 +96,31 @@ def list_pending(
     if conversation_id is not None:
         statement = statement.where(Approval.conversation_id == conversation_id)
     return list(session.exec(statement))
+
+
+def list_for_conversation(session: Session, user: User, conversation_id: int) -> list[Approval]:
+    """The live and decided approvals of one conversation; superseded edits are left out."""
+    expire_stale(session)
+    statement = (
+        select(Approval)
+        .where(
+            Approval.user_id == user.id,
+            Approval.conversation_id == conversation_id,
+            Approval.status != SUPERSEDED,
+        )
+        .order_by(Approval.id)
+    )
+    return list(session.exec(statement))
+
+
+def attach(session: Session, approval_ids: list[int], message_id: int) -> None:
+    """Shows these approvals under the assistant message that offered them."""
+    if not approval_ids:
+        return
+    session.exec(
+        update(Approval).where(col(Approval.id).in_(approval_ids)).values(message_id=message_id)
+    )
+    session.commit()
 
 
 def latest_send(

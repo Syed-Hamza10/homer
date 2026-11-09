@@ -24,7 +24,7 @@ pytestmark = pytest.mark.e2e
 RUNS = range(3)
 TIMINGS = Path(tempfile.gettempdir()) / "homer-e2e-timings.jsonl"
 DUCKDUCKGO = "https://html.duckduckgo.com/html/?q=homer"
-READY = "Draft to {who} is ready. Edit it or press Send."
+READY = "Here's your email to {who}. Press Send when it looks right."
 
 
 @dataclass(frozen=True)

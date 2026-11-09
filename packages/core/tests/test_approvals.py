@@ -163,3 +163,23 @@ def test_unknown_approval_is_404(logged_in: TestClient, origin: dict[str, str]) 
 def test_approvals_require_login(client: TestClient, origin: dict[str, str]) -> None:
     assert client.get("/api/approvals").status_code == 401
     assert client.post("/api/approvals/1/approve", headers=origin).status_code == 401
+
+
+def test_list_by_conversation_keeps_decided_and_drops_superseded(
+    logged_in: TestClient, app: FastAPI
+) -> None:
+    pending, done, old = (make_approval(app, draft_id=d) for d in ("d1", "d2", "d3"))
+    other = make_approval(app, draft_id="d4")
+    with Session(app.state.engine) as session:
+        for approval_id, status in ((pending, "pending"), (done, "done"), (old, "superseded")):
+            approval = session.get(Approval, approval_id)
+            assert approval is not None
+            approval.conversation_id, approval.status = 7, status
+            session.add(approval)
+        session.commit()
+    listed = logged_in.get("/api/approvals?conversation_id=7").json()
+    assert [(a["id"], a["status"], a["conversation_id"]) for a in listed] == [
+        (pending, "pending", 7),
+        (done, "done", 7),
+    ]
+    assert other in [a["id"] for a in logged_in.get("/api/approvals").json()]

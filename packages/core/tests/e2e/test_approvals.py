@@ -26,7 +26,10 @@ def test_live_model_send_becomes_an_approval(logged_in: httpx.Client, chat: Chat
     assert [c["name"] for c in of(frames, "tool_call")] == ["mail_draft"]
     assert requested[0]["action"] == "mail_send"
     assert requested[0]["payload"]["to"] == "ada@example.test"
-    assert token_text(frames) == "Draft to ada@example.test is ready. Edit it or press Send."
+    assert (
+        token_text(frames)
+        == "Here's your email to ada@example.test. Press Send when it looks right."
+    )
 
     approval_id = requested[0]["approval_id"]
     approved = logged_in.post(f"/api/approvals/{approval_id}/approve").json()

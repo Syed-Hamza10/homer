@@ -71,9 +71,8 @@ SIGN_OFF = re.compile(
     re.IGNORECASE,
 )
 READY = (
-    "Draft to {who} is ready. Edit it or press Send.",
-    "Here's the draft to {who}. Edit it or press Send.",
-    "Your email to {who} is drafted. Edit it or press Send.",
+    "Here's your email to {who}. Press Send when it looks right.",
+    "Here's the email to {who}. Press Send when it looks right.",
 )
 ASK_WHO = "Who should I email, and what about?"
 PRONOUN_TO = re.compile(
@@ -278,7 +277,7 @@ def ready(turn: Turn, intent: SendEmail, person: Person, subject: str) -> str:
         topic = subject.removeprefix("Re: ")
         topic = topic[:1].lower() + topic[1:] if topic[1:2].islower() else topic
         who = first_name(person) or person.shown
-        return f"Draft to {who} about {topic} is ready. Edit it or press Send."
+        return f"Here's your email to {who} about {topic}. Press Send when it looks right."
     return phrase(turn.history, READY, who=person.shown)
 
 
