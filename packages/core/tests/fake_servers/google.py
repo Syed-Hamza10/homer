@@ -60,6 +60,7 @@ EVENTS = [
 ]
 
 ACCOUNT_EMAIL = "tester@example.test"
+ACCOUNT_NAME = "Sam Tester"
 CONTACTS = [
     {"name": "Ada Example", "email": "ada@example.test"},
     {"name": "Sara Whitfield", "email": "sara.whitfield@example.test"},
@@ -232,8 +233,8 @@ def contacts_search(query: str) -> list[dict[str, Any]]:
 
 @server.tool
 def mail_profile() -> dict[str, Any]:
-    """Returns the address of the connected mailbox."""
-    return {"email": ACCOUNT_EMAIL}
+    """Returns the address and display name of the connected mailbox."""
+    return {"email": ACCOUNT_EMAIL, "name": ACCOUNT_NAME}
 
 
 @server.tool

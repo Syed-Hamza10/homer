@@ -152,6 +152,17 @@ def test_generated_ids_have_gmail_shapes(client: TestClient) -> None:
     assert history[1] > history[0]
 
 
+def test_send_as_names_the_owner(client: TestClient) -> None:
+    found = client.get(f"{GMAIL}/settings/sendAs", headers=AUTH).json()["sendAs"]
+    assert found == [
+        {
+            "sendAsEmail": "jordan.reyes@example.test",
+            "displayName": "Jordan Reyes",
+            "isPrimary": True,
+        }
+    ]
+
+
 def test_drafts_list_newest_first(client: TestClient) -> None:
     assert client.get(f"{GMAIL}/drafts", headers=AUTH).json() == {"resultSizeEstimate": 0}
     first = client.post(

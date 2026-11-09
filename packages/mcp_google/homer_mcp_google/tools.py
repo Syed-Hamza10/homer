@@ -570,9 +570,20 @@ class GoogleTools:
 
     @guarded
     async def mail_profile(self) -> dict[str, Any]:
-        """Returns the address of the connected mailbox. Core use only, hidden from the model."""
+        """Returns the address and display name of the connected mailbox. Core use only,
+        hidden from the model; the name is empty when Gmail does not give one."""
         profile = await self.client.get(f"{GMAIL}/profile")
-        return {"email": profile["emailAddress"]}
+        return {"email": profile["emailAddress"], "name": await self._display_name()}
+
+    async def _display_name(self) -> str:
+        try:
+            found = await self.client.get(f"{GMAIL}/settings/sendAs")
+        except ReconnectRequired:
+            raise
+        except Exception:
+            return ""
+        primary = [entry for entry in found.get("sendAs", []) if entry.get("isPrimary")]
+        return str(primary[0].get("displayName") or "") if primary else ""
 
     @guarded
     async def execute(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:

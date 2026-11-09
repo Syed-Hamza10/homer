@@ -372,6 +372,28 @@ def test_terse_requests_become_real_emails(talk: Talk, run: int) -> None:
         assert not body.rstrip().endswith("Best,"), body
 
 
+SIGNED_DRAFTS = [
+    "send priya.natarajan@example.test a note: the deck is ready for review, ping me with any "
+    "feedback",
+    "email Tomas that i'll be 10 mins late to lunch on friday",
+    "shoot ops@example.test a message about the backup finishing fine last night",
+]
+FILLER = ("let me know if that works", "if that works for you, let me know")
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_every_draft_ends_with_one_sign_off(talk: Talk, run: int) -> None:
+    reply = talk(SIGNED_DRAFTS[run])
+    assert reply.actions == ["mail_send"], (reply.tools, reply.said)
+    assert reply.approval_seconds is not None and reply.approval_seconds < 10, reply.seconds
+    body = reply.of("approval_required")[0]["payload"]["body"]
+    assert body.endswith("\n\nBest,\nJordan") and body.count("Best,") == 1, body
+    assert not any(filler in body.lower() for filler in FILLER), body
+    formal = talk("make it more formal", reply.conversation)
+    edited = formal.of("approval_required")[0]["payload"]["body"]
+    assert edited.endswith("\n\nBest,\nJordan") and edited.count("Best,") == 1, edited
+
+
 @pytest.mark.parametrize("run", RUNS)
 def test_typed_approvals_stay_in_their_chat(
     stack: Stack, client: httpx.Client, talk: Talk, run: int

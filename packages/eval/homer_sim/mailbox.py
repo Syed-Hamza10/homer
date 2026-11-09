@@ -54,6 +54,7 @@ def b64url_decode(data: str) -> bytes:
 class Mailbox:
     def __init__(self, seed: dict[str, Any], now: datetime) -> None:
         self.owner: str = seed["owner"]["email"]
+        self.owner_name: str = seed["owner"].get("name", "")
         self.history_id: int = seed["history_id"]
         self.history_floor: int = 0
         self.history: list[dict[str, Any]] = []

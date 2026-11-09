@@ -18,6 +18,7 @@ from homer_core.agent.claims import HONEST, review
 from homer_core.config import Settings
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
+from homer_core.services.jobs import send_email
 from homer_core.services.jobs.send_email import request_send
 from homer_core.services.jobs.turn import RECONNECT
 
@@ -708,3 +709,92 @@ def test_a_pronoun_first_message_asks_without_the_model(post_chat: PostChat) -> 
     frames = post_chat({"message": "email her about it"})
     assert said(frames) == "Who should I email, and what about?"
     assert frames[-1][1]["input_tokens"] == 0
+
+
+QA_BODIES = [
+    (
+        "The deck is now ready for your review. If you have any feedback, please ping me "
+        "directly. Let me know if that works for you.",
+        "The deck is now ready for your review. If you have any feedback, please ping me directly.",
+    ),
+    (
+        "I will be about 10 minutes late to our lunch on Friday. If that works for you, I'll "
+        "see you there shortly.",
+        "I will be about 10 minutes late to our lunch on Friday. I'll see you there shortly.",
+    ),
+    (
+        "The backup finished fine last night. If that works for you, let me know.",
+        "The backup finished fine last night.",
+    ),
+    (
+        "Could you send over the logo files by Thursday? If that works for you, please let me "
+        "know. Thanks!",
+        "Could you send over the logo files by Thursday? Thanks!",
+    ),
+    (
+        "Can we move our call to next week? Please let me know what day suits you best.",
+        "Can we move our call to next week? Please let me know what day suits you best.",
+    ),
+    ("Let me know if that works for you.", "Let me know if that works for you."),
+]
+
+
+@pytest.mark.parametrize(("body", "expected"), QA_BODIES)
+def test_filler_closers_are_trimmed(body: str, expected: str) -> None:
+    assert send_email.without_filler(body) == expected
+
+
+def test_repeated_sign_offs_are_all_split_off() -> None:
+    body = "Hi Bo,\n\nPaid.\n\nBest,\nSam\n\nKind regards,\nSam"
+    assert send_email.split(body) == ("Hi Bo,", "Paid.", "Best,\nSam")
+
+
+class TestSignOff:
+    @pytest.fixture
+    def settings(self, settings: Settings) -> Settings:
+        return settings.model_copy(update={"user_name": "there"})
+
+    @pytest.fixture(autouse=True)
+    def fresh_cache(self) -> None:
+        send_email.PROFILE_NAMES.clear()
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")], [email("Ada")]],
+                [{"subject": "Paid", "body": f"{PAID} Let me know if that works for you."}],
+            )
+        ],
+    )
+    def test_the_gmail_name_signs_and_is_looked_up_once(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email Ada the invoice is paid"})
+        fake_google.ACCOUNT_NAME = "Someone Else"
+        post_chat({"message": "email Ada the invoice is paid"})
+        bodies = [draft["body"] for draft in fake_google.drafted]
+        assert bodies == [f"Hi Ada,\n\n{PAID}\n\nBest,\nSam"] * 2
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [([[email("Ada")]], [{"subject": "Paid", "body": f"{PAID}\n\nBest,\nJordan"}])],
+    )
+    def test_no_name_anywhere_still_signs_off_once(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.ACCOUNT_NAME = ""
+        post_chat({"message": "email Ada the invoice is paid"})
+        assert fake_google.drafted[0]["body"] == f"Hi Ada,\n\n{PAID}\n\nBest,"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [([[email("Ada")]], [{"subject": "Paid", "body": PAID}])],
+    )
+    def test_a_plain_signature_gets_best(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        settings = logged_in.get("/api/settings").json()
+        logged_in.put("/api/settings", json={**settings, "signature": "Jo"}, headers=ORIGIN)
+        post_chat({"message": "email Ada the invoice is paid"})
+        assert fake_google.drafted[0]["body"] == f"Hi Ada,\n\n{PAID}\n\nBest,\nJo"
