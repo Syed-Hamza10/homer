@@ -1,3 +1,5 @@
+import asyncio
+import re
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -11,6 +13,8 @@ SEARCH_URL = f"https://{SEARCH_HOST}/html/"
 ALLOWLIST = Allowlist([SEARCH_HOST])
 USER_AGENT = "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/128 Safari/537.36"
 TIMEOUT_SECONDS = 10
+RETRY_SECONDS = 2.0
+CHALLENGE = re.compile(r"bots use DuckDuckGo|anomaly-modal|challenge-form", re.IGNORECASE)
 
 
 def real_url(href: str) -> str:
@@ -73,13 +77,32 @@ def parse_results(html: str) -> list[dict[str, str]]:
     ]
 
 
-async def web_search(query: str, max_results: int, log: LogFn) -> dict[str, Any]:
+def blocked(status: int, html: str) -> bool:
+    """DuckDuckGo's bot check: HTTP 202 with a 'select the ducks' page instead of results."""
+    return status == 202 or bool(CHALLENGE.search(html))
+
+
+async def post_query(query: str, log: LogFn) -> tuple[int, str]:
     headers = {"User-Agent": USER_AGENT}
-    try:
-        async with AllowlistedClient(ALLOWLIST, log, timeout=TIMEOUT_SECONDS, headers=headers) as c:
-            response = await c.post(SEARCH_URL, data={"q": query, "kl": "us-en"})
-    except Exception as error:
-        return {"error": "search_failed", "detail": f"{type(error).__name__}: {error}"}
-    if response.status_code != 200:
-        return {"error": "search_failed", "status": response.status_code}
-    return {"results": parse_results(response.text)[:max_results]}
+    async with AllowlistedClient(ALLOWLIST, log, timeout=TIMEOUT_SECONDS, headers=headers) as c:
+        response = await c.post(SEARCH_URL, data={"q": query, "kl": "us-en"})
+    return response.status_code, response.text
+
+
+async def web_search(query: str, max_results: int, log: LogFn) -> dict[str, Any]:
+    """One retry after a short pause when DuckDuckGo shows its bot check, then a clear
+    `search_blocked` error."""
+    for attempt in range(2):
+        try:
+            status, html = await post_query(query, log)
+        except Exception as error:
+            return {"error": "search_failed", "detail": f"{type(error).__name__}: {error}"}
+        if not blocked(status, html):
+            break
+        if attempt == 0:
+            await asyncio.sleep(RETRY_SECONDS)
+    else:
+        return {"error": "search_blocked", "detail": "DuckDuckGo answered with its bot check"}
+    if status != 200:
+        return {"error": "search_failed", "status": status}
+    return {"results": parse_results(html)[:max_results]}

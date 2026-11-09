@@ -1,13 +1,17 @@
 import re
 
+from pydantic_ai import Agent
+
 from homer_core.agent.claims import review
 from homer_core.agent.intents import ChatIntent
 from homer_core.agent.prompt import render_prompt
-from homer_core.agent.routing import is_small_talk
-from homer_core.services.jobs import mail_status, web_search
+from homer_core.agent.routing import is_small_talk, personal
+from homer_core.services.facts import matching
+from homer_core.services.jobs import mail_status, memory, web_search
 from homer_core.services.jobs.turn import Turn
 
 HISTORY_MESSAGES = 8
+EMPTY = "Sorry, I lost my answer there. Could you ask that once more?"
 SEARCH_SERVER = "search"
 UNKNOWN = re.compile(
     r"\bI (?:don't|do not) know\b|\bI'm not sure\b|\bI am not sure\b"
@@ -24,6 +28,7 @@ PERSONAL = re.compile(
 def may_search(turn: Turn) -> bool:
     return (
         not PERSONAL.search(turn.message)
+        and not personal(turn.message, turn.facts)
         and not is_small_talk(turn.message)
         and SEARCH_SERVER in turn.runtime.manager.toolsets
     )
@@ -35,8 +40,22 @@ async def run(turn: Turn, intent: ChatIntent) -> None:
         turn.message, instructions, turn.history[-HISTORY_MESSAGES:], guarded=False
     )
     text = turn.segments[index]
+    if not text:
+        turn.replace(index, await second_try(turn, instructions))
+        return
     reviewed = review(text, acted=False)
     if reviewed != text:
         turn.replace(index, mail_status.honest(turn) or reviewed)
     elif UNKNOWN.search(text) and may_search(turn):
         await web_search.answer(turn, turn.message, turn.message)
+
+
+async def second_try(turn: Turn, instructions: str) -> str:
+    """For an empty answer: the saved facts the message names, else one more model call."""
+    if personal(turn.message, turn.facts):
+        facts = matching(turn.session, turn.user, turn.message)
+        if facts:
+            return memory.listing(facts)
+    agent = Agent(turn.runtime.model, output_type=str, instructions=instructions)
+    text = (await turn.extract(agent, turn.message)).strip()
+    return text or EMPTY

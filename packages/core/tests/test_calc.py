@@ -79,3 +79,16 @@ def test_rates_are_read_from_snippets() -> None:
 
 def test_numbers_are_shown_plainly() -> None:
     assert (shown(391.0), shown(2948.123456), shown(1 / 3)) == ("391", "2,948.1235", "0.3333")
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [("what's 20% tip on 85 dollars", 17.0), ("15% off 80", 68.0), ("10% of $50", 5.0)],
+)
+def test_tips_and_discounts(text: str, value: float) -> None:
+    found = parse(text)
+    assert isinstance(found, Arithmetic) and found.value == value
+
+
+def test_how_many_in_one() -> None:
+    assert parse("how many grams in a pound") == UnitConversion(1.0, "pound", "grams", 453.59237)

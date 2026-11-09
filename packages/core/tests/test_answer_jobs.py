@@ -265,8 +265,10 @@ class TestMemory:
             "Here is what I have saved:\n- Your cat is called Mango.\n"
             "- Dana prefers calls after 3pm."
         )
-        assert said(post_chat({"message": "forget the gym thing"})).startswith(
-            "I have nothing saved like that"
+        assert said(post_chat({"message": "forget the gym thing"})) == (
+            "I have nothing saved about the gym thing. What I have saved:\n"
+            "- Your cat is called Mango.\n- Dana prefers calls after 3pm.\n"
+            "Say which one to forget."
         )
         facts = logged_in.get("/api/facts").json()
         gone = logged_in.delete(f"/api/facts/{facts[0]['id']}", headers=ORIGIN)
@@ -347,3 +349,127 @@ def test_priority_contacts_come_first() -> None:
 
 def test_web_search_module_keeps_its_limits() -> None:
     assert (web_search.PAGES, web_search.PAGE_TIMEOUT_SECONDS) == (2, 5.0)
+
+
+class TestRoundThree:
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("brent crude price today"), ["No current numerical value is listed.", "$64.20"])],
+    )
+    def test_a_price_missing_from_snippets_gets_a_dated_search_and_pages(
+        self, post_chat: PostChat, fake_search: ModuleType, instructions: list[str]
+    ) -> None:
+        frames = post_chat({"message": "how much is a barrel of brent crude today"})
+        day = today()
+        assert fake_search.queries == [
+            f"brent crude price {day:%B} {day.day} {day.year}",
+        ] or fake_search.queries[1].endswith(f"{day:%B} {day.day} {day.year}")
+        assert "concrete figure" in instructions[0]
+        assert "Page A text" in instructions[1]
+        assert said(frames).startswith("$64.20\n\n**Sources**")
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [
+            (
+                search("nba finals winner"),
+                ["The text does not specify who won.", "The pages do not say who won."],
+            )
+        ],
+    )
+    def test_a_non_answer_is_never_shown(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "did the NBA finals finish, who took it"})
+        assert said(frames).startswith("I could not find a clear answer. The closest result:")
+
+    @pytest.mark.parametrize("intents", [search("nyc mayor blocked")])
+    def test_a_blocked_search_says_so_plainly(self, post_chat: PostChat) -> None:
+        text = said(post_chat({"message": "who is the current mayor of new york"}))
+        assert text.startswith("The search engine is limiting searches from this computer")
+        assert "Something went wrong" not in text
+
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            ("whats 15% of 240", "15% of 240 = 36"),
+            ("what's 20% tip on 85 dollars", "20% tip on 85 dollars = 17"),
+            ("how many grams in a pound", "1 pound is 453.5924 grams."),
+        ],
+    )
+    def test_arithmetic_never_reaches_the_web(
+        self, post_chat: PostChat, message: str, expected: str
+    ) -> None:
+        frames = post_chat({"message": message})
+        assert said(frames) == expected and calls(frames) == []
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [
+            (search("days in a leap year"), ["A leap year has 366 days."]),
+            (search("good goldfish names"), ["Try Bubbles or Comet."]),
+        ],
+    )
+    def test_stable_facts_and_small_questions_stay_in_chat(self, post_chat: PostChat) -> None:
+        for message in (
+            "how many days are in a leap year",
+            "random one: whats a good name for a goldfish",
+        ):
+            frames = post_chat({"message": message})
+            assert calls(frames) == []
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [([[{"kind": "web_search", "query": "zainab allergies"}]], ["Mushrooms."])],
+    )
+    def test_questions_about_people_in_memory_never_search(self, post_chat: PostChat) -> None:
+        post_chat({"message": "remember that my sister Zainab is vegetarian and hates mushrooms"})
+        frames = post_chat({"message": "what's zainab allergic to right now"})
+        assert calls(frames) == []
+
+    def test_recall_and_forget_by_name(self, post_chat: PostChat, logged_in: TestClient) -> None:
+        saved = post_chat(
+            {"message": "ok so remember that my sister Zainab is vegetarian and hates mushrooms"}
+        )
+        assert (
+            said(saved) == "Saved to memory: Your sister Zainab is vegetarian and hates mushrooms."
+        )
+        post_chat({"message": "note that Tomas is allergic to peanuts"})
+        chat = saved[0][1]["conversation_id"]
+        asked = post_chat(
+            {"message": "do you remember what zainab doesnt eat", "conversation_id": chat}
+        )
+        assert said(asked) == "Your sister Zainab is vegetarian and hates mushrooms."
+        gone = post_chat({"message": "forget that", "conversation_id": chat})
+        assert said(gone) == "Forgot: Your sister Zainab is vegetarian and hates mushrooms."
+        assert [f["text"] for f in logged_in.get("/api/facts").json()] == [
+            "Tomas is allergic to peanuts."
+        ]
+
+    @pytest.mark.parametrize(
+        ("message", "query"),
+        [
+            ("any unread mail?", "is:unread in:inbox"),
+            ("anything that needs my attention?", "is:unread in:inbox -category:promotions"),
+        ],
+    )
+    @pytest.mark.parametrize("replies", [["1. Asks to pay invoice 42\n2. Asks about the proposal"]])
+    def test_mail_reads_skip_the_intent_call_and_list_messages(
+        self, post_chat: PostChat, message: str, query: str
+    ) -> None:
+        frames = post_chat({"message": message})
+        assert of(frames, "tool_call")[0]["args"]["query"].startswith(query)
+        text = said(frames)
+        assert "- ada@example.test: Invoice 42" in text and "Sent emails" not in text
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"), [(read("what did Ada ask?", sender="Ada"), [""])]
+    )
+    def test_an_empty_mail_answer_becomes_the_list(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "what did Ada ask?"})
+        assert of(frames, "replace")[-1]["text"].startswith(
+            "Here is what I found:\n- ada@example.test: Invoice 42"
+        )
+
+    @pytest.mark.parametrize("replies", [["", "Short bursts help."]])
+    def test_an_empty_chat_answer_is_tried_again(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "any tips for staying focused in the afternoon?"})
+        assert of(frames, "replace")[-1]["text"] == "Short bursts help."

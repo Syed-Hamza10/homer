@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from homer_core.agent.intents import ReadEmail
 from homer_core.services.jobs.recipients import listed
@@ -210,7 +211,10 @@ async def gists(turn: Turn, messages: list[dict[str, Any]]) -> list[str]:
     )
     prompt = GIST_PROMPT.format(count=len(messages), emails=emails)
     agent = Agent(turn.runtime.model, output_type=str, instructions=prompt)
-    reply = await turn.extract(agent, "Summarise each email in one clause.")
+    try:
+        reply = await turn.extract(agent, "Summarise each email in one clause.")
+    except UnexpectedModelBehavior:
+        reply = ""
     found: dict[int, str] = {}
     for line in reply.splitlines():
         match = GIST_LINE.match(line)
@@ -318,7 +322,7 @@ async def answer_question(turn: Turn, intent: ReadEmail) -> None:
         return
     emails = "\n\n".join(shown(message) for message in messages)
     index = await turn.stream(intent.question, ANSWER_PROMPT.format(emails=emails))
-    if NO_INFO.search(turn.segments[index]):
+    if not turn.segments[index] or NO_INFO.search(turn.segments[index]):
         listing = await lines(turn, messages)
         turn.replace(index, f"Here is what I found:\n{listing}")
 

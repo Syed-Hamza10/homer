@@ -23,7 +23,12 @@ WORDS = [
     (r"\bsquared\b", "**2"),
     (r"\bcubed\b", "**3"),
     (r"\bsquare root of\s+(" + NUMBER + ")", r"sqrt(\1)"),
-    (r"(" + NUMBER + r")\s*(?:%|percent)\s+of\b", r"(\1/100)*"),
+    (r"\$|\b(?:dollars?|bucks|euros?|rupees?)\b", ""),
+    (r"(" + NUMBER + r")\s*(?:%|percent)\s+off\s+(" + NUMBER + ")", r"\2*(1-\1/100)"),
+    (
+        r"(" + NUMBER + r")\s*(?:%|percent)\s+(?:tip|tax|discount|vat)?\s*(?:of|on|for)\b",
+        r"(\1/100)*",
+    ),
     (r"\bmod(?:ulo)?\b", "%"),
 ]
 EXPRESSION = re.compile(r"^[\d\s.+\-*/()%,sqrt]+$")
@@ -129,6 +134,11 @@ CONVERT = [
     re.compile(
         rf"^how many (?P<target>{UNIT})\s+(?:is|are|in|=|for|do i get for|would i get for)\s+"
         rf"(?P<symbol>[$€£¥₹])?\s*(?P<amount>{NUMBER})\s*(?P<source>{UNIT})?\s*[?.!]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^how many (?P<target>{UNIT})\s+(?:are\s+)?in\s+(?:a|an|one)\s+(?P<source>{UNIT})"
+        r"\s*[?.!]*$",
         re.IGNORECASE,
     ),
 ]
@@ -251,10 +261,11 @@ def conversion(text: str) -> UnitConversion | CurrencyConversion | None:
         match = pattern.match(body)
         if match is None:
             continue
-        amount = number(match["amount"])
-        source_text = match["source"] or ""
-        target_text = match["target"]
-        source = SYMBOLS.get(match["symbol"] or "") or currency(source_text)
+        fields = match.groupdict()
+        amount = number(fields.get("amount") or "1")
+        source_text = fields["source"] or ""
+        target_text = fields["target"]
+        source = SYMBOLS.get(fields.get("symbol") or "") or currency(source_text)
         target = currency(target_text)
         if source and target and source != target:
             return CurrencyConversion(amount, source, target)

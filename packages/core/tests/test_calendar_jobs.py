@@ -329,22 +329,6 @@ class TestMemory:
         assert calls(post_chat({"message": "what was my dog's name again?"})) == []
 
 
-class TestSearchDates:
-    @pytest.mark.parametrize(
-        ("intents", "text"),
-        [([[{"kind": "web_search", "query": "premier league results yesterday"}]], "Arsenal won.")],
-    )
-    def test_yesterday_becomes_a_date_in_the_query_and_the_prompt(
-        self, post_chat: PostChat, fake_search: ModuleType, seen: list[list[ModelMessage]]
-    ) -> None:
-        post_chat({"message": "who won the premier league match yesterday"})
-        yesterday = day(-1)
-        assert fake_search.queries == [f"premier league results {yesterday.day} {yesterday:%B %Y}"]
-        instructions = str(getattr(seen[-1][-1], "instructions", ""))
-        assert f"Yesterday was {yesterday:%A} {yesterday.day} {yesterday:%B %Y}." in instructions
-        assert "at most 80 words" in instructions
-
-
 def next_on(weekday: int) -> int:
     """Days from today to the next given weekday, at least one."""
     return (weekday - today().weekday() - 1) % 7 + 1
@@ -440,7 +424,6 @@ class TestMove:
         [
             [
                 [booked(date=day(MONDAY).isoformat(), start="12:00", end="12:45")],
-                [{"kind": "chat"}],
                 [update(match="the call we just booked", new_start="4pm")],
             ]
         ],

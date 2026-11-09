@@ -77,8 +77,9 @@ def matching(session: Session, user: User, about: str | None) -> list[Fact]:
     wanted = keywords(about)
     if not wanted:
         return facts
-    scored = [(score(fact, wanted), fact) for fact in facts]
-    return [fact for value, fact in sorted(scored, key=lambda pair: -pair[0]) if value > 0]
+    scored = sorted(((score(fact, wanted), fact) for fact in facts), key=lambda pair: -pair[0])
+    best = scored[0][0] if scored else 0.0
+    return [fact for value, fact in scored if value > 0 and value >= best / 2]
 
 
 def forget(session: Session, user: User, about: str | None) -> Fact | None:
