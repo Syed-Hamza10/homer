@@ -39,7 +39,8 @@ NEW_REQUEST = re.compile(
 )
 SENT_QUESTION = re.compile(
     r"^(?:so\s+|and\s+|but\s+|hey\s+)?(?:did|have|has|was|is|were)\s+"
-    r"(?:you|it|that|this|they|the\s+\w+|my\s+\w+)\b.*\b(?:send|sent|go(?:ne)? out|went out)\b",
+    r"(?:you|it|that|this|they|the\s+\w+|my\s+\w+)\s+(?:[\w']+\s+){0,3}?"
+    r"(?:send|sent|go(?:ne)? out|went out)\b(?!.*\b(?:link|add|include|mention)\b)",
     re.IGNORECASE,
 )
 DAY_SUMMARY = re.compile(
@@ -48,6 +49,24 @@ DAY_SUMMARY = re.compile(
     r"|\bwhat(?:'s| is| else is)? (?:still )?(?:open|left|pending|outstanding|waiting on me)\b"
     r"|\b(?:waiting|pending) on me\b|\bend[- ]of[- ]day (?:summary|recap|digest|review)\b"
     r"|\b(?:recap|wrap[- ]up|summary) of (?:my|the) day\b|\bsummari[sz]e my day\b",
+    re.IGNORECASE,
+)
+DRAFT_QUESTION = re.compile(
+    r"\?\s*$|^(?:where|what|whats|does|do|did|is|are|has|have|will|why|how)\b|\byes or no\b",
+    re.IGNORECASE,
+)
+ABOUT_DRAFT = re.compile(
+    r"\b(?:draft|link|(?:the|this|that|your) (?:e-?mail|message|body)"
+    r"|it (?:say|says|mention|mentions|include|includes|contain|contains|have|has)|in it"
+    r"|yes or no)\b",
+    re.IGNORECASE,
+)
+ELSEWHERE = re.compile(r"\b(?:from|inbox|unread)\b", re.IGNORECASE)
+LINK_EDIT = re.compile(
+    r"\b(?:add|include|put|insert|paste|attach|drop|share)\b.*\blink\b", re.IGNORECASE
+)
+ASKED_STATE = re.compile(
+    r"^(?:so\s+|and\s+)?(?:did|does|do|is|are|was|were|where|whats|what|has|have|why)\b",
     re.IGNORECASE,
 )
 RECIPIENT = re.compile(r"\bto\s+([\w.+-]+(?:@[\w.-]+)?)", re.IGNORECASE)
@@ -101,6 +120,23 @@ def is_edit(message: str) -> bool:
 
 def asks_if_sent(message: str) -> bool:
     return SENT_QUESTION.match(message.strip()) is not None
+
+
+def asks_about_draft(message: str) -> bool:
+    """A question about the email being drafted: "where's the link?", "does it say Friday?"."""
+    text = message.strip()
+    return (
+        bool(DRAFT_QUESTION.search(text) and ABOUT_DRAFT.search(text))
+        and not ELSEWHERE.search(text)
+        and not asks_if_sent(text)
+        and not wants_link(text)
+    )
+
+
+def wants_link(message: str) -> bool:
+    """An edit that asks to put a link into the email: "add the link of the event in it"."""
+    text = message.strip()
+    return LINK_EDIT.search(text) is not None and not ASKED_STATE.match(text)
 
 
 def asks_for_summary(message: str) -> bool:

@@ -249,7 +249,9 @@ async def execute(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     record = {"action": action, "payload": payload}
     executed.append(record)
     if action == "cal_create":
-        return {"id": f"evt_new{len(executed)}", **payload}
+        event_id = f"evt_new{len(executed)}"
+        link = f"https://calendar.example.test/event?eid={event_id}"
+        return {"id": event_id, **payload, "metadata": {"html_link": link}}
     return {"ok": True, **record}
 
 

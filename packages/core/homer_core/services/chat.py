@@ -1,9 +1,10 @@
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -11,27 +12,36 @@ import structlog
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.usage import RunUsage
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from homer_core.agent import routing
 from homer_core.agent.intents import Background, extract
 from homer_core.agent.router import (
     Command,
     Decision,
+    asks_about_draft,
     asks_for_summary,
     asks_if_sent,
     is_conversational,
     is_edit,
     parse_command,
     parse_decision,
+    wants_link,
 )
 from homer_core.agent.runtime import Runtime
-from homer_core.db.models import Conversation, Message, TokenCounter, User, utcnow
+from homer_core.db.models import Approval, Conversation, Message, TokenCounter, User, utcnow
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
 from homer_core.services.conversations import get_conversation, list_messages, make_title
 from homer_core.services.errors import DomainError
 from homer_core.services.facts import prompt_facts
-from homer_core.services.jobs import day_summary, dispatch, edit_email, mail_status, send_email
+from homer_core.services.jobs import (
+    day_summary,
+    dispatch,
+    draft_question,
+    edit_email,
+    mail_status,
+    send_email,
+)
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
 
@@ -45,6 +55,10 @@ CONNECTION_ERRORS = frozenset({"APIConnectionError", "APITimeoutError", "Connect
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
 NOTHING_PENDING = "There's no draft waiting in this chat."
+ALREADY_DONE = "I already drafted that one — it's above."
+REPEAT_SECONDS = 120
+NAMED = re.compile(r"\b(?:with|to|for|and)\s+([\w.+-]+@[\w.-]+|[A-Za-z][\w'-]+)")
+PRONOUNS = frozenset({"him", "her", "them", "me", "you", "the", "a", "an", "my", "this", "that"})
 
 
 @dataclass
@@ -95,6 +109,25 @@ def start_conversation(session: Session, user: User, message: str) -> Conversati
     session.commit()
     session.refresh(conversation)
     return conversation
+
+
+def repeated(session: Session, stored: list[Message], message: str) -> bool:
+    """The same message was sent in this chat in the last two minutes, its turn made a card and
+    no card of the chat was approved or rejected since."""
+    asked = [index for index, item in enumerate(stored) if item.role == "user"]
+    if not asked or asked[-1] + 1 >= len(stored):
+        return False
+    last, reply = stored[asked[-1]], stored[asked[-1] + 1]
+    sent = last.created_at.replace(tzinfo=last.created_at.tzinfo or UTC)
+    recent = (utcnow() - sent).total_seconds() <= REPEAT_SECONDS
+    same = " ".join(last.content.lower().split()) == " ".join(message.lower().split())
+    if not (same and recent and reply.created_approval):
+        return False
+    decided = select(Approval).where(
+        Approval.conversation_id == last.conversation_id,
+        col(Approval.decided_at) >= sent,
+    )
+    return session.exec(decided).first() is None
 
 
 def save_message(
@@ -217,18 +250,32 @@ async def run_skill(session: Session, user: User, runtime: Runtime, command: Com
     return "Unknown command."
 
 
+def named_earlier(message: str) -> bool:
+    """The message names someone before it says "him" or "her": "book with Hassan, then email
+    him"."""
+    pronoun = send_email.PRONOUN_TO.search(message)
+    before = message[: pronoun.start()] if pronoun else ""
+    return any(word.lower() not in PRONOUNS for word in NAMED.findall(before))
+
+
 async def routed(turn: Turn) -> bool:
     """Answers send-status and end-of-day questions and edits of this chat's draft without the
     intent call."""
     if asks_if_sent(turn.message):
         turn.say(mail_status.answer(turn))
         return True
-    if send_email.unexplained(turn):
+    if send_email.unexplained(turn) and not named_earlier(turn.message):
         turn.say(send_email.ASK_WHO)
         return True
     if asks_for_summary(turn.message):
         turn.resolved.append({"kind": "day_summary"})
         await day_summary.run(turn)
+        return True
+    if wants_link(turn.message) and draft_question.pending_draft(turn) is not None:
+        await draft_question.link_event(turn)
+        return True
+    if asks_about_draft(turn.message) and draft_question.pending_draft(turn) is not None:
+        await draft_question.answer(turn)
         return True
 
     if not is_edit(turn.message):
@@ -270,7 +317,7 @@ async def jobs(turn: Turn) -> None:
         known = Background(turn.previous, turn.facts, turn.date_format)
         found, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
         turn.usage.incr(usage)
-        intents = routing.refined(found, turn.message, turn.previous)
+        intents = routing.refined(found, turn.message, turn.previous, turn.facts)
     log.info("intents", kinds=[intent.kind for intent in intents])
     for intent in intents:
         try:
@@ -365,6 +412,11 @@ async def stream(
     earlier = recent_context(stored)
     user_message = save_message(session, conversation, "user", message)
     yield ChatEvent("meta", {"conversation_id": conversation.id, "message_id": user_message.id})
+    if repeated(session, stored, message):
+        save_message(session, conversation, "assistant", ALREADY_DONE)
+        yield ChatEvent("token", {"text": ALREADY_DONE})
+        yield ChatEvent("done", {"input_tokens": 0, "output_tokens": 0})
+        return
 
     outcome = Outcome()
     try:
