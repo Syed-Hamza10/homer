@@ -10,16 +10,20 @@ another person would see waits for your approval, and every outbound request goe
 allowlisted HTTP client with a local audit log.
 
 <p align="center">
-  <a href="#quick-start"><strong>Quick start</strong></a>
-  &nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="#install-as-a-service"><strong>Install as a service</strong></a>
-  &nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="docs/PROJECT_GUIDE.md"><strong>Project guide</strong></a>
-</p>
-
-<p align="center">
   <img src="docs/screenshots/main.png" alt="Homer chat screen showing calendar questions, a drafted reply and proposed changes waiting for approval" width="100%">
 </p>
+
+## Features
+
+| Area | What it does |
+| --- | --- |
+| **Chat** | Streaming markdown answers, source chips, copy and timestamps, stop, regenerate, and a searchable conversation sidebar. |
+| **Today** | A "Your day" card with meetings, emails that need you, follow-ups and waiting approvals. |
+| **Inbox** | A live three-pane Gmail view with labels, search, sanitised HTML, attachments and a composer. |
+| **Calendar** | Day/Week/Month views with drag-to-create and drag-to-move, all through approvals. |
+| **Approvals** | Editable email and event cards, payload hashing, single-use decisions and 24-hour expiry. |
+| **Memory and search** | "Remember that…" facts stored locally, plus DuckDuckGo answers with source links. |
+| **Privacy and operations** | Outbound host log, web-search switch, backups, installer updates and rollback. |
 
 ## Quick start
 
