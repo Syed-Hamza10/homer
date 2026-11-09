@@ -25,18 +25,18 @@ export function AppShell() {
   return (
     <div className="flex h-screen overflow-hidden">
       <nav className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/95 text-sidebar-foreground backdrop-blur">
-        <div className="flex items-center gap-3 border-b border-sidebar-border px-5 py-5">
-          <span className="flex size-9 items-center justify-center rounded-md border border-sidebar-border bg-card text-sidebar-primary shadow-[inset_0_1px_0_var(--marble-1)]">
-            <Landmark className="size-4" strokeWidth={1.5} />
-          </span>
-          <span className="flex flex-col leading-none">
+        <div className="flex flex-col gap-2.5 border-b border-sidebar-border px-5 py-5">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-md border border-sidebar-border bg-card text-sidebar-primary shadow-[inset_0_1px_0_var(--marble-1)]">
+              <Landmark className="size-4" strokeWidth={1.5} />
+            </span>
             <span className="font-heading text-[1.35rem] tracking-[0.16em] uppercase">
               Homer
             </span>
-            <span className="mt-1.5 text-[8px] font-medium tracking-[0.16em] uppercase text-muted-foreground">
-              Your AI assistant at home
-            </span>
-          </span>
+          </div>
+          <p className="font-heading text-[10.5px] italic leading-snug whitespace-nowrap text-muted-foreground">
+            Your AI assistant, right at home.
+          </p>
         </div>
         <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
           <p className="px-3 pb-2 text-[9px] font-medium tracking-[0.32em] uppercase text-muted-foreground">
