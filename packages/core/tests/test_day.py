@@ -78,7 +78,7 @@ def seed(session: Session) -> User:
                 payload_json="{}",
                 payload_hash="x",
                 preview="Send to Rosa",
-                created_at=NOW,
+                created_at=datetime.now(UTC),
             ),
         ]
     )
