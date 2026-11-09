@@ -8,6 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
@@ -39,6 +40,8 @@ log = structlog.get_logger(__name__)
 INTENT_HISTORY = 6
 CONTEXT_TURNS = 4
 GENERIC_ERROR = "The assistant could not answer. Please try again."
+MODEL_DOWN = "The AI model isn't running. Start Ollama and try again."
+CONNECTION_ERRORS = frozenset({"APIConnectionError", "APITimeoutError", "ConnectError"})
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
 NOTHING_PENDING = "There's no draft waiting in this chat."
@@ -333,6 +336,18 @@ async def respond(
             yield event
 
 
+def model_unreachable(error: BaseException | None) -> bool:
+    """The model server could not be reached: a model API error with no HTTP status, or a
+    connection error anywhere in the cause chain."""
+    while error is not None:
+        if isinstance(error, ModelAPIError) and not isinstance(error, ModelHTTPError):
+            return True
+        if type(error).__name__ in CONNECTION_ERRORS:
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 async def stream(
     session: Session,
     user: User,
@@ -375,9 +390,10 @@ async def stream(
         )
         log.info("chat_stopped", conversation_id=conversation.id)
         raise
-    except Exception:
+    except Exception as error:
         log.exception("chat_failed", conversation_id=conversation.id)
-        yield ChatEvent("error", {"message": GENERIC_ERROR})
+        message = MODEL_DOWN if model_unreachable(error) else GENERIC_ERROR
+        yield ChatEvent("error", {"message": message})
         return
 
     save_message(

@@ -30,9 +30,12 @@ export type FollowUp = {
   draft_preview: string | null
 }
 
+export type ModelStatus = "running" | "stopped" | "missing"
+
 export type Health = {
   ollama: "ok" | "down"
   model_pulled: "ok" | "down"
+  model_status: ModelStatus
   servers: Record<string, "ok" | "down">
   self_email: "off" | "ok" | "mismatch" | "unknown"
   checked_at: string

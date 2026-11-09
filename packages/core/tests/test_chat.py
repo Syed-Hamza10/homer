@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -144,6 +145,36 @@ class TestModelFailure:
         with Session(app.state.engine) as session:
             roles = [m.role for m in session.exec(select(Message))]
         assert roles == ["user"]
+
+
+class TestModelNotRunning:
+    @pytest.fixture
+    def model(self) -> Model:
+        def unreachable(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            raise ModelAPIError("qwen", "Connection error.")
+
+        return FunctionModel(function=unreachable)
+
+    def test_an_unreachable_model_says_to_start_ollama(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "what should I cook tonight"})
+        assert frames[-1] == ("error", {"message": chat.MODEL_DOWN})
+        assert chat.MODEL_DOWN == "The AI model isn't running. Start Ollama and try again."
+
+
+class APIConnectionError(Exception):
+    pass
+
+
+def test_a_connection_error_in_the_cause_chain_counts() -> None:
+    try:
+        try:
+            raise APIConnectionError("refused")
+        except APIConnectionError as error:
+            raise RuntimeError("wrapped") from error
+    except RuntimeError as wrapped:
+        assert chat.model_unreachable(wrapped)
+    assert not chat.model_unreachable(ModelHTTPError(500, "qwen"))
+    assert not chat.model_unreachable(RuntimeError("other"))
 
 
 class TestStop:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from homer_core.config import Settings
 from homer_core.db.models import utcnow
@@ -13,6 +13,7 @@ from homer_core.services.rules import ClientRules
 from homer_net import AllowlistedClient
 
 Status = Literal["ok", "down"]
+ModelStatus = Literal["running", "stopped", "missing"]
 
 
 class HealthReport(BaseModel):
@@ -21,6 +22,13 @@ class HealthReport(BaseModel):
     servers: dict[str, Status]
     self_email: SelfEmailStatus
     checked_at: datetime
+
+    @computed_field
+    @property
+    def model_status(self) -> ModelStatus:
+        if self.ollama == "down":
+            return "stopped"
+        return "running" if self.model_pulled == "ok" else "missing"
 
     @property
     def problems(self) -> list[str]:
