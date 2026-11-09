@@ -311,16 +311,41 @@ def test_edit_a_draft_in_the_chat_card_and_send(page: Page, stack: Stack) -> Non
     box.fill("Email priya.natarajan@example.test that the launch moved to Friday")
     box.press("Enter")
     card = page.locator("[data-testid^=approval-]").last
-    expect(card).to_contain_text("Send email to priya.natarajan@example.test", timeout=120_000)
+    expect(card).to_contain_text("priya.natarajan@example.test", timeout=120_000)
     card.get_by_role("button", name="Edit").click()
     body = card.get_by_label("Body")
     body.fill("Edited in the card: the launch is on Friday.")
     card.get_by_role("button", name="Save").click()
     expect(card).to_contain_text("Edited in the card: the launch is on Friday.")
     card.get_by_role("button", name="Send").click()
-    expect(card).to_contain_text("Status: done")
+    expect(card).to_contain_text("Sent")
     assert stack.sent_count() == sent + 1
     assert any("Edited in the card" in body for body in stack.sent_bodies())
+
+
+def test_chat_card_survives_the_stream_a_reload_and_show_the_draft(
+    page: Page, stack: Stack
+) -> None:
+    unlock(page, stack.url)
+    box = page.get_by_placeholder("Message Homer")
+    box.fill("Email priya.natarajan@example.test that the review moved to Thursday")
+    box.press("Enter")
+    reply = page.get_by_test_id("message-assistant").last
+    expect(reply).to_contain_text("Press Send when it looks right", timeout=120_000)
+    card = page.locator("[data-testid^=approval-]").last
+    expect(card).to_be_visible()
+    expect(card.get_by_role("button", name="Send")).to_be_visible()
+    card_id = card.get_attribute("data-testid")
+
+    page.reload()
+    expect(page.get_by_test_id(card_id)).to_be_visible(timeout=30_000)
+
+    box.fill("show me the draft")
+    box.press("Enter")
+    expect(page.get_by_test_id("message-assistant").last).to_have_text(
+        "Here's the draft.", timeout=30_000
+    )
+    expect(page.get_by_test_id(card_id).last.get_by_role("button", name="Send")).to_be_visible()
 
 
 NO_DRAFT = "There's no draft waiting in this chat."

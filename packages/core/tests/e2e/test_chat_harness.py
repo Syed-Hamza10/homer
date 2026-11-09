@@ -74,6 +74,7 @@ def test_sidebar_renames_searches_and_deletes(unlocked: Page) -> None:
     title.press("Enter")
     expect(today.get_by_text("Harness check")).to_be_visible()
 
+    page.get_by_role("button", name="Search conversations").click()
     search = page.get_by_role("searchbox", name="Search conversations")
     search.fill("harness")
     expect(page.get_by_text("Harness check")).to_be_visible()

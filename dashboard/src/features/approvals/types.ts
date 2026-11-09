@@ -9,12 +9,15 @@ export type Approval = {
   created_at: string
   decided_at: string | null
   result: unknown
+  conversation_id: number | null
+  message_id: number | null
 }
 
 export type PendingApproval = Pick<
   Approval,
   "id" | "action" | "preview" | "payload"
->
+> &
+  Partial<Pick<Approval, "status" | "result">>
 
 export type Decision = "approve" | "reject"
 

@@ -4,7 +4,7 @@ import { ConversationRow } from "./ConversationRow"
 
 afterEach(cleanup)
 
-const conversation = { id: "1", title: "Trip", updated_at: "" }
+const conversation = { id: 1, title: "Trip", updated_at: "" }
 
 function setup() {
   const onRename = vi.fn()
