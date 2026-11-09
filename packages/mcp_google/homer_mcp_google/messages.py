@@ -135,4 +135,14 @@ def build_raw(to: str, subject: str, body: str, reply_to: dict[str, str] | None)
         references = f"{reply_to.get('references', '')} {reply_to['message-id']}".strip()
         message["References"] = references
     message.set_content(body)
+    message.add_alternative(body_html(body), subtype="html")
     return base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
+
+
+def body_html(body: str) -> str:
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", body) if part.strip()]
+    blocks = "".join(
+        f"<p>{'<br>'.join(html.escape(line) for line in part.splitlines())}</p>"
+        for part in paragraphs
+    )
+    return f"<html><body>{blocks}</body></html>"
