@@ -191,3 +191,72 @@ def test_did_you_email_someone_reads_the_sent_folder(client: httpx.Client, run: 
     assert reply.tools and set(reply.tools) == {"mail_search"}, reply.tools
     assert reply.said.startswith(("Yes", "No")), reply.said
     assert "Partnership proposal" in reply.said, reply.said
+
+
+ROUND3_SEARCHES = {
+    "how much is a barrel of brent crude today": re.compile(r"\$\s?\d{2,3}(?:\.\d+)?"),
+    "did the NBA finals finish, who took it": re.compile(r"\b[A-Z][a-z]+"),
+    "who is the current mayor of new york": re.compile(r"\b[A-Z][a-z]+ [A-Z][a-z]+"),
+    "any news on the pakistan cricket team this week": re.compile(r"\b[A-Z][a-z]+"),
+}
+ROUND3_NO_SEARCH = [
+    "whats 15% of 240",
+    "how many days are in a leap year",
+    "random one: whats a good name for a goldfish",
+]
+
+
+@pytest.mark.parametrize("run", RUNS)
+@pytest.mark.parametrize("question", list(ROUND3_SEARCHES))
+def test_round3_searches_answer_with_the_figure(
+    web: None, client: httpx.Client, question: str, run: int
+) -> None:
+    reply = timed(client, "round3_search", question)
+    body = answered(reply)
+    assert "Something went wrong" not in reply.said, reply.said
+    assert reply.tools[0] == "web_search", (reply.tools, reply.said)
+    assert ROUND3_SEARCHES[question].search(body), reply.said
+    assert reply.seconds < 20, (reply.seconds, reply.said)
+
+
+@pytest.mark.parametrize("run", RUNS)
+@pytest.mark.parametrize("message", ROUND3_NO_SEARCH)
+def test_round3_questions_that_need_no_web(client: httpx.Client, message: str, run: int) -> None:
+    reply = timed(client, "round3_no_search", message)
+    answered(reply)
+    assert "web_search" not in reply.tools, (reply.tools, reply.said)
+    assert reply.said.strip(), reply.said
+    if "15%" in message:
+        assert reply.said == "15% of 240 = 36" and reply.seconds < 3, reply.said
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_round3_memory_by_name(client: httpx.Client, run: int) -> None:
+    saved = timed(
+        client,
+        "round3_memory",
+        "ok so remember that my sister Zainab is vegetarian and hates mushrooms",
+    )
+    assert "Zainab" in saved.said, saved.said
+    chat = saved.conversation
+    asked = timed(client, "round3_memory", "do you remember what zainab doesnt eat", chat)
+    assert "vegetarian" in asked.said and "mushrooms" in asked.said, asked.said
+    gone = timed(client, "round3_memory", "forget that thing about zainab pls", chat)
+    assert gone.said.startswith("Forgot:") and "Zainab" in gone.said, gone.said
+    assert not any("Zainab" in text for text in fact_texts(client))
+
+
+@pytest.mark.parametrize("run", RUNS)
+def test_round3_unread_and_attention(client: httpx.Client, run: int) -> None:
+    unread = timed(client, "round3_mail", "any unread mail?")
+    answered(unread)
+    assert unread.said.startswith("You have "), unread.said
+    assert unread.of("tool_call")[0]["args"]["query"] == "is:unread in:inbox"
+    attention = timed(client, "round3_mail", "anything that needs my attention?")
+    answered(attention)
+    assert set(attention.tools) == {"mail_search"}, attention.tools
+    assert "may need your attention" in attention.said.splitlines()[0], attention.said
+    assert NEWSLETTER not in attention.said, attention.said
+    sent = timed(client, "round3_mail", "did I email Samuel yesterday?")
+    assert sent.said.startswith(("Yes", "No")), sent.said
+    assert sent.of("tool_call")[0]["args"]["query"].startswith("in:sent to:Samuel after:")
