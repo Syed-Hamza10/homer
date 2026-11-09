@@ -73,6 +73,7 @@ async def edited_mail(
         change.subject,
         change.body,
         str(payload.get("thread_id") or ""),
+        payload.get("to_name", "") if change.to == payload["to"] else "",
     )
 
 

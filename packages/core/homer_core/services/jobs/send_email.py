@@ -94,7 +94,14 @@ def mail_preview(to: str, subject: str, body: str) -> str:
 
 
 def request_send(
-    session: Session, user_id: int, draft_id: str, to: str, subject: str, body: str, thread: str
+    session: Session,
+    user_id: int,
+    draft_id: str,
+    to: str,
+    subject: str,
+    body: str,
+    thread: str,
+    name: str = "",
 ) -> Approval:
     payload = {
         "draft_id": draft_id,
@@ -103,6 +110,8 @@ def request_send(
         "body": body,
         "thread_id": thread,
     }
+    if name:
+        payload["to_name"] = name
     return create(session, user_id, "google", "mail_send", payload, mail_preview(to, subject, body))
 
 
@@ -308,6 +317,7 @@ async def run(turn: Turn, intent: SendEmail) -> None:
         subject,
         text.body,
         str(draft.get("thread_id") or thread or ""),
+        person.name,
     )
     turn.requested(approval)
     turn.say(ready(turn, intent, person, subject))

@@ -130,6 +130,7 @@ class TestSendEmail:
         frames = post_chat({"message": "Email Ada that the invoice is paid"})
         assert said(frames) == READY.format(who="Ada Example")
         assert calls(frames) == ["contacts_search", "mail_draft"]
+        assert of(frames, "approval_required")[0]["payload"]["to_name"] == "Ada Example"
         assert of(frames, "approval_required")[0]["payload"]["to"] == "ada@example.test"
 
     @pytest.mark.parametrize("intents", [[[email("Sara")]]])
