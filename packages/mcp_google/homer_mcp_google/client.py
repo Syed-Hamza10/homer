@@ -21,10 +21,19 @@ class GoogleClient:
         """Logs to the core database when it exists unless a log callable is given."""
         self.settings = settings
         self.store = store
-        allowlist = Allowlist({host_key(settings.api_base), host_key(settings.token_url)})
+        allowlist = Allowlist(
+            {
+                host_key(settings.api_base),
+                host_key(settings.people_api),
+                host_key(settings.token_url),
+            }
+        )
         if log is None:
             log = SqliteLog(settings.db_path) if settings.db_path.exists() else no_log
         self.http = AllowlistedClient(allowlist, log=log, timeout=TIMEOUT)
+
+    def base_for(self, path: str) -> str:
+        return self.settings.people_api if path.startswith("/v1/people") else self.settings.api_base
 
     async def request(
         self,
@@ -52,7 +61,7 @@ class GoogleClient:
     ) -> Any:
         return await self.http.request(
             method,
-            f"{self.settings.api_base}{path}",
+            f"{self.base_for(path)}{path}",
             params=params,
             json=json,
             headers={"Authorization": f"Bearer {access_token}"},

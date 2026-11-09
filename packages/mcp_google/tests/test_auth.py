@@ -39,3 +39,17 @@ def test_connect_stamps_the_consent_time(tmp_path: Path, monkeypatch: pytest.Mon
 def test_missing_token_needs_a_reconnect(tmp_path: Path) -> None:
     with pytest.raises(auth.ReconnectRequired):
         auth.TokenStore(tmp_path / "none.json").load()
+
+
+def test_contacts_use_the_people_host_against_real_google(monkeypatch: pytest.MonkeyPatch) -> None:
+    from homer_mcp_google.settings import GOOGLE_PEOPLE_API_BASE
+
+    monkeypatch.delenv("GOOGLE_API_BASE", raising=False)
+    monkeypatch.delenv("GOOGLE_PEOPLE_API_BASE", raising=False)
+    assert Settings.from_env().people_api == GOOGLE_PEOPLE_API_BASE
+
+
+def test_contacts_follow_a_simulator_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_BASE", "http://127.0.0.1:9999")
+    monkeypatch.delenv("GOOGLE_PEOPLE_API_BASE", raising=False)
+    assert Settings.from_env().people_api == "http://127.0.0.1:9999"
