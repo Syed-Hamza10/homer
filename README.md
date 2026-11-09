@@ -1,13 +1,13 @@
 # Homer
 
-**A private AI assistant for your inbox and calendar, running entirely on your machine.**
+**Your AI assistant, right at home.**
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](#requirements)
 [![React 19](https://img.shields.io/badge/react-19-61DAFB?logo=react&logoColor=white)](#how-it-works)
 [![Local model](https://img.shields.io/badge/LLM-Ollama-000000)](#requirements)
 [![License](https://img.shields.io/badge/license-proprietary-6b7280)](#license)
 
-Homer is a local-first AI assistant for Gmail and Google Calendar. It runs on the user's own
+Homer is a local-first AI assistant, currently supporting Google Workspace. It runs on the user's own
 computer: a FastAPI backend runs a local Ollama model, the mail and calendar work happens through
 MCP tool servers, and application data stays in SQLite under `~/.homer`. There is no hosted-model
 API key, no per-token bill, and no mailbox content sent to a third-party AI service.
@@ -270,29 +270,6 @@ The current host list and verification commands are in [PRIVACY.md](PRIVACY.md).
 application-level enforcement, not an operating-system network sandbox; say it that way when
 describing the product.
 
-## Testing and evaluation
-
-```sh
-make test        # backend fast suite: fake model, fake servers, no network, no Ollama
-cd dashboard && pnpm test
-make test-e2e    # real server, real SQLite, real Ollama model, real browser
-make lint        # ruff check + format check, plus actionlint when installed
-make build       # dashboard build + packaged manifest
-make eval-smoke  # 10 YAML tasks × 3 runs against the Google simulator
-```
-
-The current fast backend suite has **497 tests** and runs in a few minutes without a model or a
-network connection. The dashboard has **70 unit tests**. The end-to-end suite has
-**145 tests**; it starts the real server on a temporary home, runs the real MCP servers and Google
-simulator, calls the live Ollama model and drives the built dashboard with Playwright. It skips
-itself when Ollama or the model is unavailable, so CI stays green on machines without a GPU. CI
-runs the fast backend suite and lint on Ubuntu and macOS, then verifies that a built wheel contains
-the dashboard and model manifest.
-
-`homer-eval` drives the real services through the simulator and reports pass rate, latency and
-token use per task. It is model-agnostic: point it at any OpenAI-compatible endpoint with
-`--base-url` and `--model`. It is a local quality gate, not a CI target, because CI has no model.
-
 ## Repository layout
 
 ```text
@@ -333,7 +310,7 @@ reporting, evaluation, and a client installer with update and rollback. Reliabil
 
 Known limitations:
 
-- A 9B local model is good at extracting intent, reading and writing. It is not a frontier model;
+- A 9B local model is perfectly capable for extracting intent, reading and writing. It is not a frontier model;
   ambiguous phrasing and some multi-step requests still fail, which is why consequential actions
   end in a human decision.
 - The interface and prompts are English-only.
