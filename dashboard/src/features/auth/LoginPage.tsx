@@ -61,7 +61,7 @@ export function LoginPage() {
         </div>
         <Card className="w-full shadow-[0_24px_60px_-40px_oklch(0.25_0.01_65/0.55)]">
           <CardContent className="flex flex-col gap-4 pt-1">
-            <p className="text-center text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+            <p className="text-center text-xs font-medium text-muted-foreground">
               Enter the archive
             </p>
             <form onSubmit={submit} className="flex flex-col gap-3">
@@ -85,7 +85,7 @@ export function LoginPage() {
             </form>
           </CardContent>
         </Card>
-        <p className="text-center text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
+        <p className="text-center text-xs font-medium text-muted-foreground">
           The AI runs on this machine
         </p>
       </div>

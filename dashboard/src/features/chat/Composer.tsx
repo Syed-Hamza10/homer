@@ -1,4 +1,4 @@
-import { Square } from "lucide-react"
+import { ArrowUp, Square } from "lucide-react"
 import { useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -27,30 +27,40 @@ export function Composer({ streaming, onSend, onStop }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card/80 p-2 shadow-[inset_0_1px_0_var(--marble-1)] transition-shadow focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/20">
+    <div className="flex items-end gap-2 rounded-2xl border border-border bg-card py-1.5 pr-1.5 pl-2 shadow-[0_1px_2px_oklch(0_0_0/0.04),inset_0_1px_0_var(--marble-1)] transition-shadow focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/15">
       <Textarea
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
         placeholder="Message Homer"
-        rows={2}
-        className="max-h-40 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+        aria-label="Message Homer"
+        rows={1}
+        className="max-h-48 min-h-9 resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] shadow-none focus-visible:border-0 focus-visible:ring-0 md:text-[15px] dark:bg-transparent"
       />
-      <div className="flex items-end justify-between gap-3 px-1">
-        <span className="hidden pb-1 text-[9px] font-medium tracking-[0.2em] uppercase text-muted-foreground sm:block">
-          Enter to send · Shift+Enter for a new line
-        </span>
-        {streaming ? (
-          <Button variant="outline" onClick={onStop}>
-            <Square className="size-3 fill-current" strokeWidth={1.8} />
-            Stop
-          </Button>
-        ) : (
-          <Button onClick={submit} disabled={!value.trim()}>
-            Send
-          </Button>
-        )}
-      </div>
+      {streaming ? (
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Stop"
+          title="Stop"
+          onClick={onStop}
+          className="size-9 shrink-0 rounded-xl"
+        >
+          <Square className="size-3 fill-current" strokeWidth={1.8} />
+        </Button>
+      ) : (
+        <Button
+          variant="brand"
+          size="icon"
+          aria-label="Send"
+          title="Send"
+          onClick={submit}
+          disabled={!value.trim()}
+          className="size-9 shrink-0 rounded-xl"
+        >
+          <ArrowUp className="size-4" strokeWidth={2} />
+        </Button>
+      )}
     </div>
   )
 }

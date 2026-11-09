@@ -51,7 +51,7 @@ export function ConversationRow({
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
         onBlur={save}
-        className="h-8 text-sm"
+        className="h-7 text-[13px]"
       />
     )
 
@@ -84,16 +84,15 @@ export function ConversationRow({
   return (
     <div
       className={cn(
-        "group/row relative flex items-center rounded-md border border-transparent text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-        selected &&
-          "border-border bg-card font-medium text-foreground shadow-[inset_2px_0_0_var(--sidebar-ring)]",
+        "group/row relative flex items-center rounded-md text-[13px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+        selected && "bg-sidebar-accent text-sidebar-accent-foreground",
       )}
     >
       <button
         type="button"
         onClick={onSelect}
         onDoubleClick={startRename}
-        className="min-w-0 flex-1 truncate px-3 py-2 text-left outline-none"
+        className="min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {title}
       </button>

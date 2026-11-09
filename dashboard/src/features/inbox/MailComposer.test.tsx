@@ -62,6 +62,6 @@ describe("MailComposer", () => {
     expect(await screen.findByDisplayValue("Thursday works.")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     expect(await screen.findByTestId("approval-7")).toBeTruthy()
-    expect(screen.getByText("Send email to maya@example.test")).toBeTruthy()
+    expect(screen.getByText("Email to maya@example.test")).toBeTruthy()
   })
 })

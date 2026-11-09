@@ -42,18 +42,18 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "group flex flex-col gap-1",
-        own ? "items-end" : "items-start",
+        "group flex flex-col gap-1.5",
+        own ? "items-end" : "items-stretch",
         !createdAt && "animate-enter",
       )}
       data-testid={`message-${role}`}
     >
       <div
         className={cn(
-          "max-w-[75%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed",
+          "text-[15px] leading-7",
           own
-            ? "bg-primary whitespace-pre-wrap text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.12)]"
-            : "min-w-0 border border-border bg-card/80 break-words shadow-[inset_0_1px_0_var(--marble-1)]",
+            ? "max-w-[80%] rounded-2xl rounded-br-md bg-secondary px-4 py-2 whitespace-pre-wrap text-secondary-foreground"
+            : "min-w-0 break-words",
         )}
       >
         {own ? content : body && <Markdown text={body} streaming={pending} />}
@@ -70,7 +70,13 @@ export function MessageBubble({
         )}
       </div>
       {(showActions || stopped || createdAt) && (
-        <div className="flex h-6 items-center gap-1 px-0.5 text-[10px] text-muted-foreground">
+        <div
+          className={cn(
+            "-mt-1 flex h-6 items-center gap-1 text-[11px] text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
+            own ? "pr-1" : "-ml-1",
+            stopped && "opacity-100",
+          )}
+        >
           {showActions && <CopyButton text={content} label="Copy message" />}
           {showActions && onRegenerate && (
             <Button
@@ -84,14 +90,9 @@ export function MessageBubble({
               <RotateCcw strokeWidth={1.8} />
             </Button>
           )}
-          {stopped && content && (
-            <span className="tracking-[0.14em] uppercase">Stopped</span>
-          )}
+          {stopped && content && <span>Stopped</span>}
           {createdAt && (
-            <time
-              dateTime={createdAt}
-              className="px-1 opacity-0 transition-opacity group-hover:opacity-100"
-            >
+            <time dateTime={createdAt} className="px-1">
               {formatTime(createdAt)}
             </time>
           )}

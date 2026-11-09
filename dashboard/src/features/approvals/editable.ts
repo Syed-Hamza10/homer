@@ -35,3 +35,34 @@ export function primaryLabel(action: string): string {
   if (action === "cal_create") return "Create"
   return "Approve"
 }
+
+export function approvalTitle(approval: PendingApproval): string {
+  const { payload } = approval
+  if (approval.action === "mail_send") {
+    const who = text(payload.to_name) || text(payload.to)
+    return who ? `Email to ${who}` : "Email ready to send"
+  }
+  if (approval.action === "cal_create") {
+    const title = text(payload.title)
+    return title ? `New event: ${title}` : "New event"
+  }
+  return "Needs your approval"
+}
+
+const settledLabels: Record<string, string> = {
+  rejected: "Discarded",
+  expired: "Expired",
+  failed: "Failed",
+  unknown: "Unconfirmed",
+  superseded: "Replaced",
+}
+
+export function statusLabel(action: string, status: string): string {
+  if (status === "done")
+    return action === "mail_send"
+      ? "Sent"
+      : action === "cal_create"
+        ? "Created"
+        : "Done"
+  return settledLabels[status] ?? status
+}

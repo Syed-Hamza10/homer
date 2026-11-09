@@ -8,9 +8,7 @@ import { useHosts, useSetWebSearch, useUsage, useWipe } from "./usePrivacy"
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-border bg-card/70 px-4 py-3 shadow-[inset_0_1px_0_var(--marble-1)]">
-      <p className="text-[9px] font-medium tracking-[0.22em] uppercase text-muted-foreground">
-        {label}
-      </p>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p className="mt-1 font-heading text-xl tabular-nums">{value}</p>
     </div>
   )
@@ -36,7 +34,6 @@ export function PrivacyPage() {
     <ScrollArea className="min-h-0 flex-1">
       <main className="mx-auto flex max-w-3xl flex-col gap-7 p-6">
         <PageHeader
-          eyebrow="Trust"
           title="Privacy"
           description="Every website or service Homer has contacted, and how often. The AI itself runs on this machine."
         />
@@ -72,7 +69,7 @@ export function PrivacyPage() {
               />
               Web search
             </label>
-            <span className="text-[10px] tracking-[0.18em] uppercase text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               Right now: {hosts?.web_search ? "on" : "off"}
             </span>
             {setWebSearch.data?.restart_required && (
@@ -90,7 +87,7 @@ export function PrivacyPage() {
 
         <div className="overflow-x-auto rounded-lg border border-border bg-card/60 shadow-[inset_0_1px_0_var(--marble-1)]">
           <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/40 text-left text-[9px] tracking-[0.22em] uppercase text-muted-foreground">
+            <thead className="border-b border-border bg-muted/40 text-left text-[11px] text-muted-foreground">
               <tr>
                 <th className="px-3 py-2.5 font-medium">Service</th>
                 <th className="px-3 py-2.5 font-medium">Times contacted</th>
@@ -124,7 +121,7 @@ export function PrivacyPage() {
         </div>
 
         <section className="flex flex-col gap-2.5 border-t border-border pt-5">
-          <h2 className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+          <h2 className="font-sans text-xs font-medium text-muted-foreground">
             Local data
           </h2>
           <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">

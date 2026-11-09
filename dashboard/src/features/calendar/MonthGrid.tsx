@@ -39,7 +39,7 @@ export function MonthGrid({
         {days.slice(0, 7).map((day) => (
           <div
             key={dateKey(day)}
-            className="border-b border-border bg-muted/40 px-2 py-1.5 text-[9px] tracking-[0.22em] uppercase text-muted-foreground"
+            className="border-b border-border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground"
           >
             {dayLabel(day, { weekday: "short" })}
           </div>

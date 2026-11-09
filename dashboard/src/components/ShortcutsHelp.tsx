@@ -20,7 +20,7 @@ export function ShortcutsHelp({ title, shortcuts, onClose }: Props) {
         className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-card p-5 shadow-[inset_0_1px_0_var(--marble-1)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <p className="text-[9px] font-medium tracking-[0.3em] uppercase text-muted-foreground">
+        <p className="text-xs font-medium text-muted-foreground">
           Keyboard shortcuts
         </p>
         <h2 className="font-heading text-xl">{title}</h2>

@@ -15,9 +15,7 @@ type RowProps = { label: string; value: string; alert?: boolean }
 function Row({ label, value, alert = false }: RowProps) {
   return (
     <div className="flex justify-between gap-4 border-t border-border/70 py-2.5 text-sm">
-      <span className="text-[9px] font-medium tracking-[0.22em] uppercase text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className={cn(alert && "text-destructive")}>{value}</span>
     </div>
   )

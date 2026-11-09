@@ -82,9 +82,6 @@ export function InboxPage() {
     <main className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
         <div className="flex items-baseline gap-3">
-          <p className="text-[9px] font-medium tracking-[0.32em] uppercase text-muted-foreground">
-            Mail
-          </p>
           <h1 className="font-heading text-2xl leading-none tracking-tight">
             Inbox
           </h1>

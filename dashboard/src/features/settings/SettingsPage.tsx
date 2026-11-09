@@ -37,9 +37,7 @@ const selfEmailNotes: Partial<Record<SelfEmailStatus, string>> = {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5 text-sm">
-      <span className="text-[9px] font-medium tracking-[0.22em] uppercase text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
     </label>
   )
@@ -213,7 +211,6 @@ export function SettingsPage() {
     <ScrollArea className="min-h-0 flex-1">
       <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
         <PageHeader
-          eyebrow="Configuration"
           title="Settings"
           description="These preferences shape how Homer sorts mail, drafts replies and tracks follow-ups."
         />

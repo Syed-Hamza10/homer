@@ -60,9 +60,7 @@ export function MailComposer({ initial, title, onClose }: Props) {
         )
       }}
     >
-      <p className="text-[9px] font-medium tracking-[0.26em] uppercase text-muted-foreground">
-        {title}
-      </p>
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
       <FormField label="To">
         <Input
           value={to}

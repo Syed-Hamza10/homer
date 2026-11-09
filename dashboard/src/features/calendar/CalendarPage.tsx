@@ -134,7 +134,6 @@ export function CalendarPage() {
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
       <main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 md:p-6">
         <PageHeader
-          eyebrow="Schedule"
           title="Calendar"
           description={`Read live from Google Calendar · ${timeZone}`}
           actions={
