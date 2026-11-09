@@ -20,10 +20,6 @@ event — is prepared first and executed only after the user approves it.
   <img src="docs/screenshots/main.png" alt="Homer chat screen showing calendar questions, a drafted reply and proposed changes waiting for approval" width="100%">
 </p>
 
-<p align="center">
-  <em>The chat screen: streamed markdown answers, tool activity, and mail or calendar changes waiting for approval. Sample data.</em>
-</p>
-
 ## Why Homer
 
 - **Private by architecture, not by policy.** The language model runs through Ollama on
