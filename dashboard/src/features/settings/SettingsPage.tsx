@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { GoogleAccount } from "./GoogleAccount"
+import { ModelHint } from "./ModelHint"
 import { TimezoneSelect } from "./TimezoneSelect"
 import type { ClientRules, ModelTier, SelfEmailStatus } from "./types"
 import {
@@ -214,6 +215,7 @@ export function SettingsPage() {
           title="Settings"
           description="These preferences shape how Homer sorts mail, drafts replies and tracks follow-ups."
         />
+        <ModelHint />
         <Card>
           <CardHeader>
             <CardTitle>Your preferences</CardTitle>

@@ -60,6 +60,7 @@ EVENTS = [
 ]
 
 ACCOUNT_EMAIL = "tester@example.test"
+ACCOUNT_NAME = "Sam Tester"
 CONTACTS = [
     {"name": "Ada Example", "email": "ada@example.test"},
     {"name": "Sara Whitfield", "email": "sara.whitfield@example.test"},
@@ -87,14 +88,13 @@ def health() -> dict[str, Any]:
 @server.tool
 def mail_search(query: str, max_results: int = 10) -> list[dict[str, Any]]:
     """Searches mail. Returns the matching messages."""
-    terms = dict(term.partition(":")[::2] for term in query.split() if ":" in term)
-    sender = terms.get("from", "").lower()
-    label = "SENT" if terms.get("in", "").lower() == "sent" else ""
-    found = [
-        m
-        for m in MESSAGES.values()
-        if sender in m["from"].lower() and (not label or label in m.get("labels", []))
-    ]
+    found = list(MESSAGES.values())
+    for term in query.lower().split():
+        key, _, value = term.partition(":")
+        if key in ("from", "to"):
+            found = [m for m in found if value in m.get(key, "").lower()]
+        elif term in ("is:unread", "is:starred", "in:sent"):
+            found = [m for m in found if value.upper() in m.get("labels", [])]
     return found[:max_results]
 
 
@@ -233,8 +233,8 @@ def contacts_search(query: str) -> list[dict[str, Any]]:
 
 @server.tool
 def mail_profile() -> dict[str, Any]:
-    """Returns the address of the connected mailbox."""
-    return {"email": ACCOUNT_EMAIL}
+    """Returns the address and display name of the connected mailbox."""
+    return {"email": ACCOUNT_EMAIL, "name": ACCOUNT_NAME}
 
 
 @server.tool
@@ -249,7 +249,9 @@ async def execute(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     record = {"action": action, "payload": payload}
     executed.append(record)
     if action == "cal_create":
-        return {"id": f"evt_new{len(executed)}", **payload}
+        event_id = f"evt_new{len(executed)}"
+        link = f"https://calendar.example.test/event?eid={event_id}"
+        return {"id": event_id, **payload, "metadata": {"html_link": link}}
     return {"ok": True, **record}
 
 

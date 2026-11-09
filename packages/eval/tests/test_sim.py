@@ -64,6 +64,29 @@ def test_search_and_full_message(client: TestClient) -> None:
     assert "body" not in meta.json()["payload"]
 
 
+def test_search_by_date_and_category(client: TestClient) -> None:
+    def ids(query: str) -> list[str]:
+        listing = client.get(f"{GMAIL}/messages", params={"q": query}, headers=AUTH).json()
+        return [m["id"] for m in listing.get("messages", [])]
+
+    everything = ids("")
+    future = int((datetime.now(UTC) + timedelta(days=1)).timestamp())
+    assert ids(f"after:{future}") == [] and ids(f"before:{future}") == everything
+    assert ids("after:2000/01/01") == everything
+    assert ids("-category:promotions") == everything and ids("category:promotions") == []
+    message = EmailMessage()
+    message["From"] = "news@example.test"
+    message["List-Unsubscribe"] = "<mailto:unsubscribe@example.test>"
+    message.set_content("Weekly news")
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    body = {"raw": raw, "labelIds": ["INBOX", "CATEGORY_PROMOTIONS"]}
+    inserted = client.post(f"{GMAIL}/messages", json=body, headers=AUTH).json()
+    assert ids("category:promotions") == [inserted["id"]]
+    full = client.get(f"{GMAIL}/messages/{inserted['id']}", headers=AUTH).json()
+    names = {h["name"] for h in full["payload"]["headers"]}
+    assert "List-Unsubscribe" in names
+
+
 def test_pagination(client: TestClient) -> None:
     first = client.get(f"{GMAIL}/messages", params={"maxResults": 5}, headers=AUTH).json()
     assert len(first["messages"]) == 5 and first["nextPageToken"] == "5"
@@ -127,6 +150,17 @@ def test_generated_ids_have_gmail_shapes(client: TestClient) -> None:
     client.post(f"{GMAIL}/drafts/send", json={"id": draft["id"]}, headers=AUTH).raise_for_status()
     history.append(int(client.get(f"{GMAIL}/profile", headers=AUTH).json()["historyId"]))
     assert history[1] > history[0]
+
+
+def test_send_as_names_the_owner(client: TestClient) -> None:
+    found = client.get(f"{GMAIL}/settings/sendAs", headers=AUTH).json()["sendAs"]
+    assert found == [
+        {
+            "sendAsEmail": "jordan.reyes@example.test",
+            "displayName": "Jordan Reyes",
+            "isPrimary": True,
+        }
+    ]
 
 
 def test_drafts_list_newest_first(client: TestClient) -> None:
@@ -225,7 +259,7 @@ def test_token_and_reset(client: TestClient) -> None:
     )
     assert client.post("/token", data={"grant_type": "password"}).status_code == 400
     client.post(f"{GMAIL}/labels", json={"name": "Temp"}, headers=AUTH)
-    assert client.post("/_sim/reset").json()["labels"] == 11
+    assert client.post("/_sim/reset").json()["labels"] == 14
 
 
 def test_insert_and_trash(client: TestClient) -> None:

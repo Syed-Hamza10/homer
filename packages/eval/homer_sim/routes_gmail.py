@@ -20,6 +20,13 @@ def profile(sim: Sim) -> dict[str, Any]:
     }
 
 
+@router.get("/settings/sendAs")
+def send_as(sim: Sim) -> dict[str, Any]:
+    box = sim.mailbox
+    entry = {"sendAsEmail": box.owner, "displayName": box.owner_name, "isPrimary": True}
+    return {"sendAs": [entry]}
+
+
 Labels = Annotated[list[str] | None, Query()]
 
 

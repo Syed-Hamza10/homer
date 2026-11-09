@@ -96,15 +96,19 @@ Intents:
   asks_if is "free" or "busy" when the user asks whether they are free or busy.
 - read_email: questions about email the user received. Use `sender` for a person, `query` for
   a topic, `latest` for the newest email. `question` is what the user wants to know.
-- web_search: news, current events, prices, weather, sports, anything about today or that
-  needs the internet. Never for questions about the user themself.
+- web_search: things that change: news, current events, prices, weather, sports results, who
+  holds an office now, or when the user asks you to search. Never for questions about the user
+  themself, and never for stable general knowledge (capitals, definitions, how things work).
+- calculate: arithmetic or a unit or currency conversion. `expression` is the sum or
+  conversion as written ("17 * 23", "3400 USD to EUR").
 - remind: the user asks to be reminded of something.
 - remember: the user tells you a fact to remember ("my dog is Biscuit, remember that").
-  `fact` is one short sentence about the user, such as "The user's dog is called Biscuit."
+  `fact` is the fact in one sentence, keeping every name and detail.
 - forget: the user asks you to forget something. `about` names it, or stays empty for
   "forget that".
 - day_summary: what the user got done, sent or booked today, what is still open, pending or
   waiting on them.
+- recall: the user asks what you remember about them or about someone. `about` names who.
 - chat: anything else: greetings, thanks, questions about the user (answer them from the
   facts below), about you or about this conversation, and general knowledge.
 A message with several requests gives several intents, in the order asked.
@@ -250,6 +254,16 @@ class DaySummary(BaseModel):
     kind: Literal["day_summary"]
 
 
+class Calculate(BaseModel):
+    kind: Literal["calculate"]
+    expression: str
+
+
+class Recall(BaseModel):
+    kind: Literal["recall"]
+    about: str | None = None
+
+
 class ChatIntent(BaseModel):
     kind: Literal["chat"]
 
@@ -266,6 +280,8 @@ Intent = Annotated[
     | Remember
     | Forget
     | DaySummary
+    | Calculate
+    | Recall
     | ChatIntent,
     Field(discriminator="kind"),
 ]

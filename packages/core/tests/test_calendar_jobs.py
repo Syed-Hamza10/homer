@@ -292,15 +292,13 @@ class TestMemory:
         self, post_chat: PostChat, logged_in: TestClient, seen: list[list[ModelMessage]]
     ) -> None:
         stored = post_chat({"message": "My dog is Biscuit, remember that"})
-        assert said(stored) == "Saved to memory: The user's dog is called Biscuit."
+        assert said(stored) == "Saved to memory: Your dog is Biscuit."
         facts = logged_in.get("/api/facts").json()
-        assert [(f["text"], f["source"]) for f in facts] == [
-            ("The user's dog is called Biscuit.", "user")
-        ]
+        assert [(f["text"], f["source"]) for f in facts] == [("Your dog is Biscuit.", "user")]
         answer = post_chat({"message": "what's my dog's name?"})
         assert said(answer) == "Your dog is called Biscuit." and calls(answer) == []
         instructions = str(getattr(seen[-1][-1], "instructions", ""))
-        assert "- The user's dog is called Biscuit." in instructions
+        assert "- Your dog is Biscuit." in instructions
 
     @pytest.mark.parametrize(
         "intents",
@@ -317,11 +315,9 @@ class TestMemory:
     ) -> None:
         post_chat({"message": "I like tea, remember"})
         post_chat({"message": "my dog is Biscuit, remember"})
-        assert said(post_chat({"message": "forget that"})) == (
-            "Forgotten: The user's dog is Biscuit."
-        )
+        assert said(post_chat({"message": "forget that"})) == "Forgot: Your dog is Biscuit."
         facts = logged_in.get("/api/facts").json()
-        assert [fact["text"] for fact in facts] == ["The user likes tea."]
+        assert [fact["text"] for fact in facts] == ["You like tea."]
         gone = logged_in.delete(f"/api/facts/{facts[0]['id']}", headers=ORIGIN)
         assert gone.status_code == 204
         assert logged_in.get("/api/facts").json() == []
@@ -331,22 +327,6 @@ class TestMemory:
     @pytest.mark.parametrize("text", ["I don't know your dog's name."])
     def test_personal_question_never_searches_the_web(self, post_chat: PostChat) -> None:
         assert calls(post_chat({"message": "what was my dog's name again?"})) == []
-
-
-class TestSearchDates:
-    @pytest.mark.parametrize(
-        ("intents", "text"),
-        [([[{"kind": "web_search", "query": "premier league results yesterday"}]], "Arsenal won.")],
-    )
-    def test_yesterday_becomes_a_date_in_the_query_and_the_prompt(
-        self, post_chat: PostChat, fake_search: ModuleType, seen: list[list[ModelMessage]]
-    ) -> None:
-        post_chat({"message": "who won the premier league match yesterday"})
-        yesterday = day(-1)
-        assert fake_search.queries == [f"premier league results {yesterday.day} {yesterday:%B %Y}"]
-        instructions = str(getattr(seen[-1][-1], "instructions", ""))
-        assert f"Yesterday was {yesterday:%A} {yesterday.day} {yesterday:%B %Y}." in instructions
-        assert "at most 80 words" in instructions
 
 
 def next_on(weekday: int) -> int:
@@ -444,7 +424,6 @@ class TestMove:
         [
             [
                 [booked(date=day(MONDAY).isoformat(), start="12:00", end="12:45")],
-                [{"kind": "chat"}],
                 [update(match="the call we just booked", new_start="4pm")],
             ]
         ],

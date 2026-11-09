@@ -38,6 +38,7 @@ export type Health = {
   version: string
   ollama: "ok" | "down"
   model: string
+  model_status: "running" | "stopped" | "missing"
   servers: Record<string, "ok" | "down">
   self_email: SelfEmailStatus
 }

@@ -6,7 +6,8 @@ import { Link } from "react-router"
 import { DayCard } from "./DayCard"
 import { GoogleBanner } from "./GoogleBanner"
 import { TodaySkeleton } from "./TodaySkeleton"
-import type { FollowUp, Health } from "./types"
+import { healthLine } from "./healthLine"
+import type { FollowUp } from "./types"
 import {
   useRunBrief,
   useRunDigest,
@@ -20,35 +21,6 @@ function clock(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
-}
-
-const serviceNames: Record<string, string> = {
-  google: "Google",
-  search: "Web search",
-}
-
-function ago(value: string): string {
-  const minutes = Math.floor((Date.now() - new Date(value).getTime()) / 60000)
-  if (minutes < 1) return "just now"
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.floor(minutes / 60)
-  return hours < 24 ? `${hours} h ago` : "over a day ago"
-}
-
-function healthLine(health: Health | null | undefined): string | null {
-  if (!health) return null
-  const problems = [
-    ...(health.ollama === "down" ? ["The AI is not running"] : []),
-    ...(health.model_pulled === "down" ? ["The AI model is missing"] : []),
-    ...Object.entries(health.servers)
-      .filter(([, status]) => status === "down")
-      .map(([name]) => `${serviceNames[name] ?? name} is not responding`),
-    ...(health.self_email === "mismatch"
-      ? ["Emails to yourself are paused"]
-      : []),
-  ]
-  const summary = problems.length ? problems.join(" · ") : "All systems OK"
-  return `${summary} · checked ${ago(health.checked_at)}`
 }
 
 function SectionTitle({ children }: { children: string }) {

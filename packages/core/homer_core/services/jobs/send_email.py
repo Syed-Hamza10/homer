@@ -9,6 +9,7 @@ from homer_core.agent.intents import SendEmail
 from homer_core.agent.prompt import known_name
 from homer_core.agent.voice import phrase
 from homer_core.db.models import Approval
+from homer_core.mcp.manager import PROFILE_TOOL
 from homer_core.services.approvals import create
 from homer_core.services.followups import clean_subject
 from homer_core.services.inbox import clean
@@ -22,8 +23,9 @@ MIN_WORDS = 8
 MIN_EDIT_WORDS = 3
 WRITE_PROMPT = """Write an email{sender} to {recipient}. Points to make: {instructions}
 Write it as the sender, in the first person: "I" is the sender and {first} is "you". Turn each
-point into what the sender says to {first} directly: "if she wants" becomes "if that works for
-you". Never call {first} "she", "he", "her", "him" or "them". Make only the points above.
+point into what the sender says to {first} directly. Never call {first} "she", "he", "her",
+"him" or "them". Make only the points above, and end on the last point, with no filler such
+as "let me know if that works for you".
 Write 2 to 4 sentences in your own words, in a {tone} tone, that make every point.
 Do not copy the points word for word. No greeting, no sign-off, no placeholders like [Name].
 Do not invent facts, dates or promises. The subject is 3 to 7 words naming the topic.{reply}"""
@@ -37,8 +39,8 @@ Subject: {subject}
 Body:
 {body}
 Keep every point unless asked to drop it. Write the full new subject and body.
-The body stays in the sender's first person and speaks to {first} as "you": "if she wants"
-becomes "if that works for you".
+The body stays in the sender's first person and speaks to {first} as "you", never as "she"
+or "he".
 No greeting, no sign-off, no placeholders like [Name]. Do not invent facts.{length}"""
 LENGTH_RULE = """
 Change the tone only: add no new points and keep it about {words} words long."""
@@ -58,6 +60,10 @@ WANTS = re.compile(
     re.IGNORECASE,
 )
 PLACEHOLDER = re.compile(r"[ \t]*\[[^\]\n]*\][ \t]*")
+DANGLING = re.compile(
+    r"\b(?:link|url|here|below|address|at)\s*:\s*(?=[.,;!?]|$)|\(\s*\)|\[\s*\]|<\s*>|\{\s*\}",
+    re.IGNORECASE | re.MULTILINE,
+)
 GREETING_LINE = re.compile(
     r"^\s*(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^\n.!?]{0,40}[,!:]?"
     r"[ \t]*(?:\n|$)",
@@ -70,6 +76,20 @@ SIGN_OFF = re.compile(
     r"[ \t]*(?:\n[^\n]{0,40})?\s*$",
     re.IGNORECASE,
 )
+FILLER_LEAD = re.compile(r"^if (?:that|this|it) works(?: for you)?,\s*", re.IGNORECASE)
+FILLER = re.compile(
+    r"^(?:please\s+)?(?:let me know|feel free to reach out)(?: if (?:that|this|it)"
+    r" (?:works|suits you|is ok(?:ay)?)(?: for you)?| if you have any (?:questions|feedback)"
+    r"| if you need anything(?: else)?)?[.!]?$",
+    re.IGNORECASE,
+)
+CLOSER = re.compile(
+    r"^(?:best|kind regards|warm regards|regards|cheers|sincerely|thanks|thank you|many thanks"
+    r"|all the best|talk soon|yours)\b",
+    re.IGNORECASE,
+)
+SENTENCES = re.compile(r"(?<=[.!?])\s+")
+PROFILE_NAMES: dict[int, str] = {}
 READY = (
     "Here's your email to {who}. Press Send when it looks right.",
     "Here's the email to {who}. Press Send when it looks right.",
@@ -126,7 +146,7 @@ def split(body: str) -> tuple[str, str, str]:
     if (match := GREETING_LINE.match(text)) or (match := GREETING_INLINE.match(text)):
         greeting, text = match.group(0).strip(), text[match.end() :]
     sign_off = ""
-    if (match := SIGN_OFF.search(text)) and match.start() > 0:
+    while (match := SIGN_OFF.search(text)) and match.start() > 0:
         sign_off, text = match.group(0).strip(), text[: match.start()]
     return greeting, text.strip(), sign_off
 
@@ -149,12 +169,43 @@ def flawed(message: str, subject: str, instructions: str, min_words: int) -> boo
         or len(message.split()) < min_words
         or RELAYED.search(message) is not None
         or third_person(message, instructions)
+        or DANGLING.search(message) is not None
     )
 
 
 def addressed(message: str) -> str:
     """Rewrites the one relayed phrase a retry may still leave: "if she wants"."""
     return WANTS.sub("if that works for you", message)
+
+
+def without_filler(message: str) -> str:
+    """Drops sentences such as "Let me know if that works for you." and a leading "If that
+    works for you," while some other sentence remains."""
+    paragraphs = []
+    for paragraph in message.split("\n\n"):
+        sentences = SENTENCES.split(paragraph.strip())
+        kept = []
+        for sentence in sentences:
+            sentence = FILLER_LEAD.sub("", sentence)
+            sentence = sentence[:1].upper() + sentence[1:]
+            if sentence and not FILLER.match(sentence):
+                kept.append(sentence)
+        if kept == sentences:
+            paragraphs.append(paragraph.strip())
+        elif kept:
+            paragraphs.append(" ".join(kept))
+    return "\n\n".join(paragraphs) or message
+
+
+def undangled(message: str) -> str:
+    """Drops a sentence that points at nothing, such as "through this link:."."""
+    lines = []
+    for line in message.split("\n"):
+        kept = [s for s in SENTENCES.split(line.strip()) if not DANGLING.search(s)]
+        if kept or not line.strip():
+            lines.append(" ".join(kept))
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return cleaned or message
 
 
 def unbracketed(text: str) -> str:
@@ -170,7 +221,8 @@ async def checked(turn: Turn, prompt: str, instructions: str, min_words: int) ->
     if flawed(message, text.subject, instructions, min_words):
         text = await turn.extract(agent, prompt + RETRY_HINT)
         message = split(text.body)[1]
-    return EmailText(subject=unbracketed(text.subject), body=addressed(unbracketed(message)))
+    body = without_filler(addressed(unbracketed(undangled(message))))
+    return EmailText(subject=unbracketed(text.subject), body=body)
 
 
 def first_name(person: Person) -> str:
@@ -182,11 +234,25 @@ def greeting(person: Person) -> str:
     return f"Hi {first}," if first else "Hi,"
 
 
-def sign_off(turn: Turn) -> str:
-    if turn.rules.signature.strip():
-        return turn.rules.signature.strip()
-    name = known_name(turn.user.name)
-    return f"Best,\n{name.split()[0]}" if name else ""
+async def profile_name(turn: Turn) -> str:
+    """The Gmail display name, looked up once per user and kept for the process."""
+    if turn.user.id not in PROFILE_NAMES:
+        try:
+            profile = await turn.runtime.manager.call("google", PROFILE_TOOL, {})
+        except Exception:
+            return ""
+        if not isinstance(profile, dict) or "error" in profile:
+            return ""
+        PROFILE_NAMES[turn.user.id] = str(profile.get("name") or "").strip()
+    return PROFILE_NAMES[turn.user.id]
+
+
+async def sign_off(turn: Turn) -> str:
+    signature = turn.rules.signature.strip()
+    if signature:
+        return signature if CLOSER.match(signature) else f"Best,\n{signature}"
+    name = known_name(turn.user.name) or await profile_name(turn)
+    return f"Best,\n{name.split()[0]}" if name else "Best,"
 
 
 def overlap(message: dict[str, Any], topic: str) -> int:
@@ -225,7 +291,7 @@ async def write(
         reply=reply,
     )
     text = await checked(turn, prompt, intent.body_instructions, MIN_WORDS)
-    body = assemble(greeting(person), text.body, sign_off(turn))
+    body = assemble(greeting(person), text.body, await sign_off(turn))
     return EmailText(subject=text.subject, body=body)
 
 
@@ -251,6 +317,7 @@ async def revise(turn: Turn, subject: str, body: str, instruction: str) -> Email
     if tone and off_length(text.body, words) > LENGTH_SLACK:
         again = await checked(turn, prompt + LENGTH_RULE.format(words=words), instruction, 1)
         text = min(text, again, key=lambda option: off_length(option.body, words))
+    closing = closing or await sign_off(turn)
     return EmailText(subject=text.subject, body=assemble(opening, text.body, closing))
 
 

@@ -1,4 +1,8 @@
+import pytest
+
+from homer_mcp_search import search
 from homer_mcp_search.search import parse_results, real_url
+from homer_net.client import no_log
 
 PAGE = """
 <html><body>
@@ -54,3 +58,28 @@ def test_parse_results_pairs_titles_and_snippets_and_drops_ads() -> None:
 
 def test_parse_results_empty_page() -> None:
     assert parse_results("<html><body><p>No results.</p></body></html>") == []
+
+
+CHALLENGE_PAGE = "<html><body>Unfortunately, bots use DuckDuckGo too.</body></html>"
+
+
+def test_the_bot_check_is_recognised() -> None:
+    assert search.blocked(202, "")
+    assert search.blocked(200, CHALLENGE_PAGE)
+    assert not search.blocked(200, PAGE)
+
+
+async def test_a_bot_check_is_retried_once_then_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    answers = [(202, CHALLENGE_PAGE), (200, PAGE)]
+    monkeypatch.setattr(search, "RETRY_SECONDS", 0)
+
+    async def post(query: str, log: object) -> tuple[int, str]:
+        return answers.pop(0) if answers else (202, CHALLENGE_PAGE)
+
+    monkeypatch.setattr(search, "post_query", post)
+    found = await search.web_search("python", 5, no_log)
+    assert [r["url"] for r in found["results"]] == [
+        "https://www.python.org/",
+        "https://docs.example.test/guide",
+    ]
+    assert (await search.web_search("python", 5, no_log))["error"] == "search_blocked"

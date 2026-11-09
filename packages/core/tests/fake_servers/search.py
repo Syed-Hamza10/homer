@@ -27,6 +27,8 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
     queries.append(query)
     if "off" in query.split():
         return {"error": "web_search_off"}
+    if "blocked" in query.split():
+        return {"error": "search_blocked"}
     return {"results": RESULTS[:max_results]}
 
 

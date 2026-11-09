@@ -6,6 +6,7 @@ from typing import Any
 
 import structlog
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session
@@ -26,6 +27,8 @@ RECONNECT_EVENT = "google_reconnect"
 ERRORS = {
     "web_search_off": "Web search is turned off, so I cannot look that up. "
     "You can turn it on in Settings.",
+    "search_blocked": "The search engine is limiting searches from this computer for a few "
+    "minutes, so I can't look that up right now. Try again shortly.",
 }
 
 
@@ -164,13 +167,16 @@ class Turn:
         index = len(self.segments)
         self.segments.append("")
         agent = Agent(self.runtime.model, output_type=str, instructions=instructions)
-        async with agent.run_stream(prompt, message_history=history or []) as result:
-            async for delta in result.stream_text(delta=True):
-                if not self.segments[index] and separator:
-                    self.emit("token", {"text": separator})
-                self.segments[index] += delta
-                self.emit("token", {"text": delta})
-            self.usage.incr(result.usage)
+        try:
+            async with agent.run_stream(prompt, message_history=history or []) as result:
+                async for delta in result.stream_text(delta=True):
+                    if not self.segments[index] and separator:
+                        self.emit("token", {"text": separator})
+                    self.segments[index] += delta
+                    self.emit("token", {"text": delta})
+                self.usage.incr(result.usage)
+        except UnexpectedModelBehavior:
+            log.warning("empty_model_answer", text=self.segments[index])
         self.segments[index] = self.segments[index].strip()
         if guarded and claims_sending(self.segments[index]):
             log.warning("unbacked_action_claim", text=self.segments[index])
