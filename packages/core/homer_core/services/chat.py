@@ -27,7 +27,12 @@ from homer_core.agent.router import (
 from homer_core.agent.runtime import Runtime
 from homer_core.db.models import Approval, Conversation, Message, TokenCounter, User, utcnow
 from homer_core.services import approvals, briefs, calendar, drafts, followups, inbox
-from homer_core.services.conversations import get_conversation, list_messages, make_title
+from homer_core.services.conversations import (
+    get_conversation,
+    list_messages,
+    make_title,
+    retitle,
+)
 from homer_core.services.errors import DomainError
 from homer_core.services.facts import prompt_facts
 from homer_core.services.jobs import day_summary, dispatch, edit_email, mail_status, send_email
@@ -409,6 +414,8 @@ async def stream(
         context=outcome.context,
     )
     approvals.attach(session, outcome.approval_ids, reply.id)
+    if not stored:
+        retitle(session, conversation, message, outcome.context)
     usage = outcome.usage
     count_tokens(session, user, usage.input_tokens, usage.output_tokens)
     yield ChatEvent(

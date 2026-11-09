@@ -52,12 +52,12 @@ def test_sse_order_and_persistence(
         )
 
 
-def test_title_is_first_sixty_characters(logged_in: TestClient, post_chat: PostChat) -> None:
+def test_title_is_capped_at_sixty_characters(logged_in: TestClient, post_chat: PostChat) -> None:
     long_message = "x" * 100
     conversation_id = post_chat({"message": long_message})[0][1]["conversation_id"]
     conversations = logged_in.get("/api/conversations").json()
     assert conversations[0]["id"] == conversation_id
-    assert conversations[0]["title"] == "x" * 60
+    assert conversations[0]["title"] == "X" + "x" * 59
 
 
 def test_unknown_conversation_is_404(logged_in: TestClient, origin: dict[str, str]) -> None:

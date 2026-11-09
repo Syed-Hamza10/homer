@@ -1,11 +1,14 @@
+import json
 from collections.abc import Callable
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from homer_core.db.models import Approval, Conversation, Message
+from homer_core.services.conversations import legacy_title, title_for
 
 PostChat = Callable[[dict[str, Any]], list[tuple[str, dict[str, Any]]]]
 
@@ -44,9 +47,66 @@ def test_unknown_conversation_messages_are_404(logged_in: TestClient) -> None:
     assert response.json() == {"detail": "conversation 42 not found"}
 
 
-def test_title_is_the_first_six_words(logged_in: TestClient, post_chat: PostChat) -> None:
-    post_chat({"message": "  What is   on my calendar for tomorrow morning please"})
-    assert logged_in.get("/api/conversations").json()[0]["title"] == ("What is on my calendar for")
+def test_title_is_the_first_five_words(logged_in: TestClient, post_chat: PostChat) -> None:
+    post_chat({"message": "  what is   on my calendar for tomorrow morning please"})
+    assert logged_in.get("/api/conversations").json()[0]["title"] == "What is on my calendar…"
+
+
+@pytest.mark.parametrize(
+    ("message", "context", "expected"),
+    [
+        (
+            "Send an email to sam30rivers@example.test saying hi",
+            [{"kind": "send_email", "to": "sam30rivers@example.test"}],
+            "Email to Sam",
+        ),
+        (
+            "email sam rivers that I'm late",
+            [{"kind": "send_email", "to": "sam rivers"}],
+            "Email to Sam",
+        ),
+        (
+            "what's on tomorrow?",
+            [{"kind": "read_calendar", "range": "tomorrow"}],
+            "Calendar tomorrow",
+        ),
+        (
+            "weather in lahore?",
+            [{"kind": "web_search", "query": "weather in Lahore"}],
+            "Weather in Lahore",
+        ),
+        ("Send an email to sam30rivers@example.test saying hi", [], "Send an email to Sam…"),
+        ("hello there!", [{"kind": "chat"}], "Hello there"),
+    ],
+)
+def test_title_for(message: str, context: list[dict[str, Any]], expected: str) -> None:
+    assert title_for(message, context) == expected
+
+
+def test_old_titles_are_shortened_on_read(logged_in: TestClient, app: FastAPI) -> None:
+    message = "Send an email to sam30rivers@example.test about the launch"
+    with Session(app.state.engine) as session:
+        conversation = Conversation(user_id=1, title=legacy_title(message))
+        renamed = Conversation(user_id=1, title="Launch notes")
+        session.add_all([conversation, renamed])
+        session.commit()
+        session.add_all(
+            [
+                Message(conversation_id=conversation.id, role="user", content=message),
+                Message(
+                    conversation_id=conversation.id,
+                    role="assistant",
+                    content="ok",
+                    context_json=json.dumps(
+                        [{"kind": "send_email", "to": "sam30rivers@example.test"}]
+                    ),
+                ),
+                Message(conversation_id=renamed.id, role="user", content=message),
+            ]
+        )
+        session.commit()
+    titles = {c["title"] for c in logged_in.get("/api/conversations").json()}
+    assert titles == {"Email to Sam", "Launch notes"}
 
 
 def test_rename(logged_in: TestClient, post_chat: PostChat, origin: dict[str, str]) -> None:
