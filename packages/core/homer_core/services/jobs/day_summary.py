@@ -2,7 +2,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time
-from email.utils import parseaddr, parsedate_to_datetime
+from email.utils import parseaddr
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,19 +14,12 @@ from homer_core.services import approvals
 from homer_core.services.jobs.read_calendar import bounds
 from homer_core.services.jobs.recipients import listed
 from homer_core.services.jobs.turn import Turn
+from homer_core.services.mail import is_bulk, received, who
 
 SENT_QUERY = "in:sent newer_than:7d"
 INBOX_QUERY = "in:inbox newer_than:7d"
 MAX_MESSAGES = 25
 MAX_ITEMS = 6
-AUTOMATED = re.compile(
-    r"no-?reply|do-?not-?reply|newsletter|notifications?@|mailer|digest|marketing|billing@"
-    r"|updates@|news@|info@",
-    re.IGNORECASE,
-)
-BULK = frozenset(
-    {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "SPAM"}
-)
 NO_RECORD = re.compile(
     r"\bno record\b|\b(?:haven't|have not|didn't|did not) sen[dt]\b"
     r"|\bno emails? (?:were |was )?sent\b"
@@ -55,22 +48,6 @@ class Day:
     @property
     def open(self) -> list[str]:
         return self.pending + self.waiting
-
-
-def received(message: dict[str, Any]) -> datetime | None:
-    stamp = (message.get("metadata") or {}).get("internal_date")
-    if stamp:
-        return datetime.fromtimestamp(int(stamp) / 1000, tz=UTC)
-    try:
-        parsed = parsedate_to_datetime(str(message.get("date", "")))
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def who(header: str) -> str:
-    name, email = parseaddr(header)
-    return name or email or header
 
 
 def address(header: str) -> str:
@@ -160,9 +137,7 @@ def awaiting_reply(
     for thread, message in newest.items():
         sender = address(message.get("from", ""))
         at = received(message) or datetime.min.replace(tzinfo=UTC)
-        if not sender or sender == me or AUTOMATED.search(sender):
-            continue
-        if BULK & set(message.get("labels", [])) or answered.get(thread, at) > at:
+        if not sender or sender == me or is_bulk(message) or answered.get(thread, at) > at:
             continue
         rank = (sender in priority or "IMPORTANT" in message.get("labels", []), at)
         found.append((rank, message))

@@ -1,10 +1,7 @@
-import re
-
-from sqlmodel import Session
-
 from homer_core.agent.intents import Forget, Recall, Remember
-from homer_core.db.models import Fact, User
-from homer_core.services.facts import add_fact, forget, keywords, list_facts, matching
+from homer_core.agent.voice import capitalised, second_person
+from homer_core.db.models import Fact
+from homer_core.services.facts import add_fact, forget, keywords, list_facts, matching, remove
 from homer_core.services.jobs.turn import Turn
 
 SHOWN_FACTS = 10
@@ -12,9 +9,7 @@ SHOWN_FACTS = 10
 
 def shown(text: str) -> str:
     """Facts saved as "The user's sister ..." read as "Your sister ..."."""
-    text = re.sub(r"\bthe user's\b", "your", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bthe user\b", "you", text, flags=re.IGNORECASE)
-    return text[:1].upper() + text[1:]
+    return capitalised(second_person(text))
 
 
 def listing(facts: list[Fact]) -> str:
@@ -35,12 +30,6 @@ def previous_fact(turn: Turn) -> Fact | None:
     return fact if fact is not None and fact.user_id == turn.user.id else None
 
 
-def delete(session: Session, fact: Fact) -> Fact:
-    session.delete(fact)
-    session.commit()
-    return fact
-
-
 async def remember(turn: Turn, intent: Remember) -> None:
     fact = add_fact(turn.session, turn.user.id, intent.fact)
     turn.facts.append(fact.text)
@@ -48,16 +37,15 @@ async def remember(turn: Turn, intent: Remember) -> None:
     turn.say(f"Saved to memory: {shown(fact.text)}")
 
 
-def chosen(turn: Turn, user: User, about: str | None) -> Fact | None:
-    if keywords(about):
-        return forget(turn.session, user, about)
-    fact = previous_fact(turn) or next(iter(list_facts(turn.session, user, 1)), None)
-    return delete(turn.session, fact) if fact is not None else None
+def unnamed(turn: Turn) -> Fact | None:
+    """For "forget that": the fact the previous turn touched, else the newest one."""
+    fact = previous_fact(turn) or next(iter(list_facts(turn.session, turn.user, 1)), None)
+    return remove(turn.session, fact) if fact is not None else None
 
 
 async def drop(turn: Turn, intent: Forget) -> None:
-    about = intent.about if keywords(intent.about) else turn.message
-    fact = chosen(turn, turn.user, about)
+    about = next((text for text in (intent.about, turn.message) if keywords(text)), None)
+    fact = forget(turn.session, turn.user, about) if about else unnamed(turn)
     if fact is not None:
         turn.facts[:] = [text for text in turn.facts if text != fact.text]
         turn.say(f"Forgot: {shown(fact.text)}")
@@ -66,8 +54,9 @@ async def drop(turn: Turn, intent: Forget) -> None:
     if not saved:
         turn.say("I have nothing saved, so there is nothing to forget.")
         return
+    asked = (about or turn.message).strip()
     turn.say(
-        f"I have nothing saved about {about.strip()}. What I have saved:\n{listing(saved)}\n"
+        f"I have nothing saved about {asked}. What I have saved:\n{listing(saved)}\n"
         "Say which one to forget."
     )
 

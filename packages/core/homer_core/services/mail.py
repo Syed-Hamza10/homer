@@ -1,6 +1,7 @@
 import json
+import re
 from datetime import UTC, datetime
-from email.utils import formataddr, getaddresses
+from email.utils import formataddr, getaddresses, parseaddr, parsedate_to_datetime
 from typing import Any, Literal
 
 from sqlmodel import Session, select
@@ -23,6 +24,18 @@ FOLDERS = (
 FOLDER_LABELS = {key: label for key, _, label in FOLDERS}
 TRIAGE_LABELS = {name for name, _ in CATEGORY_RULES} | {DEFAULT_CATEGORY, PRIORITY_LABEL}
 QUOTE_CHARS = 4000
+BULK_SENDER = re.compile(
+    r"newsletter|no-?reply|do-?not-?reply|digest|notifications?@|news@|mailer|marketing|promo"
+    r"|billing@|updates@|info@",
+    re.IGNORECASE,
+)
+BULK_BODY = re.compile(
+    r"\bunsubscribe\b|because you (?:subscribed|signed up)|view (?:it |this )?in (?:your )?browser",
+    re.IGNORECASE,
+)
+BULK_LABELS = frozenset(
+    {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "SPAM"}
+)
 ReplyMode = Literal["reply", "reply_all", "forward"]
 
 
@@ -38,12 +51,41 @@ def checked(result: Any) -> dict[str, Any]:
     return result
 
 
-def unwrap(text: str) -> str:
-    return text.removeprefix("<untrusted>").removesuffix("</untrusted>")
+def unwrap(text: Any) -> str:
+    return str(text or "").removeprefix("<untrusted>").removesuffix("</untrusted>")
 
 
 def from_millis(value: str | None) -> datetime | None:
     return datetime.fromtimestamp(int(value) / 1000, UTC) if value else None
+
+
+def who(header: str) -> str:
+    """The display name in a From or To header, else its address."""
+    name, email = parseaddr(header)
+    return name or email or header
+
+
+def received(message: dict[str, Any]) -> datetime | None:
+    stamp = from_millis((message.get("metadata") or {}).get("internal_date"))
+    if stamp is not None:
+        return stamp
+    try:
+        parsed = parsedate_to_datetime(str(message.get("date", "")))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def is_bulk(message: dict[str, Any]) -> bool:
+    """A newsletter, promotion or automated mailer rather than a person."""
+    labels = [str(label) for label in message.get("labels", [])]
+    return bool(
+        BULK_LABELS & set(labels)
+        or any("newsletter" in label.lower() for label in labels)
+        or (message.get("metadata") or {}).get("list_unsubscribe")
+        or BULK_SENDER.search(str(message.get("from", "")))
+        or BULK_BODY.search(unwrap(message.get("body") or message.get("snippet")))
+    )
 
 
 async def folders(manager: McpManager) -> list[dict[str, Any]]:
