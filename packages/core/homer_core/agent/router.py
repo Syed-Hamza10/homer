@@ -58,8 +58,9 @@ SHOW_DRAFT = re.compile(
     r"|where(?:'s| is)(?: the| my| that)? (?:draft|email|mail|card|it))\s*[?.!]*$",
     re.IGNORECASE,
 )
+QUESTION_START = r"(?:where|what|whats|does|do|did|is|are|was|were|has|have|will|why|how)\b"
 DRAFT_QUESTION = re.compile(
-    r"\?\s*$|^(?:where|what|whats|does|do|did|is|are|has|have|will|why|how)\b|\byes or no\b",
+    rf"\?\s*$|^{QUESTION_START}|\byes or no\b",
     re.IGNORECASE,
 )
 ABOUT_DRAFT = re.compile(
@@ -73,7 +74,7 @@ LINK_EDIT = re.compile(
     r"\b(?:add|include|put|insert|paste|attach|drop|share)\b.*\blink\b", re.IGNORECASE
 )
 ASKED_STATE = re.compile(
-    r"^(?:so\s+|and\s+)?(?:did|does|do|is|are|was|were|where|whats|what|has|have|why)\b",
+    rf"^(?:so\s+|and\s+)?{QUESTION_START}",
     re.IGNORECASE,
 )
 RECIPIENT = re.compile(r"\bto\s+([\w.+-]+(?:@[\w.-]+)?)", re.IGNORECASE)

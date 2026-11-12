@@ -14,6 +14,7 @@ from homer_core.agent.intents import (
     WebSearch,
 )
 from homer_core.agent.router import CONVERSATIONAL, words
+from homer_core.agent.voice import capitalised
 from homer_core.services.calc import parse
 from homer_core.services.facts import keywords
 from homer_core.services.jobs.read_email import ATTENTION, SENT, UNREAD
@@ -28,31 +29,33 @@ SMALL_TALK_WORDS = frozenset(
     | {"there", "the", "best", "youre", "welcome", "appreciate", "all", "folks", "buddy"}
 )
 SMALL_TALK_MAX_WORDS = 6
+LEAD = (
+    r"^(?:(?:btw|by the way|also|and|so|oh|ok|okay|please|pls|hey|homer|now|can you|could you"
+    r"|i want you to|you should)[,:]?\s+)*"
+)
 RECALL = re.compile(
-    r"^(?:(?:so|and|hey|ok|okay|homer)[,]?\s+)*(?:what|anything)(?: else)?\s+(?:do|did|have)\s+"
+    LEAD + r"(?:what|anything)(?: else)?\s+(?:do|did|have)\s+"
     r"you\s+(?P<verb>remember|recall|know|saved|stored|got|noted|have (?:saved|stored|noted))"
     r"(?:\s+about\s+(?P<about>.+?))?\s*[?.!]*$",
     re.IGNORECASE,
 )
 REMEMBER_ASKED = re.compile(
-    r"^(?:(?:so|and|hey|ok|okay|homer)[,]?\s+)*(?:do|did|can) you (?:still )?(?:remember|recall)"
+    LEAD + r"(?:do|did|can) you (?:still )?(?:remember|recall)"
     r"\s+(?P<about>.+?)\s*[?.!]*$",
     re.IGNORECASE,
 )
 FORGET = re.compile(
-    r"^(?:(?:please|pls|can you|could you|ok|okay|and|also|now)[,]?\s+)*forget\s+(?:about\s+)?"
-    r"(?P<about>.+?)\s*[.!]*$",
+    LEAD + r"forget\s+(?:about\s+)?(?P<about>.+?)\s*[.!]*$",
     re.IGNORECASE,
 )
 SELF = frozenset({"me", "myself", "us", "my life"})
 REMEMBER_FRONT = re.compile(
-    r"^(?:(?:btw|by the way|also|and|so|oh|ok|okay|please|pls|hey|homer|can you|could you"
-    r"|i want you to|you should)[,:]?\s+)*(?:remember|note|keep in mind|don't forget"
-    r"|do not forget|memori[sz]e)(?:\s+(?:that|this))?[,:]?\s+(?P<fact>(?!to\b).+?)\s*[.!]*$",
+    LEAD + r"(?:remember|note|keep in mind|don't forget|do not forget|memori[sz]e)"
+    r"(?:\s+(?:that|this))?[,:]?\s+(?P<fact>(?!to\b).+?)\s*[.!]*$",
     re.IGNORECASE,
 )
 REMEMBER_BACK = re.compile(
-    r"^(?:(?:btw|by the way|also|and|oh|ok|okay)[,:]?\s+)*(?P<fact>.+?)[,;.\s-]+(?:please\s+)?"
+    LEAD + r"(?P<fact>.+?)[,;.\s-]+(?:please\s+)?"
     r"(?:remember|note|keep in mind)(?:\s+(?:that|this|it))?(?:\s+please)?\s*[.!]*$",
     re.IGNORECASE,
 )
@@ -97,7 +100,7 @@ PERSONAL = re.compile(
 )
 NOT_NAMES = frozenset({"your", "you", "the", "my", "user", "remember"})
 MAIL_QUESTION = re.compile(
-    r"^(?:(?:so|and|hey|ok|okay|also)[,]?\s+)*(?:any|anything|do i have|is (?:there|anything)"
+    LEAD + r"(?:any|anything|do i have|is (?:there|anything)"
     r"|are there|got any|what(?:'s| is| are)?|whats|show me|check|did|have|has|list)\b",
     re.IGNORECASE,
 )
@@ -186,11 +189,10 @@ def routed(message: str, facts: list[str]) -> list[Intent] | None:
     return None
 
 
-def second_person(text: str) -> str:
+def first_to_second_person(text: str) -> str:
     for pattern, replacement in PRONOUNS:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-    text = text.strip().rstrip(".!")
-    return text[:1].upper() + text[1:] + "."
+    return capitalised(text.strip().rstrip(".!")) + "."
 
 
 def told_fact(message: str) -> str | None:
@@ -199,7 +201,7 @@ def told_fact(message: str) -> str | None:
     for pattern in (REMEMBER_FRONT, REMEMBER_BACK):
         match = pattern.match(message.strip())
         if match is not None and len(match["fact"].split()) >= 2:
-            return second_person(match["fact"])
+            return first_to_second_person(match["fact"])
     return None
 
 
