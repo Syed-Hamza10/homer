@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
 
@@ -123,24 +124,37 @@ def attach(session: Session, approval_ids: list[int], message_id: int) -> None:
     session.commit()
 
 
+def newest(
+    session: Session, user: User, action: str, conversation_id: int | None
+) -> Iterator[Approval]:
+    statement = (
+        select(Approval)
+        .where(Approval.user_id == user.id, Approval.action == action)
+        .where(Approval.status != SUPERSEDED)
+        .order_by(col(Approval.id).desc())
+    )
+    if conversation_id is not None:
+        statement = statement.where(Approval.conversation_id == conversation_id)
+    return iter(session.exec(statement))
+
+
+def latest_approval(
+    session: Session, user: User, action: str, conversation_id: int | None = None
+) -> Approval | None:
+    """The newest approval for the action that a later one has not replaced, in the
+    conversation when one is given."""
+    return next(newest(session, user, action, conversation_id), None)
+
+
 def latest_send(
     session: Session, user: User, conversation_id: int | None, recipient: str | None
 ) -> Approval | None:
     """The newest live email approval to the recipient, or in the conversation without one."""
     expire_stale(session)
-    statement = (
-        select(Approval)
-        .where(
-            Approval.user_id == user.id,
-            Approval.action == SEND_ACTION,
-            Approval.status != SUPERSEDED,
-        )
-        .order_by(Approval.id.desc())
-    )
     if recipient is None:
-        statement = statement.where(Approval.conversation_id == conversation_id)
-    for approval in session.exec(statement):
-        if recipient is None or recipient in json.loads(approval.payload_json).get("to", ""):
+        return latest_approval(session, user, SEND_ACTION, conversation_id)
+    for approval in newest(session, user, SEND_ACTION, None):
+        if recipient in json.loads(approval.payload_json).get("to", ""):
             return approval
     return None
 

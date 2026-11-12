@@ -4,8 +4,6 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlmodel import col, select
-
 from homer_core.db.models import Approval
 from homer_core.services import approval_edits, approvals
 from homer_core.services.approval_edits import MailEdit
@@ -17,7 +15,6 @@ URL = re.compile(r"https?://\S+")
 LINK = re.compile(r"\blink\b", re.IGNORECASE)
 NOT_CREATED = "The event gets its Google Calendar link once you press Create."
 CREATE_FIRST = f"{NOT_CREATED} Create it first and I'll add the link to the email."
-NO_DRAFT = "There's no draft in this chat yet."
 ANSWER_PROMPT = """The user is asking about the email draft below, which is waiting in this
 chat and has not been sent. Answer the question from the draft only, honestly, in one or two
 sentences. Start with Yes or No when it is a yes or no question. Never say it was sent.
@@ -29,17 +26,7 @@ Subject: {subject}
 
 def latest_event(turn: Turn) -> Approval | None:
     """The newest event this chat booked or proposed."""
-    statement = (
-        select(Approval)
-        .where(
-            Approval.user_id == turn.user.id,
-            Approval.conversation_id == turn.conversation_id,
-            Approval.action == EVENT_ACTION,
-            Approval.status != approvals.SUPERSEDED,
-        )
-        .order_by(col(Approval.id).desc())
-    )
-    return turn.session.exec(statement).first()
+    return approvals.latest_approval(turn.session, turn.user, EVENT_ACTION, turn.conversation_id)
 
 
 def pending_draft(turn: Turn) -> Approval | None:
@@ -86,13 +73,10 @@ async def update_body(turn: Turn, draft: Approval, body: str) -> None:
     turn.requested(fresh)
 
 
-async def link_event(turn: Turn) -> None:
+async def link_event(turn: Turn, draft: Approval) -> None:
     """Puts the event's real Google Calendar link in the draft, or says honestly why it cannot
     yet and adds the date and time, which need no link."""
-    draft, event = pending_draft(turn), latest_event(turn)
-    if draft is None:
-        turn.say(NO_DRAFT)
-        return
+    event = latest_event(turn)
     if event is None:
         turn.say("I don't see an event in this chat to link to.")
         return
@@ -130,12 +114,8 @@ def event_note(event: Approval | None, timezone: str) -> str:
     return f"This chat also has the event '{payload.get('title', '')}' on {shown}, {state}."
 
 
-async def answer(turn: Turn) -> None:
+async def answer(turn: Turn, draft: Approval) -> None:
     """Answers a question about this chat's waiting draft from its content."""
-    draft = pending_draft(turn)
-    if draft is None:
-        turn.say(NO_DRAFT)
-        return
     payload = json.loads(draft.payload_json)
     event = latest_event(turn)
     if LINK.search(turn.message):

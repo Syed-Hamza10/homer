@@ -24,10 +24,11 @@ SUMMARY_LENGTH = 200
 MIN_SCRUBBED_WORDS = 6
 RECONNECT = "Your Google connection has expired. Reconnect it in Settings, it takes a minute."
 RECONNECT_EVENT = "google_reconnect"
+BLOCKED = "search_blocked"
 ERRORS = {
     "web_search_off": "Web search is turned off, so I cannot look that up. "
     "You can turn it on in Settings.",
-    "search_blocked": "The search engine is limiting searches from this computer for a few "
+    BLOCKED: "The search engine is limiting searches from this computer for a few "
     "minutes, so I can't look that up right now. Try again shortly.",
 }
 
@@ -93,6 +94,7 @@ class Turn:
     earlier: list[dict[str, Any]] = field(default_factory=list)
     resolved: list[dict[str, Any]] = field(default_factory=list)
     facts: list[str] = field(default_factory=list)
+    blocked: dict[str, str] = field(default_factory=dict)
 
     @property
     def date_format(self) -> DateFormat:
@@ -123,6 +125,10 @@ class Turn:
         self.emit("replace", {"text": self.answer})
 
     async def call(self, server: str, tool: str, args: dict[str, Any]) -> Any:
+        """Calls the tool; after the search engine's bot check, later searches this turn fail
+        straight away instead of asking again."""
+        if tool in self.blocked:
+            raise JobError(self.blocked[tool])
         self.emit("tool_call", {"name": tool, "args": args})
         result = await self.runtime.manager.call(server, tool, args)
         self.emit("tool_result", {"name": tool, "summary": summarise(result)})
@@ -130,6 +136,8 @@ class Turn:
             raise ReconnectRequired(RECONNECT)
         problem = failure(tool, result)
         if problem is not None:
+            if result.get("error") == BLOCKED:
+                self.blocked[tool] = problem
             raise JobError(problem)
         return result
 

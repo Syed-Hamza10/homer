@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import ModuleType
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +18,7 @@ from homer_core.mcp.manager import McpManager
 from homer_core.services.jobs import read_email, web_search
 from homer_core.services.jobs.read_email import Span, sent_query, span
 from homer_core.services.jobs.web_search import cleaned, dated_query, published, ranked
+from homer_core.services.mail import is_bulk, received, who
 
 from .conftest import ORIGIN, PostChat, load_fake_server
 from .test_jobs import calls, of, said
@@ -329,13 +330,19 @@ def test_newsletters_are_not_attention() -> None:
     letter = {"from": "The Brief <newsletter@brief.example.test>", "body": "Read more."}
     promo = {"from": "a@example.test", "labels": ["CATEGORY_PROMOTIONS"], "body": "Sale"}
     unsub = {"from": "a@example.test", "metadata": {"list_unsubscribe": True}, "body": "Hi"}
+    billing = {"from": "billing@shop.example.test", "body": "Your receipt."}
     person = {"from": "Elena <elena@example.test>", "body": "Can you review the deck?"}
-    assert [read_email.is_bulk(m) for m in (letter, promo, unsub, person)] == [
-        True,
-        True,
-        True,
-        False,
-    ]
+    found = [is_bulk(m) for m in (letter, promo, unsub, billing, person)]
+    assert found == [True, True, True, True, False]
+
+
+def test_mail_headers_give_a_name_and_a_time() -> None:
+    assert who("Elena Park <elena@example.test>") == "Elena Park"
+    assert who("elena@example.test") == "elena@example.test"
+    stamped = {"metadata": {"internal_date": "1762412400000"}, "date": "junk"}
+    assert received(stamped) == datetime(2025, 11, 6, 7, 0, tzinfo=UTC)
+    assert received({"date": "Fri, 06 Nov 2026 09:00:00 +0500"}) == NOW
+    assert received({"date": "junk"}) is None
 
 
 def test_priority_contacts_come_first() -> None:
@@ -386,6 +393,16 @@ class TestRoundThree:
         text = said(post_chat({"message": "who is the current mayor of new york"}))
         assert text.startswith("The search engine is limiting searches from this computer")
         assert "Something went wrong" not in text
+
+    @pytest.mark.parametrize(
+        "intents",
+        [[[{"kind": "web_search", "query": q} for q in ("nyc mayor blocked", "la mayor blocked")]]],
+    )
+    def test_a_blocked_search_is_not_tried_again_in_the_turn(
+        self, post_chat: PostChat, fake_search: ModuleType
+    ) -> None:
+        post_chat({"message": "who are the current mayors of new york and los angeles"})
+        assert fake_search.queries == ["nyc mayor blocked"]
 
     @pytest.mark.parametrize(
         ("message", "expected"),

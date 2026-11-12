@@ -1,7 +1,7 @@
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
-from homer_core.agent.voice import leaks, phrase, scrubbed
+from homer_core.agent.voice import drop_sentences, leaks, non_answer, phrase, scrubbed
 
 VARIANTS = ("Draft to {who} is ready.", "Here's the draft to {who}.")
 
@@ -34,6 +34,24 @@ def test_scrubbed_speaks_to_the_user(text: str, expected: str) -> None:
 )
 def test_leaks(text: str) -> None:
     assert leaks(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("The email does not mention a date.", True),
+        ("There is no information about the budget.", True),
+        ("The provided pages are short.", True),
+        ("Elena wants the deck by Friday.", False),
+    ],
+)
+def test_non_answer(text: str, expected: bool) -> None:
+    assert non_answer(text) is expected
+
+
+def test_drop_sentences_removes_flagged_sentences_and_emptied_lines() -> None:
+    text = "Keep this. Drop that.\nDrop me.\n\nKeep too."
+    assert drop_sentences(text, lambda s: s.startswith("Drop")) == "Keep this.\n\nKeep too."
 
 
 def history(reply: str) -> list[ModelRequest | ModelResponse]:

@@ -2,16 +2,18 @@ import asyncio
 import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
+from homer_core.agent.dates import monday_of
 from homer_core.agent.intents import ReadEmail
+from homer_core.agent.voice import non_answer
 from homer_core.services.jobs.recipients import listed
 from homer_core.services.jobs.turn import Turn
+from homer_core.services.mail import is_bulk, received, unwrap, who
 
 MAX_MESSAGES = 5
 LIST_LIMIT = 8
@@ -57,19 +59,6 @@ SENT_TO = re.compile(
     r"(?P<who>[\w.+-]+@[\w.-]+|[A-Z][\w'-]*)"
 )
 NOT_PEOPLE = frozenset({"I", "You", "Today", "Yesterday", "This", "Last", "Anyone", "Anything"})
-BULK_SENDER = re.compile(
-    r"newsletter|no-?reply|digest|notifications?@|news@|mailer|marketing|promo", re.IGNORECASE
-)
-BULK_BODY = re.compile(
-    r"\bunsubscribe\b|because you (?:subscribed|signed up)|view (?:it |this )?in (?:your )?browser",
-    re.IGNORECASE,
-)
-BULK_LABELS = frozenset({"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"})
-NO_INFO = re.compile(
-    r"\b(?:provided|no information|does not (?:contain|include|say|mention)|doesn't (?:contain"
-    r"|include|say|mention)|not (?:mentioned|included|specified))\b",
-    re.IGNORECASE,
-)
 GREETING = re.compile(r"^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^\n]*\n+", re.I)
 GIST_LINE = re.compile(r"^\s*(\d+)[.)]\s*(.+?)\s*$")
 
@@ -79,10 +68,6 @@ class Span:
     words: str
     start: datetime | None
     end: datetime | None
-
-
-def unwrap(text: Any) -> str:
-    return str(text or "").removeprefix("<untrusted>").removesuffix("</untrusted>")
 
 
 def search_query(intent: ReadEmail) -> str:
@@ -115,7 +100,7 @@ def span(text: str, now: datetime) -> Span:
         return Span("yesterday", midnight - timedelta(days=1), midnight)
     if "today" in lowered or "this morning" in lowered:
         return Span("today", midnight, midnight + timedelta(days=1))
-    monday = midnight - timedelta(days=now.weekday())
+    monday = datetime.combine(monday_of(now.date()), time(), now.tzinfo)
     if "last week" in lowered:
         return Span("last week", monday - timedelta(days=7), monday)
     if "this week" in lowered:
@@ -141,34 +126,18 @@ def recipient(text: str, intent: ReadEmail) -> str | None:
     return None
 
 
-def name_of(header: str) -> str:
-    name, address = parseaddr(header)
-    return name or address or header
+def plural(count: int, word: str) -> str:
+    return f"{word}{'' if count == 1 else 's'}"
 
 
 def when(message: dict[str, Any], zone: ZoneInfo) -> str:
-    try:
-        sent = parsedate_to_datetime(str(message.get("date", "")))
-    except (TypeError, ValueError):
-        return ""
-    return f"{sent.astimezone(zone):%a %d %b, %H:%M}"
+    sent = received(message)
+    return f"{sent.astimezone(zone):%a %d %b, %H:%M}" if sent else ""
 
 
 def dated(message: dict[str, Any], zone: ZoneInfo) -> str:
     sent = when(message, zone)
     return f" ({sent})" if sent else ""
-
-
-def is_bulk(message: dict[str, Any]) -> bool:
-    labels = [str(label) for label in message.get("labels", [])]
-    metadata = message.get("metadata") or {}
-    return bool(
-        BULK_LABELS & set(labels)
-        or any("newsletter" in label.lower() for label in labels)
-        or metadata.get("list_unsubscribe")
-        or BULK_SENDER.search(str(message.get("from", "")))
-        or BULK_BODY.search(unwrap(message.get("body") or message.get("snippet")))
-    )
 
 
 def ranked(messages: list[dict[str, Any]], priority: list[str]) -> list[dict[str, Any]]:
@@ -218,19 +187,22 @@ async def gists(turn: Turn, messages: list[dict[str, Any]]) -> list[str]:
     found: dict[int, str] = {}
     for line in reply.splitlines():
         match = GIST_LINE.match(line)
-        if match and not NO_INFO.search(match.group(2)):
+        if match and not non_answer(match.group(2)):
             found.setdefault(int(match.group(1)), match.group(2).rstrip("."))
     return [found.get(index) or plain_gist(m) for index, m in enumerate(messages, start=1)]
 
 
-async def lines(turn: Turn, messages: list[dict[str, Any]]) -> str:
+def listing(turn: Turn, messages: list[dict[str, Any]], summaries: list[str]) -> str:
     zone = ZoneInfo(turn.user.timezone)
-    summaries = await gists(turn, messages)
     return "\n".join(
-        f"- {name_of(str(m.get('from', '')))}: {m.get('subject') or '(no subject)'}"
+        f"- {who(str(m.get('from', '')))}: {m.get('subject') or '(no subject)'}"
         f"{dated(m, zone)} - {gist}"
         for m, gist in zip(messages, summaries, strict=True)
     )
+
+
+async def lines(turn: Turn, messages: list[dict[str, Any]]) -> str:
+    return listing(turn, messages, await gists(turn, messages))
 
 
 async def fetch(turn: Turn, query: str, limit: int) -> list[dict[str, Any]]:
@@ -244,8 +216,8 @@ async def unread(turn: Turn) -> None:
         turn.say("You have no unread email in your inbox.")
         return
     count = f"{len(messages)}+" if len(messages) == LIST_LIMIT else str(len(messages))
-    plural = "" if len(messages) == 1 else "s"
-    turn.say(f"You have {count} unread email{plural}:\n{await lines(turn, messages)}")
+    noun = plural(len(messages), "email")
+    turn.say(f"You have {count} unread {noun}:\n{await lines(turn, messages)}")
 
 
 async def attention(turn: Turn) -> None:
@@ -258,15 +230,12 @@ async def attention(turn: Turn) -> None:
         seen.setdefault(str(message.get("id")), message)
     bulk = [m for m in seen.values() if is_bulk(m)]
     wanted = ranked([m for m in seen.values() if not is_bulk(m)], turn.rules.priority_contacts)
-    letters = f"{len(bulk)} newsletter{'s' if len(bulk) != 1 else ''} left out" if bulk else ""
+    aside = f" ({len(bulk)} {plural(len(bulk), 'newsletter')} left out)" if bulk else ""
     if not wanted:
-        aside = f" ({letters})" if letters else ""
         turn.say(f"Nothing in your inbox looks like it needs you right now{aside}.")
         return
     top = wanted[:MAX_MESSAGES]
-    plural = "s" if len(top) != 1 else ""
-    aside = f" ({letters})" if letters else ""
-    header = f"{len(top)} email{plural} may need your attention{aside}:"
+    header = f"{len(top)} {plural(len(top), 'email')} may need your attention{aside}:"
     turn.say(f"{header}\n{await lines(turn, top)}")
 
 
@@ -290,13 +259,13 @@ async def sent(turn: Turn, text: str, intent: ReadEmail) -> None:
     to = f" to {person}" if person else ""
     at = f" {period.words}" if period.words else ""
     if messages:
-        listing = "\n".join(
-            f"- To {name_of(str(m.get('to', '')))}: {m.get('subject') or '(no subject)'}"
+        rows = "\n".join(
+            f"- To {who(str(m.get('to', '')))}: {m.get('subject') or '(no subject)'}"
             f"{dated(m, zone)}"
             for m in messages
         )
-        plural = "s" if len(messages) != 1 else ""
-        turn.say(f"Yes, {len(messages)} email{plural} went out{to}{at}:\n{listing}")
+        noun = plural(len(messages), "email")
+        turn.say(f"Yes, {len(messages)} {noun} went out{to}{at}:\n{rows}")
         return
     answer = f"No, I found no email sent{to}{at}."
     if person and period.start is not None:
@@ -322,14 +291,15 @@ async def answer_question(turn: Turn, intent: ReadEmail) -> None:
         return
     emails = "\n\n".join(shown(message) for message in messages)
     index = await turn.stream(intent.question, ANSWER_PROMPT.format(emails=emails))
-    if not turn.segments[index] or NO_INFO.search(turn.segments[index]):
-        listing = await lines(turn, messages)
-        turn.replace(index, f"Here is what I found:\n{listing}")
+    if not turn.segments[index] or non_answer(turn.segments[index]):
+        found = listing(turn, messages, [plain_gist(m) for m in messages])
+        turn.replace(index, f"Here is what I found:\n{found}")
 
 
 async def run(turn: Turn, intent: ReadEmail) -> None:
-    text = intent.question if mode(intent.question, intent) else turn.message
-    match mode(text, intent):
+    asked = mode(intent.question, intent)
+    text = intent.question if asked else turn.message
+    match asked or mode(text, intent):
         case "sent":
             await sent(turn, text, intent)
         case "attention":

@@ -30,12 +30,17 @@ def prompt_facts(session: Session, user: User) -> list[str]:
     return [fact.text for fact in reversed(list_facts(session, user, PROMPT_FACTS))]
 
 
+def remove(session: Session, fact: Fact) -> Fact:
+    session.delete(fact)
+    session.commit()
+    return fact
+
+
 def delete_fact(session: Session, user: User, fact_id: int) -> None:
     fact = session.get(Fact, fact_id)
     if fact is None or fact.user_id != user.id:
         raise NotFound(f"fact {fact_id} not found")
-    session.delete(fact)
-    session.commit()
+    remove(session, fact)
 
 
 STOP_WORDS = frozenset(
@@ -86,9 +91,4 @@ def forget(session: Session, user: User, about: str | None) -> Fact | None:
     """Deletes the fact that best matches `about` (the newest one on a tie or when `about` says
     nothing specific); returns it."""
     found = matching(session, user, about)
-    if not found:
-        return None
-    fact = found[0]
-    session.delete(fact)
-    session.commit()
-    return fact
+    return remove(session, found[0]) if found else None

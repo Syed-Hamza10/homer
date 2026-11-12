@@ -13,7 +13,7 @@ from homer_core.agent.intents import (
     Remember,
     WebSearch,
 )
-from homer_core.agent.routing import refined, routed, second_person, told_fact
+from homer_core.agent.routing import first_to_second_person, refined, routed, told_fact
 
 FACTS = ["Dana prefers calls after 3pm.", "Your cat is called Mango."]
 
@@ -71,9 +71,10 @@ def test_remembered_facts_keep_the_users_words(message: str, fact: str) -> None:
     assert refined(list(model), message, []) == [Remember(kind="remember", fact=fact)]
 
 
-def test_second_person() -> None:
+def test_first_to_second_person() -> None:
     assert (
-        second_person("my wife and I like Rosa's coffee") == "Your wife and you like Rosa's coffee."
+        first_to_second_person("my wife and I like Rosa's coffee")
+        == "Your wife and you like Rosa's coffee."
     )
 
 

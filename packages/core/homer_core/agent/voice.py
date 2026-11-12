@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 
@@ -23,6 +24,18 @@ USER_WORDS = (
     (re.compile(r"\bthe user\b", re.IGNORECASE), "you"),
 )
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
+NON_ANSWER = re.compile(
+    r"\b(?:does not|doesn't|do not|don't)\s+(?:say|mention|contain|include|state|specify|provide"
+    r"|show|list|give|report)\b|\bno (?:specific |further |clear )?(?:information|details|mention"
+    r"|data|results?|score|headlines|news items|dates|stories|figures)\b"
+    r"|\bnot (?:mentioned|specified|included|stated|listed|provided"
+    r"|available|reported)\b|\bimpossible to (?:determine|say|tell)\b"
+    r"|\b(?:cannot|can't|unable to) (?:determine|find|tell|say|confirm|name|give)\b"
+    r"|\bonly (?:mentions?|describes?|lists?|covers?|says|shows?|gives?|focuses)\b"
+    r"|\bno (?:current |exact |specific )?(?:numerical )?(?:value|price|figure|number)\b"
+    r"|\b(?:content|text|page|result) focuses\b|\bprovided\b",
+    re.IGNORECASE,
+)
 HINT = (
     "\nSpeak straight to the person as 'you'. Never mention provided text, context, pages, "
     "emails provided, 'the user' or being an AI."
@@ -43,15 +56,25 @@ def capitalised(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def non_answer(text: str) -> bool:
+    """Says what the text lacks ("does not mention", "no information") instead of answering."""
+    return NON_ANSWER.search(text) is not None
+
+
+def drop_sentences(text: str, unwanted: Callable[[str], object]) -> str:
+    """Removes each sentence `unwanted` flags, line by line; a line left empty goes too."""
+    lines = []
+    for line in text.split("\n"):
+        kept = [s for s in SENTENCE.split(line.strip()) if s and not unwanted(s)]
+        if kept or not line.strip():
+            lines.append(" ".join(kept))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def scrubbed(text: str) -> str:
     """Drops a "Based on the provided text," opening, turns "the user" into "you" and removes
     any sentence that still talks about its sources."""
-    text = second_person(LEAD.sub("", text.strip()))
-    kept = []
-    for paragraph in text.split("\n"):
-        sentences = [s for s in SENTENCE.split(paragraph) if not leaks(s)]
-        kept.append(" ".join(sentences))
-    return capitalised(re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip())
+    return capitalised(drop_sentences(second_person(LEAD.sub("", text.strip())), leaks))
 
 
 def phrase(history: list[ModelMessage], variants: tuple[str, ...], **values: str) -> str:

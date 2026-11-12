@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterable
 from typing import Any
 
 from pydantic_ai import Agent
@@ -30,22 +31,28 @@ def rate_query(conversion: CurrencyConversion) -> str:
 Rate = tuple[float, dict[str, Any]]
 
 
+def stated(
+    texts: Iterable[tuple[str, dict[str, Any]]], conversion: CurrencyConversion
+) -> Rate | None:
+    """The first text that states the rate as '1 USD = 0.87 EUR', with its result."""
+    rates = (
+        (find_rate(text, conversion.source, conversion.target), result) for text, result in texts
+    )
+    return next(((rate, result) for rate, result in rates if rate is not None), None)
+
+
 async def exchange_rate(turn: Turn, conversion: CurrencyConversion) -> Rate | None:
-    """The rate from the first snippet, else the first of three pages, that states it as
-    '1 USD = 0.87 EUR'; the model reads it only when none does."""
+    """The rate from the first snippet, else the first of three pages, that states it; the
+    model reads it only when none does."""
     results = await web_search.search(turn, rate_query(conversion))
-    for result in results:
-        rate = find_rate(web_search.result_text(result), conversion.source, conversion.target)
-        if rate is not None:
-            return rate, result
-    if not results:
-        return None
+    found = stated(((web_search.result_text(r), r) for r in results), conversion)
+    if found is not None or not results:
+        return found
     top = results[:RATE_PAGES]
     pages = await asyncio.gather(*(web_search.page_text(turn, result) for result in top))
-    for result, text in zip(top, pages, strict=True):
-        rate = find_rate(text, conversion.source, conversion.target)
-        if rate is not None:
-            return rate, result
+    found = stated(zip(pages, top, strict=True), conversion)
+    if found is not None:
+        return found
     read = "\n\n".join(f"<untrusted>{text[:PAGE_CHARS]}</untrusted>" for text in pages if text)
     prompt = RATE_PROMPT.format(
         source=conversion.source,

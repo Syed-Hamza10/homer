@@ -2,14 +2,17 @@ import asyncio
 import re
 from contextlib import suppress
 from datetime import date, datetime, timedelta
+from itertools import chain
 from typing import Any
 
 from pydantic_ai import Agent
 
 from homer_core.agent.claims import review
 from homer_core.agent.intents import WebSearch
+from homer_core.agent.voice import capitalised, drop_sentences, non_answer
 from homer_core.services.jobs.recipients import listed
 from homer_core.services.jobs.turn import JobError, Turn
+from homer_core.services.mail import unwrap
 
 RESULTS = 8
 SNIPPETS = 6
@@ -50,22 +53,12 @@ TODAY = re.compile(r"\b(?:today(?:'s)?|tonight(?:'s)?)\b", re.IGNORECASE)
 TOMORROW = re.compile(r"\btomorrow(?:'s)?\b", re.IGNORECASE)
 THIS_PERIOD = re.compile(r"\bthis (?:week|month)\b", re.IGNORECASE)
 MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-MONTH = "(" + "|".join(MONTHS) + r")[a-z]*\.?"
-MONTH_FIRST = re.compile(rf"\b{MONTH}\s+(\d{{1,2}}),?\s+(20\d\d)\b", re.IGNORECASE)
-DAY_FIRST = re.compile(rf"\b(\d{{1,2}})\s+{MONTH},?\s+(20\d\d)\b", re.IGNORECASE)
+MONTH = "(?P<month>" + "|".join(MONTHS) + r")[a-z]*\.?"
+DAY = r"(?P<day>\d{1,2})"
+YEAR = r"(?P<year>20\d\d)"
+MONTH_FIRST = re.compile(rf"\b{MONTH}\s+{DAY},?\s+{YEAR}\b", re.IGNORECASE)
+DAY_FIRST = re.compile(rf"\b{DAY}\s+{MONTH},?\s+{YEAR}\b", re.IGNORECASE)
 AGO = re.compile(r"\b(\d+)\s+(minute|hour|day)s?\s+ago\b", re.IGNORECASE)
-NON_ANSWER = re.compile(
-    r"\b(?:does not|doesn't|do not|don't)\s+(?:say|mention|contain|include|state|specify|provide"
-    r"|show|list|give|report)\b|\bno (?:specific |further |clear )?(?:information|details|mention"
-    r"|data|results?|score|headlines|news items|dates|stories|figures)\b"
-    r"|\bnot (?:mentioned|specified|included|stated|listed|provided"
-    r"|available|reported)\b|\bimpossible to (?:determine|say|tell)\b"
-    r"|\b(?:cannot|can't|unable to) (?:determine|find|tell|say|confirm|name|give)\b"
-    r"|\bonly (?:mentions?|describes?|lists?|covers?|says|shows?|gives?|focuses)\b"
-    r"|\bno (?:current |exact |specific )?(?:numerical )?(?:value|price|figure|number)\b"
-    r"|\b(?:content|text|page|result) focuses\b",
-    re.IGNORECASE,
-)
 PREAMBLE = re.compile(
     r"^(?:based on|according to|from|per|looking at)\s+(?:the\s+)?(?:provided|available|given"
     r"|search|above|these|latest)?\s*(?:text|pages?|sources?|results?|search results|snippets?"
@@ -84,11 +77,6 @@ SOURCE_WORDS = re.compile(
     r"|\b(?:one|another|the other) (?:source|page|result|snippet)\b",
     re.IGNORECASE,
 )
-SENTENCE = re.compile(r"(?<=[.!?])\s+")
-
-
-def unwrap(text: Any) -> str:
-    return str(text or "").removeprefix("<untrusted>").removesuffix("</untrusted>")
 
 
 def day_text(day: date) -> str:
@@ -103,18 +91,18 @@ def dated_query(query: str, question: str, today: date) -> str:
     """Writes 'yesterday', 'last night', 'today', 'tonight', 'tomorrow' and 'this week' as real
     dates, which a search engine can match, and adds the date when the question had one of
     them but the query not."""
-    yesterday = query_day(today - timedelta(days=1))
-    tomorrow = query_day(today + timedelta(days=1))
-    named = TODAY.sub(query_day(today), YESTERDAY.sub(yesterday, query))
-    named = THIS_PERIOD.sub(f"{today:%B %Y}", TOMORROW.sub(tomorrow, named))
+    days = (
+        (YESTERDAY, query_day(today - timedelta(days=1))),
+        (TODAY, query_day(today)),
+        (TOMORROW, query_day(today + timedelta(days=1))),
+        (THIS_PERIOD, f"{today:%B %Y}"),
+    )
+    named = query
+    for words, day in days:
+        named = words.sub(day, named)
     if named != query:
         return named
-    for words, day in ((YESTERDAY, yesterday), (TODAY, query_day(today)), (TOMORROW, tomorrow)):
-        if words.search(question):
-            return f"{query} {day}"
-    if THIS_PERIOD.search(question):
-        return f"{query} {today:%B %Y}"
-    return query
+    return next((f"{query} {day}" for words, day in days if words.search(question)), query)
 
 
 def calendar_date(year: str, month: str, day: str) -> date | None:
@@ -128,12 +116,8 @@ def published(text: str, now: datetime) -> date | None:
     """The first date a result's title or snippet carries, such as 'Nov 5, 2026' or '3 hours
     ago'; None when it has none."""
     found: list[tuple[int, date | None]] = []
-    for match in MONTH_FIRST.finditer(text):
-        month, day, year = match.groups()
-        found.append((match.start(), calendar_date(year, month, day)))
-    for match in DAY_FIRST.finditer(text):
-        day, month, year = match.groups()
-        found.append((match.start(), calendar_date(year, month, day)))
+    for match in chain(MONTH_FIRST.finditer(text), DAY_FIRST.finditer(text)):
+        found.append((match.start(), calendar_date(match["year"], match["month"], match["day"])))
     for match in AGO.finditer(text):
         amount, unit = int(match.group(1)), match.group(2).lower()
         span = {"minute": timedelta(minutes=amount), "hour": timedelta(hours=amount)}
@@ -195,14 +179,11 @@ def cleaned(text: str) -> str:
     """Removes talk about 'the text' or 'the provided pages' and sentences saying what the
     results lack; empty when nothing that answers is left."""
     text = SOURCE_CLAUSE.sub("", PREAMBLE.sub("", text.replace(NEED_PAGES, "").strip()))
-    text = text[:1].upper() + text[1:]
-    sentences = [s for s in SENTENCE.split(text) if s.strip()]
-    kept = [s for s in sentences if not SOURCE_WORDS.search(s) and not NON_ANSWER.search(s)]
-    return " ".join(kept).strip()
+    return drop_sentences(capitalised(text), lambda s: SOURCE_WORDS.search(s) or non_answer(s))
 
 
 def answers(text: str) -> bool:
-    return bool(text.strip()) and NEED_PAGES not in text and not NON_ANSWER.search(text)
+    return bool(text.strip()) and NEED_PAGES not in text and not non_answer(text)
 
 
 def sources_block(results: list[dict[str, Any]]) -> str:
