@@ -292,12 +292,15 @@ async def routed(turn: Turn) -> bool:
         turn.resolved.append({"kind": "day_summary"})
         await day_summary.run(turn)
         return True
-    if wants_link(turn.message) and draft_question.pending_draft(turn) is not None:
-        await draft_question.link_event(turn)
-        return True
-    if asks_about_draft(turn.message) and draft_question.pending_draft(turn) is not None:
-        await draft_question.answer(turn)
-        return True
+    linking = wants_link(turn.message)
+    if linking or asks_about_draft(turn.message):
+        draft = draft_question.pending_draft(turn)
+        if draft is not None and linking:
+            await draft_question.link_event(turn, draft)
+            return True
+        if draft is not None:
+            await draft_question.answer(turn, draft)
+            return True
 
     if not is_edit(turn.message):
         return False
