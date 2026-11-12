@@ -232,9 +232,9 @@ def contacts_search(query: str) -> list[dict[str, Any]]:
 
 
 @server.tool
-def mail_profile() -> dict[str, Any]:
-    """Returns the address and display name of the connected mailbox."""
-    return {"email": ACCOUNT_EMAIL, "name": ACCOUNT_NAME}
+def mail_profile(with_name: bool = False) -> dict[str, Any]:
+    """Returns the address of the connected mailbox, and its display name when asked."""
+    return {"email": ACCOUNT_EMAIL, "name": ACCOUNT_NAME if with_name else ""}
 
 
 @server.tool

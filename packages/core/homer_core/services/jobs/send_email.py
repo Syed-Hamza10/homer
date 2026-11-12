@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from homer_core.agent.intents import SendEmail
 from homer_core.agent.prompt import known_name
-from homer_core.agent.voice import phrase
+from homer_core.agent.voice import SENTENCE, capitalised, drop_sentences, phrase
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import PROFILE_TOOL
 from homer_core.services.approvals import create
@@ -88,7 +88,6 @@ CLOSER = re.compile(
     r"|all the best|talk soon|yours)\b",
     re.IGNORECASE,
 )
-SENTENCES = re.compile(r"(?<=[.!?])\s+")
 PROFILE_NAMES: dict[int, str] = {}
 READY = (
     "Here's your email to {who}. Press Send when it looks right.",
@@ -183,13 +182,9 @@ def without_filler(message: str) -> str:
     works for you," while some other sentence remains."""
     paragraphs = []
     for paragraph in message.split("\n\n"):
-        sentences = SENTENCES.split(paragraph.strip())
-        kept = []
-        for sentence in sentences:
-            sentence = FILLER_LEAD.sub("", sentence)
-            sentence = sentence[:1].upper() + sentence[1:]
-            if sentence and not FILLER.match(sentence):
-                kept.append(sentence)
+        sentences = SENTENCE.split(paragraph.strip())
+        unled = [capitalised(FILLER_LEAD.sub("", sentence)) for sentence in sentences]
+        kept = [sentence for sentence in unled if sentence and not FILLER.match(sentence)]
         if kept == sentences:
             paragraphs.append(paragraph.strip())
         elif kept:
@@ -199,18 +194,11 @@ def without_filler(message: str) -> str:
 
 def undangled(message: str) -> str:
     """Drops a sentence that points at nothing, such as "through this link:."."""
-    lines = []
-    for line in message.split("\n"):
-        kept = [s for s in SENTENCES.split(line.strip()) if not DANGLING.search(s)]
-        if kept or not line.strip():
-            lines.append(" ".join(kept))
-    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
-    return cleaned or message
+    return drop_sentences(message, DANGLING.search) or message
 
 
 def unbracketed(text: str) -> str:
-    cleaned = re.sub(r"[ \t]+([,.!?])", r"\1", PLACEHOLDER.sub(" ", text)).strip()
-    return cleaned[:1].upper() + cleaned[1:]
+    return capitalised(re.sub(r"[ \t]+([,.!?])", r"\1", PLACEHOLDER.sub(" ", text)).strip())
 
 
 async def checked(turn: Turn, prompt: str, instructions: str, min_words: int) -> EmailText:
@@ -235,15 +223,15 @@ def greeting(person: Person) -> str:
 
 
 async def profile_name(turn: Turn) -> str:
-    """The Gmail display name, looked up once per user and kept for the process."""
+    """The Gmail display name, looked up once per user and kept for the process, "" when the
+    lookup fails."""
     if turn.user.id not in PROFILE_NAMES:
         try:
-            profile = await turn.runtime.manager.call("google", PROFILE_TOOL, {})
+            profile = await turn.runtime.manager.call("google", PROFILE_TOOL, {"with_name": True})
         except Exception:
-            return ""
-        if not isinstance(profile, dict) or "error" in profile:
-            return ""
-        PROFILE_NAMES[turn.user.id] = str(profile.get("name") or "").strip()
+            profile = None
+        found = isinstance(profile, dict) and "error" not in profile
+        PROFILE_NAMES[turn.user.id] = str(profile.get("name") or "").strip() if found else ""
     return PROFILE_NAMES[turn.user.id]
 
 

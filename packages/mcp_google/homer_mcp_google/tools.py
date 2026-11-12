@@ -569,11 +569,12 @@ class GoogleTools:
         return {"contacts": contacts}
 
     @guarded
-    async def mail_profile(self) -> dict[str, Any]:
-        """Returns the address and display name of the connected mailbox. Core use only,
-        hidden from the model; the name is empty when Gmail does not give one."""
+    async def mail_profile(self, with_name: bool = False) -> dict[str, Any]:
+        """Returns the address of the connected mailbox, and its display name when asked (empty
+        when Gmail does not give one). Core use only, hidden from the model."""
         profile = await self.client.get(f"{GMAIL}/profile")
-        return {"email": profile["emailAddress"], "name": await self._display_name()}
+        name = await self._display_name() if with_name else ""
+        return {"email": profile["emailAddress"], "name": name}
 
     async def _display_name(self) -> str:
         try:

@@ -319,11 +319,21 @@ async def test_calendar_write_tools_need_approval(mcp: Client, sim: httpx.Client
     assert unknown["error"] == "invalid_argument"
 
 
-async def test_mail_profile_returns_the_account_address_and_name(mcp: Client) -> None:
-    assert await call(mcp, "mail_profile") == {
+def send_as_reads(home: Path) -> int:
+    database = sqlite3.connect(home / "data" / "homer.db")
+    query = "SELECT COUNT(*) FROM outbound_log WHERE path LIKE '%/settings/sendAs'"
+    return int(database.execute(query).fetchone()[0])
+
+
+async def test_mail_profile_returns_the_account_address_and_name(mcp: Client, home: Path) -> None:
+    before = send_as_reads(home)
+    assert await call(mcp, "mail_profile") == {"email": "jordan.reyes@example.test", "name": ""}
+    assert send_as_reads(home) == before
+    assert await call(mcp, "mail_profile", with_name=True) == {
         "email": "jordan.reyes@example.test",
         "name": "Jordan Reyes",
     }
+    assert send_as_reads(home) == before + 1
 
 
 async def test_contacts_search(mcp: Client) -> None:
