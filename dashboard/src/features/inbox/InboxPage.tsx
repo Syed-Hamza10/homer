@@ -5,13 +5,21 @@ import { Button } from "@/components/ui/button"
 import { errorText } from "@/lib/errorText"
 import { useTimezone } from "@/features/settings/useTimezone"
 import { stepId, useShortcuts } from "@/lib/shortcuts"
+import { useUrlParams } from "@/lib/useUrlParams"
 import { cn } from "@/lib/utils"
 import { FolderList } from "./FolderList"
 import { MailComposer } from "./MailComposer"
 import { ReadingPane } from "./ReadingPane"
 import { inboxShortcuts } from "./shortcuts"
+import { sortThreads } from "./sortThreads"
 import { ThreadList } from "./ThreadList"
-import { useFolders, useLabelChange, useSortInbox, useThreads } from "./useMail"
+import {
+  useFolders,
+  useLabelChange,
+  useLabelInbox,
+  useThreads,
+} from "./useMail"
+import { useThreadSort } from "./useThreadSort"
 
 const blankDraft = { to: "", subject: "", body: "", thread_id: null }
 const fallbackFolders = [
@@ -21,17 +29,24 @@ const fallbackFolders = [
 export function InboxPage() {
   const timeZone = useTimezone()
   const folders = useFolders()
-  const sort = useSortInbox()
+  const triage = useLabelInbox()
   const markRead = useLabelChange()
-  const [folder, setFolder] = useState("inbox")
-  const [query, setQuery] = useState("")
-  const [selected, setSelected] = useState<string | null>(null)
+  const [params, navigate] = useUrlParams()
+  const folder = params.get("folder") ?? "inbox"
+  const query = params.get("q") ?? ""
+  const selected = params.get("thread")
   const [composing, setComposing] = useState(false)
   const [cursor, setCursor] = useState<string | null>(null)
   const [help, setHelp] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const threads = useThreads(folder, query)
-  const rows = threads.data?.pages.flatMap((page) => page.threads) ?? []
+  const [sort, setSort] = useThreadSort(folder)
+  const rows = sortThreads(
+    threads.data?.pages.flatMap((page) => page.threads) ?? [],
+    sort,
+    folder === "sent",
+  )
+  const setSelected = (id: string | null) => navigate({ thread: id }, true)
   const list = folders.data ?? fallbackFolders
   const userLabels = list
     .filter((item) => item.kind !== "folder")
@@ -90,10 +105,10 @@ export function InboxPage() {
           <Button
             size="sm"
             variant="outline"
-            disabled={sort.isPending}
-            onClick={() => sort.mutate()}
+            disabled={triage.isPending}
+            onClick={() => triage.mutate()}
           >
-            {sort.isPending ? "Sorting…" : "Sort with Homer"}
+            {triage.isPending ? "Labelling…" : "Label with Homer"}
           </Button>
           <Button
             size="icon-sm"
@@ -108,9 +123,9 @@ export function InboxPage() {
           </Button>
         </div>
       </header>
-      {(folders.error ?? sort.error) && (
+      {(folders.error ?? triage.error) && (
         <p className="border-b border-border px-5 py-2 text-sm text-destructive">
-          {errorText(folders.error ?? sort.error)}
+          {errorText(folders.error ?? triage.error)}
         </p>
       )}
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[13rem_minmax(18rem,24rem)_minmax(0,1fr)]">
@@ -119,9 +134,11 @@ export function InboxPage() {
             folders={list}
             selected={folder}
             onSelect={(id) => {
-              setFolder(id)
-              setQuery("")
-              setSelected(null)
+              navigate({
+                folder: id === "inbox" ? null : id,
+                q: null,
+                thread: null,
+              })
               setCursor(null)
             }}
           />
@@ -135,13 +152,17 @@ export function InboxPage() {
           <ThreadList
             key={folder}
             threads={threads}
+            rows={rows}
+            sort={sort}
+            onSort={setSort}
             folder={folder}
             query={query}
             timeZone={timeZone}
             selected={selected}
             cursor={cursor}
             searchRef={searchRef}
-            onSearch={setQuery}
+            onSearch={(text) => navigate({ q: text || null, thread: null })}
+
             onOpen={open}
           />
         </div>

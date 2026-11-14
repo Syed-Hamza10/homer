@@ -2,11 +2,20 @@ import { Keyboard } from "lucide-react"
 import { useState } from "react"
 import { PageHeader } from "@/components/PageHeader"
 import { ShortcutsHelp } from "@/components/ShortcutsHelp"
+import { UpdatedAt } from "@/components/UpdatedAt"
+
 import { Button } from "@/components/ui/button"
 import type { Approval } from "@/features/approvals/types"
 import { useTimezone } from "@/features/settings/useTimezone"
 import { useShortcuts } from "@/lib/shortcuts"
-import { instantOf, wallString, wallTime, type WallTime } from "@/lib/zoned"
+import { useUrlParams } from "@/lib/useUrlParams"
+import {
+  dateKey,
+  instantOf,
+  wallString,
+  wallTime,
+  type WallTime,
+} from "@/lib/zoned"
 import { ApprovalPanel } from "./ApprovalPanel"
 import { CalendarToolbar } from "./CalendarToolbar"
 import { errorText } from "@/lib/errorText"
@@ -15,7 +24,14 @@ import { FindTimePanel } from "./FindTimePanel"
 import { fromInstants, fromWalls } from "./formValue"
 import { MonthGrid } from "./MonthGrid"
 import { QuickCreate } from "./QuickCreate"
-import { rangeOf, rangeTitle, shift, visibleDays } from "./range"
+import {
+  dateParam,
+  rangeOf,
+  rangeTitle,
+  shift,
+  viewParam,
+  visibleDays,
+} from "./range"
 import { calendarShortcuts } from "./shortcuts"
 import { TimeGrid } from "./TimeGrid"
 import type { CalendarEvent, DateOnly, FormValue, View } from "./types"
@@ -45,15 +61,22 @@ function dateOnly(wall: WallTime): DateOnly {
 export function CalendarPage() {
   const timeZone = useTimezone()
   const now = useNow()
-  const [view, setView] = useState<View>(initialView)
-  const [picked, setPicked] = useState<DateOnly | null>(null)
+  const [params, navigate] = useUrlParams()
+  const view = viewParam(params.get("view")) ?? initialView()
+  const picked = dateParam(params.get("date"))
+  const setView = (next: View) => navigate({ view: next }, true)
+  const setPicked = (day: DateOnly | null) =>
+    navigate({ date: day ? dateKey(day) : null }, true)
   const [panel, setPanel] = useState<Panel>(null)
   const [finding, setFinding] = useState(false)
   const [help, setHelp] = useState(false)
   const anchor = picked ?? dateOnly(wallTime(now, timeZone))
   const days = visibleDays(view, anchor)
   const range = rangeOf(days, timeZone)
-  const { data, isPending, error } = useEvents(range.start, range.end)
+  const { data, isPending, error, dataUpdatedAt } = useEvents(
+    range.start,
+    range.end,
+  )
   const refresh = useRefreshEvents()
   const move = useUpdateEvent()
   const events = data?.events ?? []
@@ -155,6 +178,7 @@ export function CalendarPage() {
           onStep={step}
           onFindTime={() => setFinding((open) => !open)}
         />
+        <UpdatedAt at={dataUpdatedAt} />
         {data?.source === "cache" && (
           <p className="text-xs text-muted-foreground">
             Google could not be reached, so saved events are shown. They may be
@@ -185,10 +209,9 @@ export function CalendarPage() {
                     ),
                   )
                 }
-                onShowDay={(day) => {
-                  setPicked(day)
-                  setView("day")
-                }}
+                onShowDay={(day) =>
+                  navigate({ date: dateKey(day), view: "day" }, true)
+                }
               />
             ) : (
               <TimeGrid

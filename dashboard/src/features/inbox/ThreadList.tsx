@@ -1,13 +1,25 @@
-import { Search } from "lucide-react"
+import { ArrowDown, ArrowUp, Search } from "lucide-react"
 import { useEffect, useRef, useState, type RefObject } from "react"
+import { UpdatedAt } from "@/components/UpdatedAt"
 import { Button } from "@/components/ui/button"
 import { errorText } from "@/lib/errorText"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
+import {
+  directionText,
+  nextSort,
+  type SortColumn,
+  type ThreadSort,
+} from "./sortThreads"
 import { ThreadRow } from "./ThreadRow"
+import type { ThreadSummary } from "./types"
 import type { useThreads } from "./useMail"
 
 type Props = {
   threads: ReturnType<typeof useThreads>
+  rows: ThreadSummary[]
+  sort: ThreadSort
+  onSort: (sort: ThreadSort) => void
   folder: string
   query: string
   timeZone: string
@@ -18,8 +30,50 @@ type Props = {
   onOpen: (id: string, unread: boolean) => void
 }
 
+function SortHeader({
+  column,
+  label,
+  sort,
+  onSort,
+  className,
+}: {
+  column: SortColumn
+  label: string
+  sort: ThreadSort
+  onSort: (sort: ThreadSort) => void
+  className?: string
+}) {
+  const active = sort.column === column
+  const Arrow = sort.direction === "asc" ? ArrowUp : ArrowDown
+  return (
+    <button
+      type="button"
+      data-testid={`sort-${column}`}
+      data-direction={active ? sort.direction : undefined}
+      aria-pressed={active}
+      aria-label={
+        active
+          ? `${label}, ${directionText(column, sort.direction)}`
+          : `Sort by ${label}`
+      }
+      onClick={() => onSort(nextSort(sort, column))}
+      className={cn(
+        "flex items-center gap-1 rounded-sm px-1 py-0.5 hover:text-foreground",
+        active ? "font-medium text-foreground" : "text-muted-foreground",
+        className,
+      )}
+    >
+      {label}
+      {active && <Arrow aria-hidden className="size-3" />}
+    </button>
+  )
+}
+
 export function ThreadList({
   threads,
+  rows,
+  sort,
+  onSort,
   folder,
   query,
   timeZone,
@@ -32,7 +86,6 @@ export function ThreadList({
   const [draft, setDraft] = useState(query)
   const sentinel = useRef<HTMLLIElement>(null)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = threads
-  const rows = threads.data?.pages.flatMap((page) => page.threads) ?? []
 
   useEffect(() => {
     const node = sentinel.current
@@ -78,6 +131,49 @@ export function ThreadList({
           </Button>
         )}
       </form>
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+        <button
+          type="button"
+          aria-pressed={sort.unreadFirst}
+          onClick={() => onSort({ ...sort, unreadFirst: !sort.unreadFirst })}
+          className={cn(
+            "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+            sort.unreadFirst
+              ? "border-ring/50 bg-muted text-foreground"
+              : "border-border text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Unread first
+        </button>
+        <span className="ml-auto">
+          <UpdatedAt at={threads.dataUpdatedAt} />
+        </span>
+      </div>
+      <div
+        role="toolbar"
+        aria-label="Sort messages"
+        className="flex items-center gap-2 border-b border-border px-2 py-1 text-xs"
+      >
+        <SortHeader
+          column="from"
+          label={folder === "sent" ? "To" : "From"}
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          column="subject"
+          label="Subject"
+          sort={sort}
+          onSort={onSort}
+        />
+        <SortHeader
+          column="date"
+          label="Date"
+          sort={sort}
+          onSort={onSort}
+          className="ml-auto"
+        />
+      </div>
       <ul className="min-h-0 flex-1 overflow-y-auto">
         {rows.map((thread) => (
           <ThreadRow

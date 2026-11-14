@@ -12,7 +12,9 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { GoogleAccount } from "./GoogleAccount"
+import { ModelChoice } from "./ModelChoice"
 import { ModelHint } from "./ModelHint"
+import { tierLabels } from "./tiers"
 import { TimezoneSelect } from "./TimezoneSelect"
 import { WebSearch } from "./WebSearch"
 import type { ClientRules, ModelTier, SelfEmailStatus } from "./types"
@@ -23,11 +25,6 @@ import {
   useSaveRules,
   useSmoke,
 } from "./useSettings"
-
-const tierLabels: Record<ModelTier, string> = {
-  supported: "Quality (9B model)",
-  degraded: "Fast (4B model)",
-}
 
 const selfEmailNotes: Partial<Record<SelfEmailStatus, string>> = {
   mismatch:
@@ -105,9 +102,13 @@ function RulesForm({ initial }: { initial: ClientRules }) {
             }
           />
         </Field>
-        <Field label="Timezone">
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">
+            Timezone
+          </span>
           <TimezoneSelect value={timezone} onChange={setTimezone} />
-        </Field>
+        </div>
+
         <Field label="Default follow-up delay (days)">
           <Input
             type="number"
@@ -146,20 +147,16 @@ function RulesForm({ initial }: { initial: ClientRules }) {
           {selfEmailNote}
         </p>
       )}
-      <Field label="AI model">
-        <select
-          className="h-8 w-full rounded-md border border-input bg-card/60 px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 dark:bg-input/20"
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-xs font-medium text-muted-foreground">
+          AI model
+        </legend>
+        <ModelChoice
+          tiers={options.data?.tiers.map((tier) => tier.tier) ?? []}
           value={modelTier}
-          onChange={(event) => setModelTier(event.target.value)}
-        >
-          <option value="">Automatic</option>
-          {options.data?.tiers.map((tier) => (
-            <option key={tier.tier} value={tier.tier}>
-              {tierLabels[tier.tier]}
-            </option>
-          ))}
-        </select>
-      </Field>
+          onChange={setModelTier}
+        />
+      </fieldset>
       {options.data && (
         <p className="text-xs text-muted-foreground">
           Currently using: {tierLabels[options.data.effective_tier]}

@@ -89,12 +89,7 @@ export function useChatStream(
       )
     } catch (e) {
       if (abort.signal.aborted) await wait(SAVE_GRACE_MS)
-      else
-        setError(
-          e instanceof ApiError
-            ? `Request failed (${e.status})`
-            : "Connection lost",
-        )
+      else setError(e instanceof ApiError ? e.message : "Connection lost")
     }
     controller.current = null
     await Promise.all([
