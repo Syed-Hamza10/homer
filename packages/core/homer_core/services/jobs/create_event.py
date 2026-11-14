@@ -1,6 +1,8 @@
 import re
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
+from homer_core.agent.dates import from_now
 from homer_core.agent.intents import CORRECTION, CreateEvent
 from homer_core.agent.voice import phrase
 from homer_core.db.models import Approval
@@ -11,10 +13,12 @@ from homer_core.services.approvals import (
     is_approval_object,
     transition_from_pending,
 )
+from homer_core.services.jobs.read_calendar import bounds
 from homer_core.services.jobs.recipients import listed, resolve
 from homer_core.services.jobs.turn import JobError, Turn
 
 DEFAULT_MINUTES = 30
+NEXT_DAYS = 30
 READY = (
     "Event '{title}' on {when} is ready. Edit it or press Create.",
     "Ready to book '{title}' on {when}. Edit it or press Create.",
@@ -61,8 +65,33 @@ def kept_minutes(turn: Turn) -> int | None:
     return None
 
 
+async def next_end(turn: Turn) -> datetime:
+    """When the next event that has not started yet ends, in the user's zone."""
+    zone = ZoneInfo(turn.user.timezone)
+    first = datetime.combine(turn.now.date(), time.min, zone)
+    args = {
+        "start": first.isoformat(),
+        "end": (first + timedelta(days=NEXT_DAYS)).isoformat(),
+    }
+    events = listed(await turn.call("google", "cal_list", args), "events")
+    ahead = sorted(
+        (bounds(event, zone) for event in events if "T" in str(event.get("start", ""))),
+        key=lambda span: span[0],
+    )
+    upcoming = [span for span in ahead if span[0] >= turn.now]
+    if not upcoming:
+        raise JobError("You have no meeting coming up in the next 30 days to book after.")
+    return upcoming[0][1]
+
+
 async def resolve_slot(turn: Turn, intent: CreateEvent) -> tuple[str, str]:
     minutes = intent.duration_minutes or kept_minutes(turn) or DEFAULT_MINUTES
+    if intent.after_next_event:
+        opens = (await next_end(turn)).replace(tzinfo=None)
+        return opens.isoformat(), (opens + timedelta(minutes=minutes)).isoformat()
+    if intent.relative_minutes:
+        opens = from_now(turn.now, intent.relative_minutes).replace(tzinfo=None)
+        return opens.isoformat(), (opens + timedelta(minutes=minutes)).isoformat()
     if intent.start is None:
         return await find_slot(turn, intent, minutes)
     start = at(intent.date, intent.start)
@@ -107,6 +136,7 @@ async def run(turn: Turn, intent: CreateEvent) -> None:
         "start": start,
         "end": end,
         "attendees": attendees,
+        "description": intent.description or "",
         "timezone": turn.user.timezone,
     }
     result = await turn.call("google", "cal_create", args)

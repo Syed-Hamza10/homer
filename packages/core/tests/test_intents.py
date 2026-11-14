@@ -15,7 +15,17 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from homer_core.agent.claims import HONEST, review
-from homer_core.agent.dates import date_table, default_format, numeric_date, weekday_date
+from homer_core.agent.dates import (
+    date_table,
+    default_format,
+    from_now,
+    now_line,
+    numeric_date,
+    relative_minutes,
+    stated_times,
+    this_week,
+    weekday_date,
+)
 from homer_core.agent.intents import (
     OUTPUT_TOOL,
     Background,
@@ -370,10 +380,10 @@ async def test_one_weekday_question_is_that_day(given: dict[str, Any]) -> None:
     assert (intents[0].range, intents[0].date) == ("date", "2026-11-10")
 
 
-async def test_next_meeting_looks_two_weeks_ahead() -> None:
+async def test_next_meeting_reads_the_next_event() -> None:
     intents = await run_extract([{"kind": "read_calendar"}], "when's my next meeting?")
     assert isinstance(intents[0], ReadCalendar)
-    assert (intents[0].range, intents[0].days) == ("next_n_days", 14)
+    assert (intents[0].range, intents[0].days) == ("next", None)
 
 
 async def test_a_person_without_a_time_looks_two_weeks_ahead() -> None:
@@ -383,3 +393,157 @@ async def test_a_person_without_a_time_looks_two_weeks_ahead() -> None:
     )
     assert isinstance(intents[0], ReadCalendar)
     assert (intents[0].range, intents[0].days) == ("next_n_days", 14)
+
+
+SATURDAY = datetime(2026, 11, 14, 16, 7, tzinfo=ZoneInfo("Asia/Karachi"))
+
+
+async def at_saturday(given: list[dict[str, Any]], message: str) -> list[Any]:
+    agent = build_intent_agent(answering(given))
+    intents, _ = await extract(agent, message, [], SATURDAY, Background(timezone="Asia/Karachi"))
+    return intents
+
+
+@pytest.mark.parametrize(
+    ("today", "first", "last"),
+    [
+        (date(2026, 11, 11), date(2026, 11, 9), date(2026, 11, 15)),
+        (date(2026, 11, 14), date(2026, 11, 14), date(2026, 11, 22)),
+        (date(2026, 11, 15), date(2026, 11, 15), date(2026, 11, 22)),
+        (date(2026, 11, 16), date(2026, 11, 16), date(2026, 11, 22)),
+        (date(2026, 12, 31), date(2026, 12, 28), date(2027, 1, 3)),
+    ],
+)
+def test_this_week_runs_to_sunday_and_past_it_on_a_weekend(
+    today: date, first: date, last: date
+) -> None:
+    assert this_week(today) == (first, last)
+
+
+def test_the_date_table_names_the_same_week_as_the_code() -> None:
+    table = date_table(SATURDAY)
+    assert "this week: 2026-11-14 to 2026-11-22" in table
+    assert "next week: 2026-11-16 to 2026-11-22" in table
+
+
+@pytest.mark.parametrize(
+    ("today", "word", "expected"),
+    [
+        (date(2026, 11, 14), "monday", date(2026, 11, 16)),
+        (date(2026, 11, 16), "monday", date(2026, 11, 16)),
+        (date(2026, 11, 16), "next monday", date(2026, 11, 23)),
+        (date(2026, 11, 15), "sunday", date(2026, 11, 15)),
+    ],
+)
+def test_a_weekday_is_the_next_one_including_today(today: date, word: str, expected: date) -> None:
+    assert weekday_date(f"free {word}?", today) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "times"),
+    [
+        ("am i free monday 16 nov at 2pm?", ["14:00"]),
+        ("move workshop prep tomorrow to 11", ["11:00"]),
+        ("free 16/11 at 14:30", ["14:30"]),
+        ("move it to 11 nov", []),
+        ("between 10am and 1pm", ["10:00", "13:00"]),
+        ("lunch for 5 people", []),
+    ],
+)
+def test_stated_times_never_read_a_date_as_a_time(message: str, times: list[str]) -> None:
+    assert stated_times(message) == times
+
+
+@pytest.mark.parametrize(
+    ("message", "minutes"),
+    [
+        ("set a meet with him for 1 hour from now", 60),
+        ("call Omar in an hour", 60),
+        ("in 20 minutes", 20),
+        ("in half an hour", 30),
+        ("book a 1 hour meeting tomorrow", None),
+    ],
+)
+def test_relative_minutes_are_read_by_code(message: str, minutes: int | None) -> None:
+    assert relative_minutes(message) == minutes
+
+
+def test_from_now_rounds_up_to_five_minutes() -> None:
+    now = datetime(2026, 11, 14, 16, 23, 41, tzinfo=ZoneInfo("Asia/Karachi"))
+    assert from_now(now, 60) == datetime(2026, 11, 14, 17, 25, tzinfo=ZoneInfo("Asia/Karachi"))
+    assert now_line(now) == "Now: Saturday 14 Nov 2026, 16:23 PKT"
+
+
+async def test_the_intent_prompt_states_now_in_the_user_zone() -> None:
+    prompts: list[str] = []
+    agent = build_intent_agent(answering([{"kind": "chat"}], prompts=prompts))
+    await extract(agent, "hi", [], SATURDAY, Background(timezone="Asia/Karachi"))
+    assert "Now: Saturday 14 Nov 2026, 16:07 PKT" in prompts[0]
+
+
+async def test_the_time_asked_wins_over_the_day_of_the_month() -> None:
+    given = [
+        {"kind": "read_calendar", "range": "date", "date": "2026-11-16", "start": "16:00"}
+        | {"asks_if": "free"}
+    ]
+    intents = await at_saturday(given, "am i free monday 16 nov at 2pm?")
+    assert (intents[0].date, intents[0].start, intents[0].end) == ("2026-11-16", "14:00", None)
+
+
+async def test_a_move_with_only_a_time_gets_that_time() -> None:
+    given = [{"kind": "update_event", "match": "workshop prep", "new_date": "2026-11-15"}]
+    intents = await at_saturday(given, "move workshop prep tomorrow to 11")
+    assert isinstance(intents[0], UpdateEvent)
+    assert (intents[0].new_date, intents[0].new_start) == ("2026-11-15", "11:00")
+
+
+async def test_a_person_named_with_with_is_kept() -> None:
+    given = [{"kind": "read_calendar", "range": "this_week"}]
+    intents = await at_saturday(given, "anything with Sam this week? check the calendar")
+    assert (intents[0].range, intents[0].person) == ("this_week", "Sam")
+
+
+async def test_next_week_is_never_the_next_event() -> None:
+    intents = await at_saturday([{"kind": "read_calendar", "range": "next"}], "plans next week?")
+    assert intents[0].range == "next_week"
+
+
+@pytest.mark.parametrize(
+    ("given", "message", "title"),
+    [
+        (
+            [{"kind": "read_calendar", "range": "date", "date": "2026-11-16"}],
+            "find 45 minutes between 10am and 1pm on Monday 16 nov for client intake",
+            "Client intake",
+        ),
+        (
+            [{"kind": "read_calendar", "range": "tomorrow", "person": "Dana"}],
+            "find 30 minutes with Dana tomorrow for a client intake call",
+            "Client intake call with Dana",
+        ),
+        (
+            [{"kind": "create_event", "title": "Meeting", "date": "2026-11-16", "start": "10am"}],
+            "book monday at 10 for portfolio review",
+            "Portfolio review",
+        ),
+    ],
+)
+async def test_an_event_takes_the_name_the_request_gives(
+    given: list[dict[str, Any]], message: str, title: str
+) -> None:
+    intents = await at_saturday(given, message)
+    assert isinstance(intents[0], CreateEvent) and intents[0].title == title
+
+
+async def test_in_an_hour_is_counted_by_code_and_keeps_the_length() -> None:
+    given = [
+        {"kind": "create_event", "title": "Meet", "date": "2026-11-14", "start": "15:00"}
+        | {"end": "16:00", "attendees": ["Omar"]}
+    ]
+    intents = await at_saturday(given, "set a meet with him for 1 hour from now")
+    assert isinstance(intents[0], CreateEvent)
+    assert (intents[0].relative_minutes, intents[0].start, intents[0].duration_minutes) == (
+        60,
+        None,
+        60,
+    )

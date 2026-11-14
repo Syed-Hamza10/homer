@@ -1,13 +1,14 @@
 import re
+from datetime import datetime
 
 from pydantic_ai import Agent
 
 from homer_core.agent.claims import review
-from homer_core.agent.intents import ChatIntent
+from homer_core.agent.intents import ChatIntent, FixLastAction
 from homer_core.agent.prompt import render_prompt
 from homer_core.agent.routing import is_small_talk, personal
 from homer_core.services.facts import matching
-from homer_core.services.jobs import mail_status, memory, web_search
+from homer_core.services.jobs import fix_action, mail_status, memory, web_search
 from homer_core.services.jobs.turn import Turn
 
 HISTORY_MESSAGES = 8
@@ -25,6 +26,18 @@ PERSONAL = re.compile(
 )
 
 
+CLAIMED_NOW = re.compile(
+    r"\b(?:it(?:'s| is)(?: now)?|the (?:current |local )?time (?:is|there is)|currently|right now"
+    r"|now)\s*(?:it(?:'s| is)\s+)?(?:about |around |exactly )?(?P<clock>\d{1,2}:\d{2})\b",
+    re.IGNORECASE,
+)
+
+
+def on_time(text: str, now: datetime) -> str:
+    """A reply that tells the time tells the prompt's time, never one the model made up."""
+    return CLAIMED_NOW.sub(lambda m: m.group(0).replace(m["clock"], f"{now:%H:%M}"), text)
+
+
 def may_search(turn: Turn) -> bool:
     return (
         not PERSONAL.search(turn.message)
@@ -40,9 +53,18 @@ async def run(turn: Turn, intent: ChatIntent) -> None:
         turn.message, instructions, turn.history[-HISTORY_MESSAGES:], guarded=False
     )
     text = turn.segments[index]
+    if fix_action.DEFERS.search(text) and fix_action.last_action(turn) is not None:
+        turn.replace(index, "")
+        await fix_action.fix(
+            turn, FixLastAction(kind="fix_last_action", what_is_wrong=turn.message)
+        )
+        return
     if not text:
         turn.replace(index, await second_try(turn, instructions))
         return
+    if (timed := on_time(text, turn.now)) != text:
+        turn.replace(index, timed)
+        text = timed
     reviewed = review(text, acted=False)
     if reviewed != text:
         turn.replace(index, mail_status.honest(turn) or reviewed)

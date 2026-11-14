@@ -1,10 +1,20 @@
+import re
+
 import structlog
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ToolOutput
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
-from homer_core.agent.intents import CorrectMemory, Forget, Recall, Remember
-from homer_core.agent.routing import first_to_second_person
+from homer_core.agent.intents import (
+    CorrectMemory,
+    Forget,
+    Intent,
+    ReadEmail,
+    Recall,
+    Remember,
+    calendar_read,
+)
+from homer_core.agent.routing import CALENDAR_ASKED, first_to_second_person
 from homer_core.agent.voice import capitalised, second_person
 from homer_core.db.models import Fact
 from homer_core.services.facts import (
@@ -30,6 +40,11 @@ fact it contradicts in `outdated`. When the facts do not answer the question, sa
 sentence what is saved about it.
 Facts:
 {facts}"""
+
+
+MAIL_ASKED = re.compile(
+    r"\b(?:e-?mails?|mail|inbox|unread|messages?|repl(?:y|ies)|sent|drafts?)\b", re.IGNORECASE
+)
 
 
 class RecallAnswer(BaseModel):
@@ -161,3 +176,18 @@ async def recall(turn: Turn, intent: Recall) -> None:
         return
     drop_outdated(turn, facts, found.outdated)
     turn.say(capitalised(second_person(found.answer.strip())))
+
+
+def rerouted(turn: Turn, intent: Recall) -> Intent:
+    """A recall about mail or the calendar that no saved fact answers is a mail or calendar
+    read: "when is my next meeting" is never a memory question."""
+    if matching(turn.session, turn.user, intent.about):
+        return intent
+    asked = f"{intent.about or ''} {turn.message}"
+    if MAIL_ASKED.search(asked):
+        log.info("recall_rerouted", to="read_email", message=turn.message)
+        return ReadEmail(kind="read_email", question=intent.about or turn.message)
+    if CALENDAR_ASKED.search(asked):
+        log.info("recall_rerouted", to="read_calendar", message=turn.message)
+        return calendar_read(turn.message, turn.now.date())
+    return intent

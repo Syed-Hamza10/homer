@@ -13,6 +13,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from sqlmodel import Session, select
 
+from homer_core.agent.dates import from_now
 from homer_core.config import Settings
 from homer_core.db.models import Approval, Message
 from homer_core.mcp.manager import McpManager
@@ -129,8 +130,7 @@ class TestReadCalendar:
     @pytest.mark.parametrize("intents", [[[read(range="tomorrow", start="11:00", asks_if="busy")]]])
     def test_busy_question_at_a_time_answers_no_when_free(self, post_chat: PostChat) -> None:
         reply = said(post_chat({"message": "am i busy tomorrow at 11?"}))
-        assert reply.startswith("No, you are free. Tomorrow, ")
-        assert reply.endswith("11:00-11:30: nothing on your calendar.")
+        assert reply == f"No, you are free at 11:00 on {day(1):%A %d %B}."
 
     @pytest.mark.parametrize("intents", [[[read(range="next_week")]]])
     def test_next_week_lists_monday_to_sunday_with_a_count(self, post_chat: PostChat) -> None:
@@ -479,4 +479,106 @@ class TestNextMeeting:
     def test_names_only_the_next_one(self, post_chat: PostChat) -> None:
         assert said(post_chat({"message": "when's my next meeting?"})) == (
             f"Your next one is Workshop prep for Meridian Roast, {day(1):%A %d %B} 09:30-10:30."
+        )
+
+
+def shown(frames: list[tuple[str, dict[str, Any]]]) -> str:
+    """The answer as the browser shows it: a `replace` swaps the text so far."""
+    text = ""
+    for event, data in frames:
+        if event == "replace":
+            text = data["text"]
+        elif event == "token":
+            text += data["text"]
+    return text
+
+
+class TestRoundSix:
+    @pytest.mark.parametrize("intents", [[[{"kind": "recall", "about": "next meeting"}]]])
+    def test_a_calendar_question_sent_to_memory_reads_the_calendar(
+        self, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "when is my next meeting, please?"})
+        assert said(frames) == (
+            f"Your next one is Workshop prep for Meridian Roast, {day(1):%A %d %B} 09:30-10:30."
+        )
+        assert calls(frames) == ["cal_list"]
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [
+                    {"kind": "read_email", "question": "any unread mail?"},
+                    {"kind": "recall", "about": "which of the unread mail needs me today"},
+                ]
+            ]
+        ],
+    )
+    def test_a_mail_question_sent_to_memory_reads_the_mail(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "any unread mail? and which of it needs me today?"})
+        assert "nothing saved" not in said(frames)
+        assert calls(frames).count("mail_search") >= 2
+
+    @pytest.mark.parametrize(
+        "intents", [[[read(range="date", date=day(1).isoformat(), start="14:00", asks_if="free")]]]
+    )
+    def test_free_at_a_time_answers_for_that_slot_and_names_the_conflict(
+        self, post_chat: PostChat
+    ) -> None:
+        reply = said(post_chat({"message": "am i free tomorrow at 2pm?"}))
+        assert reply == (
+            f"No, you are busy at 14:00 on {day(1):%A %d %B}:\n"
+            "- 14:00-14:45 Design review: packaging drafts"
+        )
+
+    @pytest.mark.parametrize("intents", [[[update(match="workshop prep", new_start="09:30")]]])
+    def test_a_move_to_where_it_already_is_says_so(self, post_chat: PostChat) -> None:
+        frames = post_chat({"message": "move workshop prep to 9:30"})
+        assert said(frames) == "It's already at 09:30 tomorrow."
+        assert "cal_update" not in calls(frames)
+
+    @pytest.mark.parametrize("intents", [[[update(match="design review")]]])
+    def test_in_an_hour_moves_it_to_now_plus_an_hour(self, post_chat: PostChat) -> None:
+        before = from_now(datetime.now(ZONE), 60)
+        frames = post_chat({"message": "push the design review to an hour from now"})
+        after = from_now(datetime.now(ZONE), 60)
+        start = of(frames, "approval_required")[0]["payload"]["changes"]["start"]
+        assert start in (before.isoformat(), after.isoformat())
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [booking(day(5))],
+                [{"kind": "fix_last_action", "what_is_wrong": "I said 4pm"}],
+                [booking(day(5)) | {"start": "4pm"}],
+            ]
+        ],
+    )
+    def test_a_complaint_gets_a_corrected_card(self, post_chat: PostChat) -> None:
+        first = post_chat({"message": "add a call with Rosa at 3pm"})
+        chat = first[0][1]["conversation_id"]
+        fixed = post_chat({"message": "that's wrong, I said 4pm", "conversation_id": chat})
+        assert said(fixed).startswith("You're right")
+        card = of(fixed, "approval_required")[0]
+        assert card["action"] == "cal_create"
+        assert card["payload"]["start"].startswith(f"{day(5).isoformat()}T16:00")
+
+    @pytest.mark.parametrize(
+        ("intents", "text"),
+        [
+            (
+                [[booking(day(5))], [{"kind": "chat"}], [booking(day(5)) | {"start": "4pm"}]],
+                "I must have made a mistake. Please edit or delete that event.",
+            )
+        ],
+    )
+    def test_homer_never_asks_the_user_to_fix_its_mistake(self, post_chat: PostChat) -> None:
+        first = post_chat({"message": "add a call with Rosa at 3pm"})
+        chat = first[0][1]["conversation_id"]
+        fixed = post_chat({"message": "why 15:00??", "conversation_id": chat})
+        assert "edit or delete" not in shown(fixed) and shown(fixed).startswith("You're right")
+        assert of(fixed, "approval_required")[0]["payload"]["start"].startswith(
+            f"{day(5).isoformat()}T16:00"
         )

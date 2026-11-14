@@ -17,14 +17,19 @@ from pydantic_ai.usage import RunUsage
 
 from homer_core.agent.dates import (
     DAY_AFTER,
+    NEXT_WEEK,
     WEEKDAY,
     WEEKDAY_WORDS,
     DateFormat,
     date_table,
+    now_line,
     numeric_date,
     numeric_hint,
+    relative_minutes,
+    stated_times,
     weekday_date,
 )
+from homer_core.agent.voice import capitalised
 
 log = structlog.get_logger(__name__)
 
@@ -60,6 +65,19 @@ SLOT = re.compile(
     r"|time|slot|free slot)\b",
     re.IGNORECASE,
 )
+WITH_PERSON = re.compile(r"\bwith\s+([A-Za-z][\w'-]+)")
+NOT_PEOPLE = frozenset(
+    {"me", "my", "the", "a", "an", "anyone", "anybody", "someone", "somebody", "him", "her"}
+    | {"them", "us", "you", "whom", "nobody", "no", "any", "clients", "client", "team"}
+)
+TITLE_FOR = re.compile(
+    r"\b(?:for|called|call it|titled|named)\s+(?:a |an |the |my |our )?"
+    r"(?P<title>[A-Za-z][^,.;!?]*?)\s*(?=$|[,.;!?]|\s+(?:on|at|between|from|tomorrow|today"
+    r"|next|this|in|before|after|by|anywhere|sometime)\b)",
+    re.IGNORECASE,
+)
+NOT_TITLES = frozenset({"us", "me", "them", "it", "that", "this", "time", "a slot", "slot"})
+GENERIC_TITLES = frozenset({"meeting", "event", "call", "appointment", "new event", "booking"})
 WHATS_ON = re.compile(
     r"^\W*(?:\w+[,!.]?\s+){0,4}?(?:what(?:'s|s| is)|anything)\s+(?:on|planned|happening|the plan)"
     r"\b(?:\s+(?:for|on))?\s+(?:today|tonight|tomorrow|this \w+|next \w+|"
@@ -74,7 +92,8 @@ every intent, in the order asked.
 Intents:
 - send_email: write, send or reply to someone. `to` is the name or address as written;
   `body_instructions` is what it should say; `reply_to_latest_from` only when answering
-  their email.
+  their email. When the message says "this", "that" or "it" about something in the earlier
+  turns (a web answer, an email, an event), `body_instructions` names that thing in full.
 - edit_draft: change the email draft pending in this chat ("make it shorter", "add that I'm
   late", "change the subject to X", "add the event link"). `instruction` is the change.
 - draft_question: a question about the pending draft ("where's the link?", "does it mention
@@ -82,19 +101,31 @@ Intents:
 - send_status: whether an email went out ("did you send it?", "has the reply to Sarah gone
   out?"). `about` is the person's name or address, empty for "it".
 - discard_draft: drop the pending draft or card ("cancel it", "never mind", "scrap that").
-- create_event: book a NEW event. `date` from the table; start/end for an exact time;
-  window_start/window_end for a free slot inside a range; `attendees` are names or addresses.
+- fix_last_action: the user says Homer's last action (an event booked or moved, a draft
+  written) is wrong or asks why it came out that way ("why 15:00?", "that's wrong", "that's
+  not what I asked"). `what_is_wrong` in their words.
+- create_event: book a NEW event. `title` is the event's name from the message ("client
+  intake", "Budget talk"), never a bare "Meeting" when the message names it; `date` from the
+  table; start/end for an exact time; window_start/window_end for a free slot inside a range;
+  `relative_minutes` for a start counted from now ("in an hour" 60, "20 minutes from now"
+  20), never a start you work out yourself; `after_next_event` for "right after my next
+  meeting"; `attendees` are names or addresses;
+  `description` is the topic from the earlier turns when the event is about "this" or "it".
 - update_event: move, retime or rename an EXISTING event, also one booked earlier in this
   chat. `match` names it ("design review", or "it"); `date` only for the day it is on now;
-  fill only what changes: new_date, new_start, new_end, new_title, duration_minutes.
+  fill only what changes: new_date, new_start, new_end, new_title, duration_minutes,
+  relative_minutes (a new start counted from now).
 - cancel_event: delete an existing calendar event. `match` names it.
-- read_calendar: what is on the calendar. range is today, tomorrow, this_week, next_week,
-  this_weekend, next_n_days (with `days`), date (`date`) or range (`date` to `end_date`).
-  `person` or `title_contains` when named (next_n_days, days 14, when no time is given).
+- read_calendar: what is on the calendar. range is next (the next upcoming event: "next
+  meeting", "what's next"), today, tomorrow, this_week, next_week, this_weekend, next_n_days
+  (with `days`), date (`date`) or range (`date` to `end_date`). `person` when one is named
+  ("anything with Sam" is person Sam), `title_contains` for an event's name (next_n_days,
+  days 14, when no time is given).
   start/end narrow the time of day: morning 09:00-12:00, afternoon 12:00-17:00, evening
   17:00-21:00.
 - free_time: whether the user is free or busy, or has a gap. `date` (and `end_date`),
-  start/end for the part of the day.
+  start/end for the part of the day; `start` alone for one time ("at 2pm" is 14:00). The day
+  of a date ("16 nov") is never a time.
 - read_email: questions about email received or sent. `sender`, `query` for a topic,
   `latest` for the newest; `question` is what they want to know.
 - remember: a new fact to keep. `fact` is one full sentence with every name and detail,
@@ -103,8 +134,9 @@ Intents:
   mistake"). `about` is the person and topic; `new_fact` is the whole corrected fact as one
   sentence naming the person.
 - forget: delete saved facts. `about` is the person or topic, empty for "forget that".
-- recall: a question answered from saved facts, about the user or someone in them. `about`
-  is the person or topic.
+- recall: only a question about something the user told Homer to remember: people,
+  preferences and personal details under Saved facts. `about` is the person or topic.
+  Meetings, events, the schedule, free time, email and the inbox are never recall.
 - calculate: arithmetic, percentages, time sums, unit or currency conversion. `expression`
   as written ("15% of 240", "3400 USD to EUR").
 - web_search: needs the internet. `query`; `needs_live_data` is true for things that change
@@ -125,11 +157,14 @@ Rules:
   date. A correction ("actually I meant Friday", "make it 4pm") repeats the previous request
   with that field changed. A correction of a saved fact is correct_memory.
 - Questions about the user or a person in the saved facts are recall, never web_search.
+- Questions about meetings, the calendar, email or the inbox are read_calendar, free_time or
+  read_email even when nothing is saved about them.
 - Earlier turns only say who or what the message refers to; never repeat an earlier request
   unless the message follows it up.
 Examples (context, then message, then intents):
 {examples}"""
-CONTEXT = """Timezone: {timezone}
+CONTEXT = """{now}
+Timezone: {timezone}
 Saved facts:
 {facts}
 Dates:
@@ -195,7 +230,10 @@ class CreateEvent(BaseModel):
     window_start: Clock
     window_end: Clock
     duration_minutes: int | None = None
+    relative_minutes: int | None = Field(default=None, ge=1, le=24 * 60)
+    after_next_event: bool = False
     attendees: list[str] = Field(default_factory=list)
+    description: str | None = None
 
 
 class UpdateEvent(BaseModel):
@@ -207,6 +245,12 @@ class UpdateEvent(BaseModel):
     new_end: Clock
     new_title: str | None = None
     duration_minutes: int | None = None
+    relative_minutes: int | None = Field(default=None, ge=1, le=24 * 60)
+
+
+class FixLastAction(BaseModel):
+    kind: Literal["fix_last_action"]
+    what_is_wrong: str
 
 
 class CancelEvent(BaseModel):
@@ -224,6 +268,7 @@ class ReadCalendar(BaseModel):
         "next_week",
         "this_weekend",
         "next_n_days",
+        "next",
         "date",
         "range",
     ] = "today"
@@ -326,6 +371,7 @@ Intent = Annotated[
     | DraftQuestion
     | SendStatus
     | DiscardDraft
+    | FixLastAction
     | CreateEvent
     | UpdateEvent
     | CancelEvent
@@ -472,6 +518,23 @@ def as_reply(intent: Intent, message: str) -> Intent:
     return intent
 
 
+def named_title(message: str) -> str | None:
+    """The event's name the message gives: "... for client intake", "call it Budget talk"."""
+    found = TITLE_FOR.search(message)
+    if found is None:
+        return None
+    title = found["title"].strip()
+    return None if title.lower() in NOT_TITLES or len(title) < 3 else capitalised(title)
+
+
+def titled(name: str | None, who: str | None) -> str:
+    if name is None:
+        return f"Meeting with {who}" if who else "Meeting"
+    if who and who.split()[0].lower() not in name.lower():
+        return f"{name} with {who}"
+    return name
+
+
 def as_slot(intent: Intent, message: str, today: date) -> Intent:
     """ "Find me 45 mins with Rosa between 2 and 5" books a free slot; it is not a question."""
     found = SLOT.search(message)
@@ -484,7 +547,7 @@ def as_slot(intent: Intent, message: str, today: date) -> Intent:
     who = intent.person
     return CreateEvent(
         kind="create_event",
-        title=f"Meeting with {who}" if who else "Meeting",
+        title=titled(named_title(message), who),
         date=day.isoformat(),
         window_start=intent.start,
         window_end=intent.end,
@@ -493,14 +556,26 @@ def as_slot(intent: Intent, message: str, today: date) -> Intent:
     )
 
 
-def as_calendar(intent: Intent, message: str, today: date) -> Intent:
-    """ "What's on Thursday?" asks about the user's calendar, never the web."""
-    if not isinstance(intent, WebSearch | ChatIntent) or not WHATS_ON.search(message):
+def named(intent: Intent, message: str) -> Intent:
+    """A new event the model called just "Meeting" takes the name the message gives it."""
+    if not isinstance(intent, CreateEvent) or intent.title.strip().lower() not in GENERIC_TITLES:
         return intent
+    name = named_title(message)
+    if name is None:
+        return intent
+    who = intent.attendees[0] if len(intent.attendees) == 1 else None
+    return intent.model_copy(update={"title": titled(name, who)})
+
+
+def calendar_read(message: str, today: date) -> ReadCalendar:
+    """The calendar read the message's own time words ask for: the next event, a weekday,
+    tomorrow, next week, this week, else today."""
     day = weekday_date(message, today)
+    lowered = message.lower()
+    if NEXT_EVENT.search(message) and not DATED.search(message):
+        return ReadCalendar(kind="read_calendar", range="next")
     if day is not None:
         return ReadCalendar(kind="read_calendar", range="date", date=day.isoformat())
-    lowered = message.lower()
     if "tomorrow" in lowered:
         return ReadCalendar(kind="read_calendar", range="tomorrow")
     if "next week" in lowered:
@@ -510,14 +585,71 @@ def as_calendar(intent: Intent, message: str, today: date) -> Intent:
     return ReadCalendar(kind="read_calendar", range="today")
 
 
+def as_calendar(intent: Intent, message: str, today: date) -> Intent:
+    """ "What's on Thursday?" asks about the user's calendar, never the web."""
+    if not isinstance(intent, WebSearch | ChatIntent) or not WHATS_ON.search(message):
+        return intent
+    return calendar_read(message, today)
+
+
 def as_next(intent: Intent, message: str) -> Intent:
-    """ "When's my next meeting?" looks two weeks ahead, whatever range the model picked."""
-    if (
-        isinstance(intent, ReadCalendar)
-        and NEXT_EVENT.search(message)
-        and not DATED.search(message)
-    ):
-        return intent.model_copy(update={"range": "next_n_days", "days": SEARCH_DAYS})
+    """ "When's my next meeting?" asks for the next event, whatever range the model picked;
+    "next" said of a week is next week."""
+    if not isinstance(intent, ReadCalendar):
+        return intent
+    if NEXT_EVENT.search(message) and not DATED.search(message):
+        return intent.model_copy(update={"range": "next", "days": None})
+    if intent.range == "next" and NEXT_WEEK.search(message):
+        return intent.model_copy(update={"range": "next_week"})
+    return intent
+
+
+def with_person(intent: Intent, message: str) -> Intent:
+    """ "Anything with Sam this week?" is about Sam, also when the model left the name out."""
+    if not isinstance(intent, ReadCalendar) or intent.person or intent.title_contains:
+        return intent
+    found = WITH_PERSON.search(message)
+    if found is None or found.group(1).lower() in NOT_PEOPLE:
+        return intent
+    return intent.model_copy(update={"person": found.group(1)})
+
+
+def span_minutes(start: str | None, end: str | None) -> int | None:
+    if start is None or end is None or end <= start:
+        return None
+    (open_hour, open_minute), (close_hour, close_minute) = (
+        map(int, start.split(":")),
+        map(int, end.split(":")),
+    )
+    return (close_hour - open_hour) * 60 + close_minute - open_minute
+
+
+def relative(intent: Intent, message: str) -> Intent:
+    """ "In an hour" is counted by code from now, never by the model."""
+    minutes = relative_minutes(message)
+    if minutes is None or not isinstance(intent, CreateEvent | UpdateEvent):
+        return intent
+    if isinstance(intent, CreateEvent):
+        length = intent.duration_minutes or span_minutes(intent.start, intent.end)
+        update = {"relative_minutes": minutes, "duration_minutes": length, "start": None}
+        return intent.model_copy(
+            update=update | {"end": None, "window_start": None, "window_end": None}
+        )
+    return intent.model_copy(update={"relative_minutes": minutes, "new_start": None})
+
+
+def timed(intent: Intent, message: str) -> Intent:
+    """The one clock time the message names wins over the model's: "free monday 16 nov at
+    2pm" is 14:00, and "move it to 11" moves it to 11:00."""
+    times = stated_times(message)
+    if len(times) != 1:
+        return intent
+    at = times[0]
+    match intent:
+        case ReadCalendar(asks_if=asked, end=None) if asked and intent.start != at:
+            return intent.model_copy(update={"start": at})
+        case UpdateEvent(new_end=None) if intent.new_start != at:
+            return intent.model_copy(update={"new_start": at})
     return intent
 
 
@@ -559,8 +691,10 @@ def widened(intent: Intent, message: str) -> Intent:
 def repaired(intent: Intent, message: str, today: date) -> Intent:
     """Code's corrections of what the model tends to misread, in order."""
     intent = as_reply(as_move(as_free(intent), message), message)
-    intent = as_calendar(as_slot(intent, message, today), message, today)
-    return one_day(as_next(widened(intent, message), message), message, today)
+    intent = named(as_calendar(as_slot(intent, message, today), message, today), message)
+    intent = widened(with_person(intent, message), message)
+    intent = timed(one_day(as_next(intent, message), message, today), message)
+    return relative(intent, message)
 
 
 def checked(intents: list[Intent], message: str, now: datetime, known: Background) -> list[Intent]:
@@ -593,6 +727,7 @@ def instructions() -> str:
 
 def prompt(message: str, history: list[ModelMessage], now: datetime, known: Background) -> str:
     return CONTEXT.format(
+        now=now_line(now),
         dates=date_table(now),
         timezone=known.timezone,
         pending=known.pending,

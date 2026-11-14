@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from homer_core.agent.dates import WEEKDAY_WORDS
+from homer_core.agent.dates import WEEKDAY_WORDS, from_now
 from homer_core.agent.intents import CancelEvent, UpdateEvent
 from homer_core.db.models import Approval
 from homer_core.services.approvals import (
@@ -183,10 +183,17 @@ async def target(turn: Turn, match: str, on: str | None, new_date: str | None) -
     return Target(await find(turn, match, None if on == new_date else on))
 
 
-def moved(event: dict[str, Any], intent: UpdateEvent, zone: ZoneInfo) -> tuple[datetime, datetime]:
-    """New start and end: a new time keeps the date, a new date keeps the time, and the length
-    stays unless a new end or length is given."""
+def moved(
+    event: dict[str, Any], intent: UpdateEvent, zone: ZoneInfo, now: datetime | None = None
+) -> tuple[datetime, datetime]:
+    """New start and end: a new time keeps the date, a new date keeps the time, a start counted
+    from now is now plus the minutes, and the length stays unless a new end or length is
+    given."""
     opens, closes = bounds(event, zone)
+    if intent.relative_minutes and now is not None:
+        start = from_now(now.astimezone(zone), intent.relative_minutes)
+        length = timedelta(minutes=intent.duration_minutes) if intent.duration_minutes else None
+        return start, start + (length or closes - opens)
     if intent.new_start is None and intent.new_end is not None:
         intent = intent.model_copy(update={"new_start": intent.new_end, "new_end": None})
     day = date.fromisoformat(intent.new_date) if intent.new_date else opens.date()
@@ -197,6 +204,13 @@ def moved(event: dict[str, Any], intent: UpdateEvent, zone: ZoneInfo) -> tuple[d
     if intent.duration_minutes:
         return start, start + timedelta(minutes=intent.duration_minutes)
     return start, start + (closes - opens)
+
+
+def already(start: datetime, today: date) -> str:
+    """ "It's already at 11:00 tomorrow." for a move to where the event already is."""
+    days = (start.date() - today).days
+    named = {0: "today", 1: "tomorrow"}.get(days, f"on {start:%a %d %b}")
+    return f"It's already at {start:%H:%M} {named}."
 
 
 def supersede(turn: Turn, card: Approval) -> None:
@@ -220,7 +234,7 @@ async def repropose(turn: Turn, card: Approval, intent: UpdateEvent) -> None:
     """An event still waiting for Create is moved by replacing its card."""
     zone = ZoneInfo(turn.user.timezone)
     payload = zoned(json.loads(card.payload_json), zone)
-    start, end = moved(payload, intent, zone)
+    start, end = moved(payload, intent, zone, turn.now)
     title = intent.new_title or str(payload.get("title", ""))
     args = {
         "title": title,
@@ -245,7 +259,13 @@ async def repropose(turn: Turn, card: Approval, intent: UpdateEvent) -> None:
 
 
 async def update(turn: Turn, intent: UpdateEvent) -> None:
-    changes = (intent.new_date, intent.new_start, intent.new_end, intent.new_title)
+    changes = (
+        intent.new_date,
+        intent.new_start,
+        intent.new_end,
+        intent.new_title,
+        intent.relative_minutes,
+    )
     if not any(changes) and not intent.duration_minutes:
         raise JobError("What should change? Give me a new day, time or title.")
     found = await target(turn, intent.match, intent.date, intent.new_date)
@@ -255,15 +275,18 @@ async def update(turn: Turn, intent: UpdateEvent) -> None:
     zone = ZoneInfo(turn.user.timezone)
     event = found.event
     title = str(event.get("title", ""))
-    start, end = moved(event, intent, zone)
+    start, end = moved(event, intent, zone, turn.now)
     args: dict[str, Any] = {"event_id": event["id"], "timezone": turn.user.timezone}
 
     after = f"{start:%a %d %b} {start:%H:%M}-{end:%H:%M}"
     if (start, end) != bounds(event, zone):
         args |= {"start": start.isoformat(), "end": end.isoformat()}
-    if intent.new_title:
+    if intent.new_title and intent.new_title != title:
         args["title"] = intent.new_title
-    renamed = f" and rename it '{intent.new_title}'" if intent.new_title else ""
+    if set(args) == {"event_id", "timezone"}:
+        turn.say(already(start, turn.now.date()))
+        return
+    renamed = f" and rename it '{intent.new_title}'" if "title" in args else ""
     preview = f"Move '{title}' from {span(event, zone)} to {after}{renamed}"
     request(turn, await turn.call("google", "cal_update", args), preview)
     if found.card is not None:
