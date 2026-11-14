@@ -1,27 +1,16 @@
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Link } from "react-router"
+import { BriefPanel } from "./BriefPanel"
 import { DayCard } from "./DayCard"
+import { clockTime } from "./dayFormat"
 import { GoogleBanner } from "./GoogleBanner"
 import { TodaySkeleton } from "./TodaySkeleton"
 import { healthLine } from "./healthLine"
 import type { FollowUp } from "./types"
-import {
-  useRunBrief,
-  useRunDigest,
-  useSendFollowUp,
-  useToday,
-} from "./useToday"
+import { useSendFollowUp, useToday } from "./useToday"
 import { useNow } from "./useNow"
-
-function clock(value: string): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
 
 function SectionTitle({ children }: { children: string }) {
   return (
@@ -81,8 +70,6 @@ export function TodayPage() {
   const { data, isError, isPending } = useToday()
   const now = useNow()
   const line = healthLine(data?.health)
-  const brief = useRunBrief()
-  const digest = useRunDigest()
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -91,30 +78,10 @@ export function TodayPage() {
           title="Today"
           description={
             data
-              ? `${data.unread} unread · ${data.pending_approvals} waiting for approval`
+              ? `${data.card.unread} unread · ${data.card.approvals.length} waiting for approval`
               : isError
                 ? "Could not load today. Trying again shortly."
                 : "Loading"
-          }
-          actions={
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={brief.isPending}
-                onClick={() => brief.mutate()}
-              >
-                Morning brief
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={digest.isPending}
-                onClick={() => digest.mutate()}
-              >
-                End-of-day digest
-              </Button>
-            </>
           }
         />
 
@@ -129,67 +96,26 @@ export function TodayPage() {
           </p>
         )}
 
-        {[brief.error, digest.error].filter(Boolean).map((error) => (
-          <p key={String(error)} className="text-sm text-destructive">
-            {error?.message}
+        {data?.background_refresh === false && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="refresh-note"
+          >
+            Background refresh is off
           </p>
-        ))}
+        )}
 
         {isPending && <TodaySkeleton />}
 
         {data && <DayCard card={data.card} now={now} />}
 
         {data && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle>Brief</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                  {data?.brief?.content ?? "No brief yet. Generate one above."}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle>End-of-day digest</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                  {data?.digest?.content ?? "No digest yet."}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          <BriefPanel
+            brief={data.brief}
+            digest={data.digest}
+            showing={data.showing}
+          />
         )}
-
-        <section className="flex flex-col gap-2">
-          <SectionTitle>Calendar</SectionTitle>
-          {data?.events.length ? (
-            <ul className="flex flex-col text-sm">
-              {data.events.map((event) => (
-                <li
-                  key={event.event_id}
-                  className="flex gap-3 border-t border-border/70 py-2.5"
-                >
-                  <span className="w-16 shrink-0 text-muted-foreground tabular-nums">
-                    {clock(event.start)}
-                  </span>
-                  <span>{event.title}</span>
-                  {event.location && (
-                    <span className="text-muted-foreground">
-                      · {event.location}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nothing today.</p>
-          )}
-        </section>
 
         <section className="flex flex-col gap-2">
           <SectionTitle>Reminders</SectionTitle>
@@ -201,7 +127,7 @@ export function TodayPage() {
                   className="flex gap-3 border-t border-border/70 py-2.5"
                 >
                   <span className="w-16 shrink-0 text-muted-foreground tabular-nums">
-                    {clock(reminder.due_at)}
+                    {clockTime(reminder.due_at)}
                   </span>
                   <span>{reminder.text}</span>
                   <span className="text-muted-foreground">

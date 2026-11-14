@@ -7,7 +7,7 @@ import structlog
 from sqlalchemy import delete
 from sqlmodel import Session, select
 
-from homer_core.db.models import CalendarEventCache, User
+from homer_core.db.models import CalendarEventCache, User, as_utc
 from homer_core.mcp.manager import McpManager
 from homer_core.services.rules import ClientRules
 
@@ -52,7 +52,7 @@ async def refresh_calendar(
     now: datetime | None = None,
 ) -> list[CalendarEventCache]:
     now = now or datetime.now(UTC)
-    start = now
+    start, _ = local_day_bounds(now, user.timezone)
     end = now + timedelta(days=days)
     result = await manager.call(
         "google",
@@ -132,5 +132,5 @@ async def find_slots(
 
 
 def describe_event(event: CalendarEventCache, timezone: str) -> str:
-    start = event.start_at.astimezone(ZoneInfo(timezone))
+    start = as_utc(event.start_at).astimezone(ZoneInfo(timezone))
     return f"{start:%H:%M} {event.title}"

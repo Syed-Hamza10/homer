@@ -1,5 +1,6 @@
 """Skills, pages and approvals on the real stack (see real_stack.py)."""
 
+import re
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -75,7 +76,7 @@ def test_brief_emails_self_only_to_the_account_address(stack: Stack, client: htt
     set_self_email(client, ACCOUNT_EMAIL.upper())
     assert httpx.get(f"{stack.url}/api/health").json()["self_email"] == "ok"
     brief = client.post("/api/today/brief").json()
-    assert "Good morning" in brief["content"]
+    assert brief["content"].startswith("Good ")
     assert stack.sent_count() == sent_before + 1
 
     set_self_email(client, "someone.else@example.test")
@@ -96,7 +97,7 @@ def test_inbox_command_labels_the_simulator_mailbox(stack: Stack, chat: Chat) ->
 
 def test_brief_command_stores_a_daily_brief(stack: Stack, chat: Chat, client: httpx.Client) -> None:
     text = answer(chat({"message": "/brief"}))
-    assert text.startswith("Good morning")
+    assert text.startswith("Good ")
     assert any(kind == "morning" and content == text for kind, content in stack.brief_rows())
     assert client.get("/api/today").json()["brief"]["content"] == text
 
@@ -104,7 +105,8 @@ def test_brief_command_stores_a_daily_brief(stack: Stack, chat: Chat, client: ht
 def test_brief_shows_on_the_today_page(page: Page, stack: Stack) -> None:
     unlock(page, stack.url)
     page.get_by_role("link", name="Today").click()
-    expect(page.get_by_text("Good morning")).to_be_visible()
+    greeting = page.get_by_test_id("day-card").get_by_role("heading", name=re.compile(r"^Good "))
+    expect(greeting).to_be_visible()
     expect(page.get_by_test_id("health-line")).to_have_count(0)
 
 
@@ -116,7 +118,7 @@ def test_unanswered_follow_up_drafts_and_sends_through_approval(
     assert created["status"] == "open" and created["subject"] == "Partnership proposal"
     stack.make_due(created["id"])
     drafts_before = stack.counts()["drafts"]
-    assert "End of day" in answer(chat({"message": "/digest"}))
+    assert answer(chat({"message": "/digest"})).startswith("Good ")
     assert stack.counts()["drafts"] == drafts_before + 1
     shown = [f for f in client.get("/api/today").json()["follow_ups"] if f["id"] == created["id"]]
     assert shown[0]["status"] == "drafted" and shown[0]["draft_id"]

@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from homer_core.db.models import EmailCache, FollowUp, Reminder
 from homer_core.mcp.manager import McpManager
-from homer_core.services import briefs, calendar, followups
+from homer_core.services import briefs, calendar, day, followups
 from homer_core.services.rules import get_rules
 from homer_core.services.scheduler import CURSOR_KEY, Scheduler
 from homer_core.services.store import read_setting, write_setting
@@ -83,10 +83,15 @@ def test_model_options_and_smoke(logged_in: TestClient, origin: dict[str, str]) 
 def test_morning_brief_lands_on_today(logged_in: TestClient, origin: dict[str, str]) -> None:
     brief = logged_in.post("/api/today/brief", headers=origin).json()
     assert brief["kind"] == "morning"
-    assert "Good morning" in brief["content"]
+    part = day.part_of_day(datetime.now(UTC), "Europe/London")
+    assert brief["content"].startswith(f"Good {part}, Tester.")
+    assert "cache" not in brief["content"]
     today = logged_in.get("/api/today").json()
     assert today["brief"]["content"] == brief["content"]
-    assert today["unread"] == 2
+    assert today["brief"]["generated_at"]
+    assert today["card"]["unread"] == 2
+    assert today["card"]["live"] is False and today["card"]["as_of"]
+    assert today["background_refresh"] is False
 
 
 def test_brief_emails_self_only_when_the_address_matches_the_account(
@@ -316,6 +321,11 @@ async def test_scheduler_backup_writes_an_archive(
 def test_brief_text_includes_sources(app: FastAPI, logged_in: TestClient) -> None:
     with Session(app.state.engine) as session:
         user = first_user(session)
-        text = briefs.morning_text(session, user, datetime(2026, 10, 17, 8, tzinfo=UTC))
-    assert "Good morning" in text
-    assert "approval" in text
+        snap = day.Snapshot(events=[], unread=3, needs_you=[], live=True, as_of=None)
+        text = briefs.morning_text(
+            session, user, datetime(2026, 10, 17, 8, tzinfo=UTC), snap, "Sam"
+        )
+    assert text == (
+        "Good morning, Sam. Today is Saturday 17 October. Nothing on your calendar today. "
+        "3 unread emails in your inbox."
+    )

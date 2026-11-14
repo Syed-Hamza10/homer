@@ -10,7 +10,7 @@ export function useToday() {
   return useQuery({
     queryKey: todayKey,
     queryFn: () => getJson<Today>("/api/today"),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   })
 }
 
