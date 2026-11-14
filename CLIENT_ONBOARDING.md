@@ -1,67 +1,106 @@
 # Client onboarding
 
-This is the install and hand-over guide for a new Homer machine. It assumes macOS on Apple
-Silicon with 16 GB RAM or more, or Linux with an NVIDIA GPU and 8 GB VRAM or more. You need about
-10 GB of disk for the models and 30 GB free for the install and backups.
+## Quick start for a new Mac
 
-Everything runs on the client's machine. The dashboard is `http://127.0.0.1:8000`; the language
-model runs through Ollama; there is no hosted-model API key and no per-token bill.
+**You need:** a Mac with Apple Silicon (M1 or newer), 16 GB of memory, 30 GB of free disk, and an
+internet connection. Nothing else: no Homebrew, Python or developer tools.
 
-## 1. Get the release
-
-The repository is private. On the target machine, install and authenticate GitHub CLI first:
+Open **Terminal** (press Cmd+Space, type "Terminal", press Return), paste this line and press
+Return:
 
 ```sh
-brew install gh            # Linux: see https://github.com/cli/cli#installation
-gh auth login
+/bin/bash -c "$(curl -fsSL https://github.com/Syed-Hamza10/homer/releases/latest/download/install.sh)"
 ```
 
-Download the latest release into a directory. The release holds the wheels, a `SHA256SUMS` file,
-the locked dependency set `requirements.lock`, and the installer:
+> The repository is private for now, so this link only works once a release is public. Until then,
+> see "Before the release is public" below.
+
+The installer asks one thing: **a passphrase**, typed twice. It is how you sign in to Homer, so
+save it in your password manager. Nothing shows on screen while you type it.
+
+What happens and how long it takes (measured on an M-series Mac with 18 GB, see
+`docs/INSTALL_VERIFICATION.md`):
+
+| Step | Time |
+|---|---|
+| Check memory, disk and timezone | under 1 s |
+| Install `uv` (the Python installer) | about 5 s |
+| Install Ollama (skipped if it is already there) | about 1 min (estimate, not yet measured) |
+| Set up Python and install Homer | 30 to 60 s |
+| Download the AI models, about 7 GB, only the first time | about 10 min at 100 Mbit/s (estimate) |
+| Start Homer and check it | about 15 s |
+
+When it finishes, Homer is running and your browser opens **http://127.0.0.1:8000**. Sign in
+with your passphrase. Homer starts again by itself when you log in to your Mac.
+
+**Connect Google** (about 15 minutes, once): open Settings in Homer. The Google card shows the
+steps and the exact file path. In short, follow `docs/GOOGLE_SETUP.md` (also attached to each
+release as `GOOGLE_SETUP.md`) to create a Google sign-in file, save it as
+`~/.homer/credentials/client_secret.json`, then press **Connect**.
+
+If the Ollama app is already running, the installer uses it as it is and asks you to set its
+context length to 16k in the Ollama settings (or quit the app and run the installer again).
+If port 8000 is taken, the installer stops and tells you; put `PORT=8100 ` in front of the line.
+
+**To remove Homer:** `~/.homer/venv/bin/homer uninstall` removes the background services and the
+program and keeps your data; add `--purge` to delete `~/.homer` too. It asks before removing
+anything.
+
+### Before the release is public
+
+Install GitHub CLI and sign in with an account that can read the repository, then run the
+installer; it downloads the private release with `gh`:
 
 ```sh
-mkdir -p ~/homer-release && cd ~/homer-release
-gh release download -R Syed-Hamza10/homer -p '*.whl' -p SHA256SUMS -p requirements.lock -p install.sh
+brew install gh && gh auth login
+gh release download -R Syed-Hamza10/homer -p install.sh -D ~/homer-release
+/bin/bash ~/homer-release/install.sh
 ```
 
-If you do not have `gh`, the installer can download the release itself with a token:
+Without `gh`, pass a token instead: `GITHUB_TOKEN=<token> /bin/bash install.sh`. The token is
+saved to `~/.homer/github_token` (mode 0600) so `homer update` can use it later.
 
-```sh
-GITHUB_TOKEN=<token> bash install.sh
-```
+## Details for the person doing the install
 
-The token is saved to `~/.homer/github_token` (mode 0600) so `homer update` can use it later.
+Homer runs on macOS on Apple Silicon with 16 GB RAM or more, or Linux with an NVIDIA GPU and 8 GB
+VRAM or more. Everything runs on the client's machine. The dashboard is `http://127.0.0.1:8000`;
+the language model runs through Ollama; there is no hosted-model API key and no per-token bill.
+
+## 1. What the release holds
+
+Each release holds the wheels, a `SHA256SUMS` file, the locked dependency set
+`requirements.lock`, `install.sh`, this guide, `PRIVACY.md` and `GOOGLE_SETUP.md`. With no
+`gh` and no token, the installer downloads `SHA256SUMS` from the public release page and then each
+file it lists.
 
 ## 2. Install
 
-```sh
-cd ~/homer-release
-bash install.sh
-```
-
 The installer:
 
-1. checks RAM and disk
+1. checks RAM, disk and that port 8000 is free
 2. installs pinned versions of `uv` and Ollama if missing (the versions are at the top of the
    script; the Ollama download is checked against its published checksum)
-3. configures Ollama with a 16k context (our launch agent or systemd drop-in, not brew services)
+3. configures Ollama with a 16k context (our launch agent or systemd drop-in, not brew services),
+   unless an Ollama it did not set up is already running
 4. creates `~/.homer/{credentials,data,documents,logs,backups}` with mode 0700
-5. writes `~/.homer/.env` and asks for a passphrase
+5. writes `~/.homer/.env` with the detected timezone and asks for a passphrase
 6. verifies every wheel against `SHA256SUMS` and refuses to continue on a mismatch
 7. installs the wheels into `~/.homer/venv` with `requirements.lock` pinning every dependency
 8. pulls the model tags from `models/manifest.json`
 9. registers a launchd (macOS) or systemd user (Linux) service
-10. runs `homer doctor`
+10. runs `homer doctor` and opens the dashboard
 
 Useful options:
 
 ```sh
 bash install.sh --wheels-dir ./wheels      # install from local wheels (warns if unverified)
-bash install.sh --no-service               # install without registering the service
+bash install.sh --no-service               # register no launchd/systemd service (Homer or Ollama)
 bash install.sh --skip-ollama              # do not install or configure Ollama
-bash install.sh --dry-run --force          # check the machine, change nothing
+bash install.sh --skip-models              # do not pull the models
+bash install.sh --dry-run --force          # check the machine, print the plan, change nothing
 bash install.sh --render server-plist      # print a service definition without installing
-HOMER_PASSPHRASE=... bash install.sh    # unattended install, no prompt
+HOMER_PASSPHRASE=... bash install.sh       # unattended install, no prompt
+PORT=8100 bash install.sh                  # serve the dashboard on another port
 ```
 
 The passphrase is the only login. Store it in the client's password manager. It is written to
@@ -152,6 +191,7 @@ $HOMER doctor --quick   # check the install only, skipping Ollama and hardware
 $HOMER model use supported   # or degraded, or a tag from models/manifest.json
 $HOMER privacy -o PRIVACY.md
 $HOMER forget --yes     # delete the local user and all data; credentials stay
+$HOMER uninstall        # remove the services and program, keep the data (see section 9)
 ```
 
 A nightly backup runs at 03:00 in the user's timezone. The newest 14 archives are kept. A backup
@@ -205,9 +245,18 @@ describe the host list. This is application-level enforcement, not a network san
 ## 9. Uninstall
 
 ```sh
+~/.homer/venv/bin/homer uninstall           # services and program; data stays in ~/.homer
+~/.homer/venv/bin/homer uninstall --purge   # also delete ~/.homer: data, credentials, backups
+```
+
+It lists what it will remove and asks first (`--yes` skips the question). The models stay in
+Ollama; the command prints the `ollama rm` line that frees the space. `uv`, its Python and its
+cache stay in `~/.local` and `~/.cache/uv`. If the program is already gone, remove the services by
+hand:
+
+```sh
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.homer.server.plist   # macOS
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.homer.ollama.plist   # macOS
 systemctl --user disable --now homer                                          # Linux
 rm -rf ~/.homer
 ```
-
-Remove the Ollama launch agent or drop-in only if Ollama was installed for Homer alone.
