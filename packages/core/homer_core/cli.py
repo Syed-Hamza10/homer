@@ -258,7 +258,7 @@ def passphrase(
     if not new.strip():
         raise typer.BadParameter("the passphrase cannot be empty")
     path = write_passphrase(home, new)
-    console.print(f"Passphrase saved in {path}. Sign in again with the new one.")
+    typer.echo(f"Passphrase saved in {path}. Sign in again with the new one.")
 
 
 @setup.command("google", help="Connect a Google account in the browser.")
