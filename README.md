@@ -88,7 +88,7 @@ Small local models are reliable at filling in fields and unreliable at planning 
 2. You press Send. One conditional `UPDATE` moves it from `pending` to `running`, so a double click cannot send twice. An edit creates a new approval with a new hash.
 3. The server re-checks the hash and runs the payload through an `execute` tool the model never sees. A timeout is marked `unknown` and never retried. Unanswered approvals expire after 24 hours.
 
-More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the step-by-step [explainers](docs/EXPLAINERS/).
+More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Privacy, honestly
 
