@@ -24,7 +24,7 @@
 
 ## Why Homer
 
-- **The AI runs on your computer.** A local model (Qwen 3.5 9B through Ollama) reads your mail and writes your drafts. Your emails are never sent to an AI company, and there is no per-token bill.
+- **The AI runs on your computer.** A local model reads your mail and writes your drafts. Your emails are never sent to an AI company, and there is no per-token bill.
 - **Nothing happens without you.** Sending mail or changing your calendar always becomes an editable card. The backend enforces this, not the prompt: the model has no way to send.
 - **You can check what it talked to.** Every outbound request goes through one allowlisted HTTP client and is logged. The Privacy page shows every host, with call counts.
 - **Honest about the rest.** Google still sees your Google traffic, because that is where your mail lives. When web search is on, the search engine sees your query. Nothing else is contacted.
