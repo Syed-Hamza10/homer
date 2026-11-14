@@ -17,12 +17,25 @@ export function plainError(status: number): string {
   )
 }
 
+export const RECONNECT_DETAIL = "google_reconnect_required"
+
 export class ApiError extends Error {
   readonly status: number
+  readonly detail: string
 
-  constructor(status: number) {
+  constructor(status: number, detail = "") {
     super(plainError(status))
     this.status = status
+    this.detail = detail
+  }
+}
+
+async function detailOf(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { detail?: unknown }
+    return typeof body.detail === "string" ? body.detail : ""
+  } catch {
+    return ""
   }
 }
 
@@ -34,7 +47,7 @@ const jsonInit = (body: unknown, method = "POST"): RequestInit => ({
 
 async function send(url: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(url, { credentials: "same-origin", ...init })
-  if (!res.ok) throw new ApiError(res.status)
+  if (!res.ok) throw new ApiError(res.status, await detailOf(res))
   return res
 }
 
