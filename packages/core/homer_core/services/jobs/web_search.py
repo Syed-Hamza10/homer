@@ -385,15 +385,23 @@ async def deeper(
             return text, snippets[:SOURCES]
     turn.emit("status", {"text": f"Reading {len(found[:PAGES])} pages…"})
     extra: list[dict[str, Any]] = []
-    try:
-        async with asyncio.timeout(max(budget - time.monotonic(), 0.0)):
-            if VALUE.search(question):
-                read, extra = await asyncio.gather(pages, more_results(turn, first, found))
-            else:
-                read = await pages
-    except TimeoutError:
+    remaining = budget - time.monotonic()
+    if remaining <= 0:
+        pages.cancel()
+        with suppress(asyncio.CancelledError):
+            await pages
         log.warning("search_budget_spent", question=question)
         read = ""
+    else:
+        try:
+            async with asyncio.timeout(remaining):
+                if VALUE.search(question):
+                    read, extra = await asyncio.gather(pages, more_results(turn, first, found))
+                else:
+                    read = await pages
+        except TimeoutError:
+            log.warning("search_budget_spent", question=question)
+            read = ""
     clock.lap("pages")
     block = snippet_block([*extra[:SNIPPETS], *snippets], turn.now)
     turn.emit("status", {"text": "Writing the answer…"})
