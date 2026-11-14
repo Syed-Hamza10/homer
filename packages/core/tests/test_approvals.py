@@ -8,7 +8,10 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from homer_core.db.models import Approval, utcnow
-from homer_core.services import approvals
+from homer_core.services import approval_edits, approvals
+from homer_core.services.approval_edits import MailEdit
+from homer_core.services.errors import DomainError
+from homer_core.services.users import first_user
 
 SEND = {
     "approval_required": True,
@@ -183,3 +186,53 @@ def test_list_by_conversation_keeps_decided_and_drops_superseded(
         (done, "done", 7),
     ]
     assert other in [a["id"] for a in logged_in.get("/api/approvals").json()]
+
+
+class RacingManager:
+    """Tries to approve the card from a second session while the edit updates the draft."""
+
+    def __init__(self, app: FastAPI, approval_id: int, fails: bool = False) -> None:
+        self.app = app
+        self.approval_id = approval_id
+        self.fails = fails
+        self.outcomes: list[str] = []
+
+    async def call(self, server: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        with Session(self.app.state.engine) as other:
+            user = first_user(other)
+            try:
+                await approvals.approve(other, user, self.approval_id, self)
+                self.outcomes.append("approved")
+            except approvals.NotPending:
+                self.outcomes.append("refused")
+        if self.fails:
+            return {"error": "google_error", "message": "boom"}
+        return {"draft_id": "d1", "thread_id": "", "metadata": {}}
+
+
+MAIL = {"to": "sam@example.test", "subject": "Plan", "body": "Old text.", "thread_id": ""}
+
+
+async def test_approve_racing_an_edit_finds_nothing_pending(
+    logged_in: TestClient, app: FastAPI
+) -> None:
+    approval_id = make_approval(app, **MAIL)
+    manager = RacingManager(app, approval_id)
+    change = MailEdit(to="sam@example.test", subject="Plan", body="New text.")
+    with Session(app.state.engine) as session:
+        fresh = await approval_edits.edit(
+            session, first_user(session), approval_id, manager, change
+        )
+        fresh_status = fresh.status
+    assert manager.outcomes == ["refused"]
+    assert row(app, approval_id).status == "superseded"
+    assert fresh_status == "pending"
+
+
+async def test_failed_edit_puts_the_approval_back(logged_in: TestClient, app: FastAPI) -> None:
+    approval_id = make_approval(app, **MAIL)
+    manager = RacingManager(app, approval_id, fails=True)
+    change = MailEdit(to="sam@example.test", subject="Plan", body="New text.")
+    with Session(app.state.engine) as session, pytest.raises(DomainError):
+        await approval_edits.edit(session, first_user(session), approval_id, manager, change)
+    assert row(app, approval_id).status == "pending"

@@ -68,6 +68,7 @@ class OutboundLog(SQLModel, table=True):
     path: str
     status: int | None = None
     duration_ms: int
+    error: str | None = None
 
 
 class TokenCounter(SQLModel, table=True):

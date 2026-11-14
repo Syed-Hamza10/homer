@@ -16,6 +16,7 @@ def make_logger(engine: Engine) -> LogFn:
                     path=call.path,
                     status=call.status,
                     duration_ms=call.duration_ms,
+                    error=call.error,
                 )
             )
             session.commit()

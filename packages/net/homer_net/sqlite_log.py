@@ -5,8 +5,8 @@ from pathlib import Path
 from homer_net.client import OutboundCall
 
 INSERT = (
-    "INSERT INTO outbound_log (ts, method, host, path, status, duration_ms) "
-    "VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO outbound_log (ts, method, host, path, status, duration_ms, error) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
 
@@ -25,5 +25,6 @@ class SqliteLog:
                     call.path,
                     call.status,
                     call.duration_ms,
+                    call.error,
                 ),
             )

@@ -5,10 +5,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from homer_core.db.models import OutboundLog
+from homer_core.db.models import OutboundLog, User
 from homer_core.privacy_hosts import CORE_HOSTS, GOOGLE_HOSTS, SEARCH_HOSTS, privacy_markdown
-from homer_core.services import approvals
-from homer_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_TOKEN_URL
+from homer_core.services import approvals, facts
+from homer_core.services.privacy import user_tables
+from homer_core.services.users import ensure_first_user, forget_user
+from homer_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_PEOPLE_API_BASE, GOOGLE_TOKEN_URL
 from homer_mcp_search.search import SEARCH_HOST
 from homer_net.allowlist import host_key
 
@@ -98,6 +100,7 @@ def test_wipe_requires_confirmation(logged_in: TestClient, origin: dict[str, str
 def test_privacy_hosts_match_the_server_defaults() -> None:
     assert host_key(GOOGLE_API_BASE) == GOOGLE_HOSTS[0]
     assert host_key(GOOGLE_TOKEN_URL) == GOOGLE_HOSTS[1]
+    assert host_key(GOOGLE_PEOPLE_API_BASE) == GOOGLE_HOSTS[2]
     assert SEARCH_HOSTS[0] == SEARCH_HOST
     text = privacy_markdown()
     for host in (*CORE_HOSTS, *GOOGLE_HOSTS, *SEARCH_HOSTS):
@@ -107,3 +110,21 @@ def test_privacy_hosts_match_the_server_defaults() -> None:
 def test_privacy_requires_login(client: TestClient) -> None:
     assert client.get("/api/privacy/hosts").status_code == 401
     assert client.get("/api/privacy/usage").status_code == 401
+
+
+def test_wipe_reaches_every_user_table() -> None:
+    names = {table.name for table in user_tables()}
+    assert {"facts", "conversations", "approvals", "token_counter"} <= names
+    assert "settings" not in names
+
+
+def test_forgotten_user_id_reused_inherits_no_facts(client: TestClient, app: FastAPI) -> None:
+    with Session(app.state.engine) as session:
+        user = ensure_first_user(session, "Alex", "UTC")
+        user_id = user.id
+        facts.add_fact(session, user_id, "Prefers mornings")
+        forget_user(session, user)
+        session.add(User(id=user_id, name="Sam", timezone="UTC"))
+        session.commit()
+        reborn = session.get(User, user_id)
+        assert facts.list_facts(session, reborn) == []

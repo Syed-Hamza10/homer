@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -24,7 +25,7 @@ from homer_net import AllowlistedClient
 log = structlog.get_logger(__name__)
 
 CURSOR_KEY = "gmail_cursor"
-CHANGED_LIMIT = 50
+BACKFILL_LIMIT = 50
 BACKFILL_QUERY = "newer_than:2d"
 DEFAULT_GRACE = 3600
 DAY = 24 * 3600
@@ -121,30 +122,43 @@ class Scheduler:
                 if isinstance(result, dict) and result.get("error"):
                     write_setting(session, user.id, CURSOR_KEY, "")
                 return
-            write_setting(session, user.id, CURSOR_KEY, str(result["cursor"]))
             if result.get("stale"):
+                write_setting(session, user.id, CURSOR_KEY, str(result["cursor"]))
                 log.warning("mail_cursor_stale")
                 await self.backfill_mail(session, user, rules)
                 return
             changed = []
-            for message_id in result.get("changed_ids", [])[:CHANGED_LIMIT]:
-                try:
-                    message = await self.runtime.manager.call(
-                        "google", "mail_get", {"message_id": message_id}
-                    )
-                except (ExecuteFailed, ServerUnavailable):
-                    continue
-                if isinstance(message, dict) and message.get("id"):
+            missed = 0
+            for message_id in result.get("changed_ids", []):
+                fetched, message = await self.changed_message(message_id)
+                missed += not fetched
+                if message is not None:
                     changed.append(
                         upsert_email(session, user.id, message, rules, datetime.now(UTC))
                     )
             if changed:
                 await label_rows(self.runtime.manager, changed)
+            if missed:
+                log.warning("mail_poll_incomplete", missed=missed)
+                return
+            write_setting(session, user.id, CURSOR_KEY, str(result["cursor"]))
+
+    async def changed_message(self, message_id: str) -> tuple[bool, dict[str, Any] | None]:
+        """(fetched, message); a message Gmail no longer has is fetched with nothing to store."""
+        try:
+            message = await self.runtime.manager.call(
+                "google", "mail_get", {"message_id": message_id}
+            )
+        except (ExecuteFailed, ServerUnavailable):
+            return False, None
+        if isinstance(message, dict) and message.get("id"):
+            return True, message
+        return isinstance(message, dict) and message.get("status") == 404, None
 
     async def backfill_mail(self, session: Session, user: User, rules: ClientRules) -> None:
         try:
             result = await self.runtime.manager.call(
-                "google", "mail_search", {"query": BACKFILL_QUERY, "max_results": CHANGED_LIMIT}
+                "google", "mail_search", {"query": BACKFILL_QUERY, "max_results": BACKFILL_LIMIT}
             )
         except (ExecuteFailed, ServerUnavailable):
             log.exception("mail_backfill_failed")

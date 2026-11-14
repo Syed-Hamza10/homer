@@ -1,3 +1,5 @@
+import socket
+
 import httpx
 import pytest
 import respx
@@ -140,3 +142,41 @@ async def test_sync_log_callable_is_supported(
         await client.get("https://api.example.com/")
 
     assert calls[0].status == 200
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+async def test_refused_connection_is_logged_once_and_raised(calls: list[OutboundCall]) -> None:
+    port = free_port()
+
+    async with make_client(calls, [f"127.0.0.1:{port}"]) as client:
+        with pytest.raises(httpx.ConnectError):
+            await client.get(f"http://127.0.0.1:{port}/api/tags")
+
+    assert len(calls) == 1
+    call = calls[0]
+    assert (call.host, call.path, call.status, call.error) == (
+        f"127.0.0.1:{port}",
+        "/api/tags",
+        None,
+        "ConnectError",
+    )
+    assert call.duration_ms >= 0
+
+
+async def test_timeout_is_logged_with_its_class_name(
+    respx_mock: respx.MockRouter, calls: list[OutboundCall]
+) -> None:
+    respx_mock.get("https://api.example.com/slow").mock(side_effect=httpx.ReadTimeout("slow"))
+
+    async with make_client(calls, ["api.example.com"]) as client:
+        with pytest.raises(httpx.ReadTimeout):
+            await client.get("https://api.example.com/slow")
+
+    assert [(call.host, call.status, call.error) for call in calls] == [
+        ("api.example.com", None, "ReadTimeout")
+    ]

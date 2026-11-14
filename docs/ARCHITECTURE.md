@@ -38,7 +38,7 @@ cursor is another row, through `services/store.py`.
 
 `Scheduler` starts in the lifespan when `SCHEDULER_ENABLED` is true. It opens its own
 `Session(engine)` per job and calls the MCP manager like any service. Jobs: mail poll (3 min,
-`mail_changes_since`, label only changed messages), calendar poll (10 min), reminders (1 min, marks
+`mail_changes_since` over every history page, label only changed messages; the cursor moves only once every changed message was fetched), calendar poll (10 min), reminders (1 min, marks
 `due`), follow-up check (10 min), health check (10 min, first run at start; Ollama reachable, model
 tag pulled, each MCP server up, email-to-self address matches; the report is kept on the
 `Scheduler` and returned as `health` by `GET /api/today`), model warm-up at 06:45 (one PONG

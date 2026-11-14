@@ -64,7 +64,7 @@ Around the chat there is a **Today** page (meetings, emails that need you, follo
 | Host | Why | When |
 | --- | --- | --- |
 | `127.0.0.1:11434` | Ollama, the local model | Always |
-| `www.googleapis.com`, `oauth2.googleapis.com` | Your Gmail, Calendar and contacts, through your own OAuth project | When Google is connected |
+| `www.googleapis.com`, `oauth2.googleapis.com`, `people.googleapis.com` | Your Gmail, Calendar and contacts, through your own OAuth project | When Google is connected |
 | `html.duckduckgo.com` | Web search | Only when web search is on |
 | `api.search.brave.com` or `api.tavily.com` | Optional search API | Only if you add a key |
 | A page Homer reads for an answer | One host per call, re-checked on every redirect | Only when web search is on |

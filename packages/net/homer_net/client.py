@@ -18,6 +18,7 @@ class OutboundCall:
     path: str
     status: int | None
     duration_ms: int
+    error: str | None = None
 
 
 LogFn = Callable[[OutboundCall], Awaitable[None] | None]
@@ -25,6 +26,10 @@ LogFn = Callable[[OutboundCall], Awaitable[None] | None]
 
 def no_log(call: OutboundCall) -> None:
     return None
+
+
+def elapsed_ms(request: httpx.Request) -> int:
+    return round((time.perf_counter() - request.extensions[STARTED_AT]) * 1000)
 
 
 class AllowlistedClient(httpx.AsyncClient):
@@ -48,16 +53,35 @@ class AllowlistedClient(httpx.AsyncClient):
             raise
         request.extensions[STARTED_AT] = time.perf_counter()
 
+    async def send(self, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        try:
+            return await super().send(request, **kwargs)
+        except httpx.TransportError as error:
+            failed = error.request
+            await self._emit(
+                failed,
+                host_key(str(failed.url)),
+                status=None,
+                duration_ms=elapsed_ms(failed),
+                error=type(error).__name__,
+            )
+            raise
+
     async def _record(self, response: httpx.Response) -> None:
         request = response.request
-        started_at = request.extensions[STARTED_AT]
-        duration_ms = round((time.perf_counter() - started_at) * 1000)
-        await self._emit(request, host_key(str(request.url)), response.status_code, duration_ms)
+        await self._emit(
+            request, host_key(str(request.url)), response.status_code, elapsed_ms(request)
+        )
 
     async def _emit(
-        self, request: httpx.Request, host: str, status: int | None, duration_ms: int
+        self,
+        request: httpx.Request,
+        host: str,
+        status: int | None,
+        duration_ms: int,
+        error: str | None = None,
     ) -> None:
-        call = OutboundCall(request.method, host, request.url.path, status, duration_ms)
+        call = OutboundCall(request.method, host, request.url.path, status, duration_ms, error)
         result = self._log(call)
         if inspect.isawaitable(result):
             await result

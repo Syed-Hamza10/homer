@@ -6,6 +6,7 @@ STATUS_NAMES = {
     401: "UNAUTHENTICATED",
     403: "PERMISSION_DENIED",
     404: "NOT_FOUND",
+    500: "INTERNAL",
 }
 COLD_CACHE = "FAILED_PRECONDITION: Request failed due to cold cache data. Please retry in 5 seconds"
 

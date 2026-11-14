@@ -1,4 +1,15 @@
+import os
+import shutil
+import tempfile
+
 import pytest
+
+TEST_HOME = tempfile.mkdtemp(prefix="homer-test-home-")
+os.environ["HOMER_HOME"] = TEST_HOME
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    shutil.rmtree(TEST_HOME, ignore_errors=True)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
