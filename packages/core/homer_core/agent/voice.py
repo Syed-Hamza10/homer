@@ -36,6 +36,12 @@ NON_ANSWER = re.compile(
     r"|\b(?:content|text|page|result) focuses\b|\bprovided\b",
     re.IGNORECASE,
 )
+UNKNOWN = re.compile(
+    r"\bI (?:don't|do not) know\b|\bI'm not sure\b|\bI am not sure\b"
+    r"|\b(?:real-time|up-to-date|current) (?:information|data|news)\b"
+    r"|\bmy (?:knowledge|training)(?: data)? (?:cutoff|cut-off)\b",
+    re.IGNORECASE,
+)
 HINT = (
     "\nSpeak straight to the person as 'you'. Never mention provided text, context, pages, "
     "emails provided, 'the user' or being an AI."

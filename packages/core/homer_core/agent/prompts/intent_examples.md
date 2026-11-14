@@ -28,6 +28,7 @@
 [fact: Dr. Lee prefers to meet in the mornings] "so when can Dr. Lee meet?" -> [{"kind": "recall", "about": "Dr. Lee"}]
 [nothing pending] "15% of 240" -> [{"kind": "calculate", "expression": "15% of 240"}]
 [nothing pending] "capital of Australia" -> [{"kind": "chat"}]
+[nothing pending] "what is the tallest mountain in africa, dear?" -> [{"kind": "chat"}]
 [nothing pending] "who won last night" -> [{"kind": "web_search", "query": "who won last night", "needs_live_data": true}]
 [nothing pending] "euro to dirham rate now" -> [{"kind": "web_search", "query": "euro to dirham rate now", "needs_live_data": true}]
 [nothing pending] "ok bye" -> [{"kind": "chat"}]

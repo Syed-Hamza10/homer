@@ -12,7 +12,8 @@ from pydantic_ai import Agent
 
 from homer_core.agent.claims import review
 from homer_core.agent.intents import WebSearch
-from homer_core.agent.voice import SENTENCE, capitalised, drop_sentences, non_answer
+from homer_core.agent.prompt import render_prompt
+from homer_core.agent.voice import SENTENCE, UNKNOWN, capitalised, drop_sentences, non_answer
 from homer_core.services.jobs.recipients import listed
 from homer_core.services.jobs.turn import JobError, Stopwatch, Turn
 from homer_core.services.mail import unwrap
@@ -129,6 +130,16 @@ SOURCE_CLAUSE = re.compile(
     r"|search results)\b",
     re.IGNORECASE,
 )
+LIVE = re.compile(
+    r"\b(?:weather|temperature|forecast|rain(?:ing|y)?|sunny|cloudy|snow(?:ing)?|humidity|wind"
+    r"|prices?|costs?|rates?|exchange|stocks?|shares?|markets?|how much|worth|scores?|won|wins?"
+    r"|winner|beat|standings|results?|fixtures?|news|headlines?|breaking|latest|newest"
+    r"|most recent|current(?:ly)?|now|today|tonight|tomorrow|yesterday|last night"
+    r"|this (?:morning|week|month|year)|traffic|flights?|mayor|president|prime minister|ceo"
+    r"|governor)\b",
+    re.IGNORECASE,
+)
+UNCHECKED = "I couldn't check the web just now; from what I know: {answer}"
 SOURCE_WORDS = re.compile(
     r"\bprovided\b|\bthe (?:(?:available|given|above) )?(?:text|pages?|snippets?|search results"
     r"|results|sources?|content)\b|\b(?:these|those) (?:pages|results|snippets|sources)\b"
@@ -452,6 +463,24 @@ async def answer(turn: Turn, query: str, question: str) -> None:
     turn.say(sources_block(used[:SOURCES]))
 
 
+async def from_memory(turn: Turn, failed: JobError) -> None:
+    """The model's own answer with a caveat, for a question that does not change from day to
+    day; the search's failure stands when the model does not know either."""
+    instructions = render_prompt(turn.user.name, turn.user.timezone, turn.now, turn.facts)
+    agent = Agent(turn.runtime.model, output_type=str, instructions=instructions)
+    text = (await turn.extract(agent, turn.message)).strip()
+    if not text or UNKNOWN.search(text) or non_answer(text) or review(text, False) != text:
+        raise failed
+    turn.say(UNCHECKED.format(answer=text))
+
+
 async def run(turn: Turn, intent: WebSearch) -> None:
+    """Answers from the web; when the search is blocked or fails, a question that is not about
+    weather, prices, scores, news or the like is answered from what the model knows."""
     zone = turn.user.timezone
-    await answer(turn, regional(intent.query, zone), regional(turn.message, zone))
+    try:
+        await answer(turn, regional(intent.query, zone), regional(turn.message, zone))
+    except JobError as failed:
+        if LIVE.search(turn.message):
+            raise
+        await from_memory(turn, failed)

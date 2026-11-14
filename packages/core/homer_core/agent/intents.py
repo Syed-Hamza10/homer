@@ -153,6 +153,8 @@ Intents:
   as written ("15% of 240", "3400 USD to EUR").
 - web_search: needs the internet. `query`; `needs_live_data` is true for things that change
   (news, weather, prices, scores, who holds an office) or when the user asks to search.
+  Stable general knowledge (geography, history, science, definitions, who wrote or invented
+  something) is chat, unless the user asks to search or look it up.
 - remind: Homer reminds the user of something. `text`, `date`, `time`. A reminder "on my
   calendar" is create_event.
 - day_summary: what the user got done today, or what is still open or waiting on them.
