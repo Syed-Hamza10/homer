@@ -132,9 +132,8 @@ def test_core_hosts_match_the_search_server(
     assert core.hosts() == providers.hosts(server)
 
 
-def test_privacy_markdown_lists_a_keyed_host_only_when_configured() -> None:
-    assert "api.search.brave.com" not in privacy_markdown()
-    assert "api.tavily.com" not in privacy_markdown()
-    text = privacy_markdown(("html.duckduckgo.com", "api.search.brave.com"))
-    assert "| `api.search.brave.com` |" in text
-    assert "`html.duckduckgo.com` and `api.search.brave.com`" in text
+def test_privacy_markdown_marks_the_keyed_hosts_optional() -> None:
+    text = privacy_markdown()
+    for host in ("api.search.brave.com", "api.tavily.com"):
+        assert f"| `{host}` |" in text
+    assert text.count("only if you add a key") >= 2
