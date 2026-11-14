@@ -240,7 +240,7 @@ After every step: a chat summary for Hamza in simple English and `docs/EXPLAINER
 
 ## 14. Assumptions
 - Implementing agent is Claude Code; `CLAUDE.md` points here. First step is `git init`.
-- Private GitHub repo under Hamza's personal account (`Syed-Hamza10`), never the `company-account` company account. `LICENSE` is "Copyright ACHAEA. All rights reserved." The demo video and case study are the public portfolio.
+- GitHub repo under Hamza's personal account (`Syed-Hamza10`). `LICENSE` is "Copyright ACHAEA. All rights reserved." The demo video and case study are the public portfolio.
 - English-first UI.
 - Sales target is Workspace teams; plain-Gmail individuals use Testing-mode OAuth and are told about weekly re-consent.
 - Remote dashboard access, if wanted, is through Tailscale.
