@@ -50,7 +50,7 @@ jobs:
           uv export --all-packages --no-dev --no-emit-workspace --no-hashes \
             --format requirements-txt -o dist/requirements.lock
           cd dist && sha256sum -- *.whl requirements.lock > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
