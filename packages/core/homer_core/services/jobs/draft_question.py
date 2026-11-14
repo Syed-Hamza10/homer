@@ -4,7 +4,11 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+
 from homer_core.agent.intents import ChatIntent, DiscardDraft, DraftQuestion
+from homer_core.agent.voice import capitalised
 from homer_core.db.models import Approval
 from homer_core.services import approval_edits, approvals
 from homer_core.services.approval_edits import MailEdit
@@ -19,13 +23,24 @@ URL = re.compile(r"https?://\S+")
 LINK = re.compile(r"\blink\b", re.IGNORECASE)
 NOT_CREATED = "The event gets its Google Calendar link once you press Create."
 CREATE_FIRST = f"{NOT_CREATED} Create it first and I'll add the link to the email."
-ANSWER_PROMPT = """The user is asking about the email draft below, which is waiting in this
-chat and has not been sent. Answer the question from the draft only, honestly, in one or two
-sentences. Start with Yes or No when it is a yes or no question. Never say it was sent.
-{event}
+ANSWER_RULES = """You answer a question about an email draft that is waiting in this chat and
+has not been sent. Answer every part of the question from the draft only, in one or two full
+sentences, speaking to the person as "you". Begin with Yes or No only when the whole question
+is a yes or no question. Never say it was sent."""
+ANSWER_REQUEST = """{event}
 Draft to {to}
 Subject: {subject}
-<untrusted>{body}</untrusted>"""
+<untrusted>{body}</untrusted>
+
+Question: {question}"""
+MIN_ANSWER_WORDS = 4
+YES_NO = re.compile(r"^\s*(?:yes|no)\b[,.!]?\s*", re.IGNORECASE)
+YES_NO_QUESTION = re.compile(
+    r"^\W*(?:(?:so|and|ok|okay|but)[,]?\s+)?(?:is|are|does|do|did|has|have|will|would|can"
+    r"|could|should|was|were)\b",
+    re.IGNORECASE,
+)
+WHO_TO = re.compile(r"\bwho\b|\brecipient\b|\baddress(?:ed)?\b|\bgoing to\b", re.IGNORECASE)
 
 
 def latest_event(turn: Turn) -> Approval | None:
@@ -106,6 +121,29 @@ async def link_event(turn: Turn, draft: Approval) -> None:
     turn.say(f"{CREATE_FIRST} I've put the date and time in the email meanwhile.")
 
 
+def recipient(payload: dict[str, Any]) -> str:
+    name = payload.get("to_name")
+    return f"{name} ({payload['to']})" if name else str(payload["to"])
+
+
+def grounded(reply: str, question: str, payload: dict[str, Any]) -> str:
+    """The model's answer, with a Yes or No dropped when the question is not a yes or no
+    question, and the recipient and subject said by code when the answer is too short or
+    a "who" question's answer does not name them."""
+    text = " ".join(reply.split())
+    if not YES_NO_QUESTION.match(question):
+        text = capitalised(YES_NO.sub("", text))
+    facts = f'It\'s going to {recipient(payload)}, subject "{payload["subject"]}".'
+    if len(text.split()) < MIN_ANSWER_WORDS:
+        return facts
+    named = payload["to"].lower() in text.lower() or str(payload.get("to_name", "-")).lower() in (
+        text.lower()
+    )
+    if WHO_TO.search(question) and not named:
+        return f"{facts} {text}"
+    return text
+
+
 def link_answer(body: str, event: Approval | None) -> str:
     found = URL.search(body)
     if found is not None:
@@ -133,13 +171,19 @@ async def answer(turn: Turn, draft: Approval) -> None:
     if LINK.search(turn.message):
         turn.say(link_answer(payload["body"], event))
         return
-    instructions = ANSWER_PROMPT.format(
+    request = ANSWER_REQUEST.format(
         event=event_note(event, turn.user.timezone),
         to=payload["to"],
         subject=payload["subject"],
         body=payload["body"],
+        question=turn.message,
     )
-    await turn.stream(turn.message, instructions)
+    agent = Agent(turn.runtime.model, output_type=str, instructions=ANSWER_RULES)
+    try:
+        reply = await turn.extract(agent, request)
+    except UnexpectedModelBehavior:
+        reply = ""
+    turn.say(grounded(reply, turn.message, payload))
 
 
 async def question(turn: Turn, intent: DraftQuestion) -> None:

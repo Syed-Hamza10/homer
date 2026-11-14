@@ -4,6 +4,8 @@ from sqlmodel import Session, select
 from homer_core.db.models import Setting, User
 from homer_core.services import privacy
 
+PLACEHOLDER = "there"
+
 
 def first_user(session: Session) -> User | None:
     return session.exec(select(User).order_by(User.id)).first()
@@ -24,6 +26,13 @@ def set_timezone(session: Session, user: User, timezone: str) -> None:
         user.timezone = timezone
         session.add(user)
         session.commit()
+
+
+def set_name(session: Session, user: User, name: str) -> None:
+    """The user's name for sign-offs; an empty one goes back to the install placeholder."""
+    user.name = name.strip() or PLACEHOLDER
+    session.add(user)
+    session.commit()
 
 
 def forget_user(session: Session, user: User) -> dict[str, int]:

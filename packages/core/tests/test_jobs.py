@@ -1,7 +1,8 @@
 import json
 import time
 from collections.abc import Callable
-from types import ModuleType
+from datetime import datetime
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models import Model
 from sqlmodel import Session
 from structlog.testing import capture_logs
@@ -19,7 +21,7 @@ from homer_core.config import Settings
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
 from homer_core.services.approvals import create
-from homer_core.services.jobs import send_email
+from homer_core.services.jobs import chat, send_email
 from homer_core.services.jobs.send_email import request_send
 from homer_core.services.jobs.turn import RECONNECT
 
@@ -846,3 +848,109 @@ class TestSignOff:
         logged_in.put("/api/settings", json={**settings, "signature": "Jo"}, headers=ORIGIN)
         post_chat({"message": "email Ada the invoice is paid"})
         assert fake_google.drafted[0]["body"] == f"Hi Ada,\n\n{PAID}\n\nBest,\nJo"
+
+
+LEAKED = "The invoice is paid. I keep all points unless you ask otherwise."
+
+
+class TestRoundSixEmail:
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")], [edit("make it shorter and a bit warmer")]],
+                [
+                    {"subject": "Invoice", "body": PAID},
+                    {"subject": "Paid", "body": LEAKED},
+                    {"subject": "Paid", "body": "Paid in full, thank you."},
+                ],
+            )
+        ],
+    )
+    def test_an_edit_that_repeats_its_rules_is_written_again(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        chat = post_chat({"message": "email Ada the invoice is paid"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "make it shorter and a bit warmer", "conversation_id": chat})
+        body = of(frames, "approval_required")[0]["payload"]["body"]
+        assert body == "Hi Ada,\n\nPaid in full, thank you.\n\nBest,\nTester"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("Ada")], [edit("make it shorter")]],
+                [
+                    {"subject": "Invoice", "body": PAID},
+                    {"subject": "Paid", "body": f"{PAID} It went through the usual channel."},
+                    {"subject": "Paid", "body": "Paid this morning."},
+                ],
+            )
+        ],
+    )
+    def test_shorter_is_shorter(self, post_chat: PostChat, fake_google: ModuleType) -> None:
+        chat = post_chat({"message": "email Ada the invoice is paid"})[0][1]["conversation_id"]
+        frames = post_chat({"message": "make it shorter", "conversation_id": chat})
+        body = of(frames, "approval_required")[0]["payload"]["body"]
+        assert body == "Hi Ada,\n\nPaid this morning.\n\nBest,\nTester"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("hamza", body_instructions="ask when he's free")]],
+                [{"subject": "Free?", "body": PAID}],
+            )
+        ],
+    )
+    def test_the_greeting_uses_the_users_word_and_the_sign_off_a_clean_name(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        send_email.PROFILE_NAMES.clear()
+        fake_google.CONTACTS.append({"name": "Syed Hamza Shah", "email": "hamza@example.test"})
+        fake_google.ACCOUNT_NAME = "BSDSF21A019-Syed Jordan"
+        settings = logged_in.get("/api/settings").json()
+        logged_in.put("/api/settings", json={**settings, "name": ""}, headers=ORIGIN)
+        post_chat({"message": "send hamza a mail asking when hes free"})
+        assert fake_google.drafted[0]["body"] == f"Hi Hamza,\n\n{PAID}\n\nBest,\nJordan"
+
+
+@pytest.mark.parametrize(
+    ("name", "called"),
+    [
+        ("BSDSF21A019-Syed Hamza", "Hamza"),
+        ("Syed Hamza Shah", "Hamza"),
+        ("Dr. Lee", "Lee"),
+        ("Muhammad", "Muhammad"),
+        ("Jordan Lee", "Jordan"),
+    ],
+)
+def test_call_name_skips_ids_and_honorifics(name: str, called: str) -> None:
+    assert send_email.call_name(name) == called
+
+
+def test_the_topic_of_the_last_turns_is_named_for_this() -> None:
+    history: list[ModelMessage] = [
+        ModelRequest(parts=[UserPromptPart(content="is the new bridge open yet?")]),
+        ModelResponse(
+            parts=[TextPart(content="It opens on 3 March.\n\n**Sources**\n- [a](https://a.test)")]
+        ),
+    ]
+    turn = SimpleNamespace(history=history)
+    topic = send_email.topic_of(turn)  # type: ignore[arg-type]
+    assert topic == "User: is the new bridge open yet?\nHomer: It opens on 3 March."
+
+
+def test_echo_check_catches_a_paraphrased_rule() -> None:
+    rules = send_email.EDIT_RULES.format(length="")
+    known = "Change asked for: make it shorter\nOld body:\nThe figures look right."
+    leaked = "The figures look right, and I keep all points unless you ask otherwise."
+    assert send_email.echoed(leaked, rules, known)
+    assert send_email.unechoed(leaked, rules, known) == "The figures look right."
+    assert not send_email.echoed("The figures look right, I'll check tonight.", rules, known)
+
+
+def test_a_chat_answer_tells_the_time_it_was_given() -> None:
+    now = datetime(2026, 11, 14, 16, 23)
+    assert chat.on_time("It's 17:24 on Saturday here.", now) == "It's 16:23 on Saturday here."
+    assert chat.on_time("Your call is at 15:00.", now) == "Your call is at 15:00."

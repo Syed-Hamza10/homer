@@ -1,6 +1,7 @@
 export type ModelTier = "supported" | "degraded"
 
 export type ClientRules = {
+  name?: string | null
   signature: string
   tone: string
   business_hours: string

@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { GoogleAccount } from "./GoogleAccount"
 import { ModelChoice } from "./ModelChoice"
+import { NameField } from "./NameField"
 import { ModelHint } from "./ModelHint"
 import { tierLabels } from "./tiers"
 import { TimezoneSelect } from "./TimezoneSelect"
@@ -43,6 +44,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function RulesForm({ initial }: { initial: ClientRules }) {
+  const [name, setName] = useState(initial.name ?? "")
   const [signature, setSignature] = useState(initial.signature)
   const [tone, setTone] = useState(initial.tone)
   const [hours, setHours] = useState(initial.business_hours)
@@ -61,6 +63,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     save.mutate({
+      name,
       signature,
       tone,
       business_hours: hours,
@@ -78,6 +81,7 @@ function RulesForm({ initial }: { initial: ClientRules }) {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-5">
+      <NameField value={name} signature={signature} onChange={setName} />
       <Field label="Signature">
         <Textarea
           value={signature}

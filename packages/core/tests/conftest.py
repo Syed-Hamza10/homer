@@ -61,11 +61,13 @@ def job_model(
     seen: list[list[ModelMessage]] | None = None,
     recalled: dict[str, Any] | None = None,
     asked: list[str] | None = None,
+    answered: list[str] | None = None,
 ) -> Model:
     """Plays the calls Homer makes: one intents list per turn (chat once they run out; each
     intent prompt is added to `asked`), the subject and body for `write_email` (a list is
     played in order, its last one repeats), `recalled` for an answer from saved facts, and
-    `text` for every plain answer."""
+    `text` for every plain answer (each plain request's instructions and prompt are added to
+    `answered`)."""
     queue = list(intents)
     emails = list(email) if isinstance(email, list) else [email or WRITTEN]
 
@@ -81,6 +83,10 @@ def job_model(
         if "write_email" in names:
             written = emails.pop(0) if len(emails) > 1 else emails[0]
             return ModelResponse(parts=[ToolCallPart("write_email", written)])
+        if answered is not None:
+            request = messages[-1]
+            parts = " ".join(str(part.content) for part in request.parts)
+            answered.append(f"{getattr(request, 'instructions', '')}\n{parts}")
         return ModelResponse(parts=[TextPart(content=text)])
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:

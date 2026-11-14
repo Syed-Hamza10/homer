@@ -77,11 +77,26 @@ def asked() -> list[str]:
 
 
 @pytest.fixture
+def answered() -> list[str]:
+    return []
+
+
+@pytest.fixture
+def reply() -> str:
+    return "Yes, it says Saturday at 3pm."
+
+
+@pytest.fixture
 def model(
-    jobs: JobModel, seen: list[list[ModelMessage]], follow: list[dict[str, Any]], asked: list[str]
+    jobs: JobModel,
+    seen: list[list[ModelMessage]],
+    follow: list[dict[str, Any]],
+    asked: list[str],
+    answered: list[str],
+    reply: str,
 ) -> Model:
     turns = [booked_and_drafted(), follow]
-    return jobs(turns, text="Yes, it says Saturday at 3pm.", seen=seen, asked=asked)
+    return jobs(turns, text=reply, seen=seen, asked=asked, answered=answered)
 
 
 def cards(frames: list[tuple[str, dict[str, Any]]]) -> dict[str, dict[str, Any]]:
@@ -130,16 +145,36 @@ class TestDraftQuestions:
 
     @pytest.mark.parametrize("follow", [[{"kind": "draft_question", "question": "saturday?"}]])
     def test_a_yes_or_no_question_reads_the_draft(
-        self, post_chat: PostChat, seen: list[list[ModelMessage]]
+        self, post_chat: PostChat, answered: list[str]
     ) -> None:
         chat, made = start(post_chat)
         frames = post_chat(
             {"message": "does it mention saturday, yes or no?", "conversation_id": chat}
         )
         assert said(frames) == "Yes, it says Saturday at 3pm."
-        prompt = str(getattr(seen[-1][-1], "instructions", ""))
+        prompt = answered[-1]
         assert made["mail_send"]["payload"]["body"] in prompt
         assert "not created yet" in prompt
+        assert "Question: does it mention saturday, yes or no?" in prompt
+
+    @pytest.mark.parametrize("reply", ["No,"])
+    @pytest.mark.parametrize("follow", [[{"kind": "draft_question", "question": "who?"}]])
+    def test_a_bare_no_is_replaced_by_the_recipient(self, post_chat: PostChat) -> None:
+        chat, made = start(post_chat)
+        frames = post_chat({"message": "who is that going to?", "conversation_id": chat})
+        payload = made["mail_send"]["payload"]
+        assert said(frames).startswith(f"It's going to {payload.get('to_name', payload['to'])}")
+
+    @pytest.mark.parametrize(
+        "reply", ["No, it is addressed to someone and it mentions the deck tonight."]
+    )
+    @pytest.mark.parametrize("follow", [[{"kind": "draft_question", "question": "who?"}]])
+    def test_a_who_question_never_opens_with_no(self, post_chat: PostChat) -> None:
+        chat, made = start(post_chat)
+        message = "who is that going to, and does it mention the deck?"
+        text = said(post_chat({"message": message, "conversation_id": chat}))
+        assert not text.startswith("No")
+        assert made["mail_send"]["payload"]["to"] in text
 
     @pytest.mark.parametrize("follow", [[{"kind": "send_status"}]])
     def test_the_status_line_is_only_for_status_questions(self, post_chat: PostChat) -> None:
