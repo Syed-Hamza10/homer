@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { ApiError, postJson, streamSse } from "@/lib/api"
 import type {
   ActivityItem,
@@ -18,9 +18,16 @@ import type {
 } from "./types"
 import { approvalsKey } from "@/features/approvals/useApprovals"
 import { conversationsKey } from "./useConversations"
-
-type Draft = { user: string; assistant: string }
-type Run = { conversation: string | null; items: ActivityItem[] }
+import {
+  NEW_CHAT,
+  addTokens,
+  idle,
+  isLive,
+  moveStream,
+  patchStream,
+  type Stream,
+  useStreams,
+} from "./streams"
 
 const SAVE_GRACE_MS = 300
 
@@ -31,25 +38,35 @@ export function useChatStream(
   onConversation: (id: string) => void,
 ) {
   const queryClient = useQueryClient()
-  const controller = useRef<AbortController | null>(null)
-  const [draft, setDraft] = useState<Draft | null>(null)
-  const [run, setRun] = useState<Run>({ conversation: null, items: [] })
-  const [status, setStatus] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [tokens, setTokens] = useState(0)
+  const { streams, tokens } = useStreams()
+  const key = conversationId ?? NEW_CHAT
+  const stream = streams[key] ?? idle
+  const viewing = useRef<string | null | undefined>(conversationId)
 
-  const add = (item: ActivityItem) =>
-    setRun((r) => ({ ...r, items: [...r.items, item] }))
+  useEffect(() => {
+    viewing.current = conversationId
+    return () => {
+      viewing.current = undefined
+    }
+  }, [conversationId])
 
   const send = async (message: string, choice?: ChoiceHint) => {
+    const origin = conversationId
+    let at = origin ?? NEW_CHAT
+    let started = false
     const abort = new AbortController()
-    controller.current = abort
-    setError(null)
-    setStatus(null)
-    setRun({ conversation: conversationId, items: [] })
-    setDraft({ user: message, assistant: "" })
+    const update = (change: (s: Stream) => Partial<Stream>) =>
+      patchStream(at, change)
+    const add = (item: ActivityItem) =>
+      update((s) => ({ items: [...s.items, item] }))
+    update(() => ({
+      ...idle,
+      draft: { user: message, assistant: "" },
+      choice,
+      controller: abort,
+    }))
     const body = {
-      ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(origin ? { conversation_id: origin } : {}),
       message,
       ...(choice ? { choice } : {}),
     }
@@ -60,18 +77,30 @@ export function useChatStream(
         {
           meta: (data) => {
             const id = String((data as MetaEvent).conversation_id)
-            setRun((r) => ({ ...r, conversation: id }))
-            if (id !== conversationId) onConversation(id)
+            started = true
+            if (id === at) return
+            moveStream(at, id)
+            at = id
+            void queryClient.invalidateQueries({ queryKey: conversationsKey })
+            if (viewing.current === origin) onConversation(id)
           },
-          status: (data) => setStatus((data as StatusEvent).text),
+          status: (data) =>
+            update(() => ({ status: (data as StatusEvent).text })),
           token: (data) => {
             const { text } = data as TokenEvent
-            setStatus(null)
-            setDraft((d) => d && { ...d, assistant: d.assistant + text })
+            update((s) => ({
+              status: null,
+              draft: s.draft && {
+                ...s.draft,
+                assistant: s.draft.assistant + text,
+              },
+            }))
           },
           replace: (data) => {
             const { text } = data as ReplaceEvent
-            setDraft((d) => d && { ...d, assistant: text })
+            update((s) => ({
+              draft: s.draft && { ...s.draft, assistant: text },
+            }))
           },
           tool_call: (data) =>
             add({ kind: "tool_call", ...(data as ToolCallEvent) }),
@@ -86,26 +115,38 @@ export function useChatStream(
             add({ kind: "reconnect", ...(data as GoogleReconnectEvent) }),
           done: (data) => {
             const { input_tokens, output_tokens } = data as DoneEvent
-            setTokens((n) => n + input_tokens + output_tokens)
+            addTokens(input_tokens + output_tokens)
           },
-          error: (data) => setError((data as ErrorEvent).message),
+          error: (data) =>
+            update(() => ({ error: (data as ErrorEvent).message })),
         },
         abort.signal,
       )
     } catch (e) {
       if (abort.signal.aborted) await wait(SAVE_GRACE_MS)
-      else setError(e instanceof ApiError ? e.message : "Connection lost")
+      else
+        update(() => ({
+          error: e instanceof Error ? e : "Connection lost",
+        }))
     }
-    controller.current = null
+    if (!started && !abort.signal.aborted) {
+      update(() => ({ failed: true, status: null, controller: null }))
+      return false
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: conversationsKey }),
       queryClient.invalidateQueries({ queryKey: approvalsKey }),
     ])
-    setStatus(null)
-    setDraft(null)
+    update(() => ({ draft: null, status: null, controller: null }))
+    return true
   }
 
-  const stop = () => controller.current?.abort()
+  const stop = () => stream.controller?.abort()
+
+  const retry = () =>
+    stream.draft
+      ? send(stream.draft.user, stream.choice)
+      : Promise.resolve(true)
 
   const regenerate = async () => {
     if (!conversationId) return
@@ -116,24 +157,26 @@ export function useChatStream(
       )
       await send(message)
     } catch (e) {
-      setError(
-        e instanceof ApiError && e.status === 409
-          ? "This reply cannot be regenerated"
-          : "Could not regenerate the reply",
-      )
+      patchStream(conversationId, () => ({
+        error:
+          e instanceof ApiError && e.status === 409
+            ? "This reply cannot be regenerated"
+            : "Could not regenerate the reply",
+      }))
     }
   }
 
-  const activity = run.conversation === conversationId ? run.items : []
   return {
     send,
     stop,
+    retry,
     regenerate,
-    draft,
-    activity,
-    status,
-    error,
+    draft: stream.failed ? null : stream.draft,
+    failed: stream.failed ? (stream.draft?.user ?? null) : null,
+    activity: stream.items,
+    status: stream.status,
+    error: stream.error,
     tokens,
-    streaming: draft !== null,
+    streaming: isLive(stream),
   }
 }

@@ -18,7 +18,9 @@ type Props = {
   draft: { user: string; assistant: string } | null
   activity: ActivityItem[]
   status: string | null
+  failed?: string | null
   onRegenerate: () => void
+  onRetry?: () => void
   onChoose?: (card: ChoiceEvent, option: ChoiceOption) => void
   onOther?: () => void
 }
@@ -56,7 +58,9 @@ export function MessageList({
   draft,
   activity,
   status,
+  failed = null,
   onRegenerate,
+  onRetry = ignore,
   onChoose = ignore,
   onOther = ignore,
 }: Props) {
@@ -98,7 +102,7 @@ export function MessageList({
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })
-  }, [messages, approvals, draft, activity, status])
+  }, [messages, approvals, draft, activity, status, failed])
 
   const turn = (m: Message) => (
     <div key={m.id} className="flex flex-col gap-3">
@@ -136,6 +140,14 @@ export function MessageList({
         )}
         {shown.map(turn)}
         {showDraftUser && <MessageBubble role="user" content={draft.user} />}
+        {failed !== null && (
+          <MessageBubble
+            role="user"
+            content={failed}
+            failed
+            onRetry={onRetry}
+          />
+        )}
         {(showActivity || reconnects.length > 0) && (
           <div className="-my-3 flex flex-col gap-2">
             {showActivity && (

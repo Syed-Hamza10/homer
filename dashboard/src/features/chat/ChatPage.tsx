@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate, useSearchParams } from "react-router"
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { useConversationApprovals } from "@/features/approvals/useConversationApprovals"
 import { Composer } from "./Composer"
 import { MessageList } from "./MessageList"
@@ -18,20 +19,44 @@ export function ChatPage() {
   const {
     send,
     stop,
+    retry,
     regenerate,
     draft,
+    failed,
     activity,
     status,
     error,
     tokens,
     streaming,
   } = useChatStream(conversationId, setConversationId)
+  const [text, setText] = useState("")
+  const viewing = useRef(conversationId)
   const location = useLocation()
   const navigate = useNavigate()
   const queued = (location.state as { send?: string } | null)?.send
   const sent = useRef<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
-  const empty = !conversationId && !messages.length && !streaming
+  const empty =
+    !conversationId && !messages.length && !streaming && failed === null
+
+  useEffect(() => {
+    viewing.current = conversationId
+  }, [conversationId])
+
+  const keepOnFailure = (message: string, sent: Promise<boolean>) => {
+    const origin = conversationId
+    void sent.then((ok) => {
+      if (!ok && viewing.current === origin) setText((t) => t || message)
+    })
+  }
+
+  const submit = (message: string) => keepOnFailure(message, send(message))
+
+  const tryAgain = () => {
+    if (failed === null) return
+    if (text.trim() === failed) setText("")
+    keepOnFailure(failed, retry())
+  }
 
   useEffect(() => {
     if (!queued || sent.current === location.key) return
@@ -45,12 +70,24 @@ export function ChatPage() {
 
   const composer = (
     <>
-      {error && <p className="px-2 text-sm text-destructive">{error}</p>}
+      <ErrorNotice
+        error={error}
+        onRetry={
+          failed !== null
+            ? tryAgain
+            : conversationId
+              ? () => void regenerate()
+              : undefined
+        }
+        className="px-2"
+      />
       <Composer
         streaming={streaming}
-        onSend={send}
+        onSend={submit}
         onStop={stop}
         inputRef={input}
+        value={text}
+        onValueChange={setText}
       />
     </>
   )
@@ -77,7 +114,9 @@ export function ChatPage() {
         draft={draft}
         activity={activity}
         status={status}
+        failed={failed}
         onRegenerate={regenerate}
+        onRetry={tryAgain}
         onChoose={(card, option) =>
           void send(option.label, {
             question_id: card.question_id,
