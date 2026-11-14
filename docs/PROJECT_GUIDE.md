@@ -308,7 +308,6 @@ docs/                  Architecture, status, decisions, changelog, case study, o
 | Document | Contents |
 | --- | --- |
 | [CLIENT_ONBOARDING.md](../CLIENT_ONBOARDING.md) | Install, Google setup, first sign-in, operations, troubleshooting |
-| [STATUS.md](STATUS.md) | Current build status and pickup notes |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layering, request flow, API contract, approvals, jobs, scheduler and test strategy |
 | [DECISIONS.md](DECISIONS.md) | Every deliberate deviation and its reason |
 | [CASE_STUDY.md](CASE_STUDY.md) | Product narrative, measured performance and honest limitations |
