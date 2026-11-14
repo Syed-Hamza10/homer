@@ -19,7 +19,8 @@ STARTUP_TIMEOUT = 30.0
 KNOWN_TOKEN = "sim-access-token"
 OUTBOUND_LOG_SCHEMA = (
     "CREATE TABLE outbound_log (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, method TEXT NOT NULL, "
-    "host TEXT NOT NULL, path TEXT NOT NULL, status INTEGER, duration_ms INTEGER NOT NULL)"
+    "host TEXT NOT NULL, path TEXT NOT NULL, status INTEGER, duration_ms INTEGER NOT NULL, "
+    "error TEXT)"
 )
 
 Spawn = Callable[[Path, str | None, str | None], Client]

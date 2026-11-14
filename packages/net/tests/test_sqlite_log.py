@@ -5,7 +5,7 @@ from homer_net import OutboundCall, SqliteLog
 
 SCHEMA = (
     "CREATE TABLE outbound_log (id INTEGER PRIMARY KEY, ts TEXT, method TEXT, host TEXT, "
-    "path TEXT, status INTEGER, duration_ms INTEGER)"
+    "path TEXT, status INTEGER, duration_ms INTEGER, error TEXT)"
 )
 
 
@@ -19,3 +19,11 @@ def test_inserts_row(tmp_path: Path) -> None:
         .fetchall()
     )
     assert rows == [("GET", "example.test", "/x", 200, 12)]
+
+
+def test_inserts_error(tmp_path: Path) -> None:
+    db = tmp_path / "homer.db"
+    sqlite3.connect(db).execute(SCHEMA)
+    SqliteLog(db)(OutboundCall("GET", "example.test", "/x", None, 3, "ConnectError"))
+    rows = sqlite3.connect(db).execute("SELECT status, error FROM outbound_log").fetchall()
+    assert rows == [(None, "ConnectError")]

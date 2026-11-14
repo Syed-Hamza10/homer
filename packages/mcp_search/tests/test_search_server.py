@@ -14,7 +14,7 @@ from fastmcp.client.transports import StdioTransport
 
 SCHEMA = (
     "CREATE TABLE outbound_log (id INTEGER PRIMARY KEY, ts TEXT, method TEXT, host TEXT, "
-    "path TEXT, status INTEGER, duration_ms INTEGER)"
+    "path TEXT, status INTEGER, duration_ms INTEGER, error TEXT)"
 )
 
 Rows = Callable[[], list[tuple]]
