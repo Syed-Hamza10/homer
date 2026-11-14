@@ -1,8 +1,8 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { useState } from "react"
 import { Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Approval } from "@/features/approvals/types"
-import { errorText } from "@/lib/errorText"
 import { EventForm } from "./EventForm"
 import { responseText, whenText } from "./format"
 import { endOf, fromEvent, startOf, toFields } from "./formValue"
@@ -25,7 +25,7 @@ export function EventPopover({ event, timeZone, onClose, onApproval }: Props) {
   const update = useUpdateEvent()
   const cancel = useCancelEvent()
   const busy = update.isPending || cancel.isPending
-  const error = errorText(update.error ?? cancel.error)
+  const error = update.error ?? cancel.error
   const send = (change: Partial<EventFields>) =>
     update.mutate({ id: event.id, change }, { onSuccess: onApproval })
   const back = () => {
@@ -143,7 +143,7 @@ export function EventPopover({ event, timeZone, onClose, onApproval }: Props) {
           Cancel event
         </Button>
       </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      <ErrorNotice error={error} className="text-xs" />
     </PanelFrame>
   )
 }

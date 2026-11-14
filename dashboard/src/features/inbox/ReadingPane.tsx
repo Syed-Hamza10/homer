@@ -1,8 +1,8 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { ArrowLeft, X } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useShortcuts } from "@/lib/shortcuts"
-import { errorText } from "@/lib/errorText"
 import { loadDraft } from "./drafts"
 import { MailComposer } from "./MailComposer"
 import { MessageView } from "./MessageView"
@@ -137,14 +137,21 @@ export function ReadingPane({
             onArchive={() => update([], ["INBOX"], onClose)}
           />
         )}
-        {error && (
-          <p className="text-sm text-destructive">{errorText(error)}</p>
-        )}
+        <ErrorNotice
+          error={error}
+          onRetry={() => {
+            if (change.error && change.variables)
+              change.mutate(change.variables)
+            else if (reply.error && reply.variables) openReply(reply.variables)
+            else if (followUp.error) followUp.mutate()
+          }}
+        />
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {thread.error && (
-          <p className="text-sm text-destructive">{errorText(thread.error)}</p>
-        )}
+        <ErrorNotice
+          error={thread.error}
+          onRetry={() => void thread.refetch()}
+        />
         {messages.map((message) => (
           <MessageView
             key={message.id}

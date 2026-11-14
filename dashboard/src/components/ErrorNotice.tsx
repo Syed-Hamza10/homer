@@ -5,11 +5,12 @@ import { cn } from "@/lib/utils"
 
 type Props = {
   error: Problem
+  lead?: string
   onRetry?: () => void
   className?: string
 }
 
-export function ErrorNotice({ error, onRetry, className }: Props) {
+export function ErrorNotice({ error, lead, onRetry, className }: Props) {
   const text = problemText(error)
   if (!text) return null
   const step = nextStep(error)
@@ -21,7 +22,7 @@ export function ErrorNotice({ error, onRetry, className }: Props) {
         className,
       )}
     >
-      <span>{text}</span>
+      <span>{lead ? `${lead} ${text}` : text}</span>
       {step === "sign-in" && (
         <Button asChild size="xs" variant="outline">
           <Link to="/login">Sign in</Link>

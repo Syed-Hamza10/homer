@@ -235,3 +235,7 @@ One line each. Newest at the bottom.
 - 2026-11-14: `homer update` checks every downloaded asset against `SHA256SUMS`, including `requirements.lock`. Reason: the lock decides which dependency versions get installed.
 - 2026-11-14: The root `conftest.py` points `HOMER_HOME` at a temporary directory before any package import. Reason: the search server builds its outbound logger at import and wrote test calls into the developer's real database.
 - 2026-11-14: Dashboard pages other than chat and login load with `React.lazy`. Reason: the single bundle passed Vite's 500 kB warning.
+- 2026-11-14: Chat streams live in a module store keyed by conversation id (the `meta` id, `new` before it), read with `useSyncExternalStore`. Reason: switching chats showed the old chat's tokens; a stream now keeps running in the background and only Stop aborts it.
+- 2026-11-14: Inbox composer drafts autosave to `localStorage` as `homer.draft.<thread id | new>` and clear on Review email or Discard. Reason: drafts vanished when the page or thread changed; they stay on this computer like the other UI preferences.
+- 2026-11-14: Settings warns on leaving with unsaved changes through `beforeunload` and a capture-phase link click check. Reason: `useBlocker` needs a data router and the app uses `BrowserRouter`.
+- 2026-11-14: An event approval edit takes an optional `end_date` and rejects an end that is not after the start. Reason: one date could not express an event that crosses midnight.

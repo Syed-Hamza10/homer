@@ -1,3 +1,4 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -100,11 +101,7 @@ export function GoogleAccount() {
               Finish in the browser window that just opened.
             </span>
           )}
-          {connect.error && (
-            <span className="text-sm text-destructive">
-              {connect.error.message}
-            </span>
-          )}
+          <ErrorNotice error={connect.error} onRetry={() => connect.mutate()} />
         </div>
       </CardContent>
     </Card>

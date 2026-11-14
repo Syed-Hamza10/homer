@@ -68,4 +68,17 @@ describe("MailComposer", () => {
     expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy()
     expect(localStorage.getItem("homer.draft.t1")).toBeNull()
   })
+
+  it("does not submit on Enter while an input method is composing", () => {
+    vi.stubGlobal("fetch", vi.fn())
+    renderComposer()
+    const subject = screen.getByDisplayValue("Re: Kickoff")
+    expect(
+      fireEvent.keyDown(subject, { key: "Enter", isComposing: true }),
+    ).toBe(false)
+    expect(fireEvent.keyDown(subject, { key: "Enter", keyCode: 229 })).toBe(
+      false,
+    )
+    expect(fireEvent.keyDown(subject, { key: "Enter" })).toBe(true)
+  })
 })

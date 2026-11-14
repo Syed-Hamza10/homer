@@ -1,3 +1,4 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { Keyboard } from "lucide-react"
 import { useState } from "react"
 import { PageHeader } from "@/components/PageHeader"
@@ -18,7 +19,6 @@ import {
 } from "@/lib/zoned"
 import { ApprovalPanel } from "./ApprovalPanel"
 import { CalendarToolbar } from "./CalendarToolbar"
-import { errorText } from "@/lib/errorText"
 import { EventPopover } from "./EventPopover"
 import { FindTimePanel } from "./FindTimePanel"
 import { fromInstants, fromWalls } from "./formValue"
@@ -185,12 +185,14 @@ export function CalendarPage() {
             out of date.
           </p>
         )}
-        {error && (
-          <p className="text-sm text-destructive">{errorText(error)}</p>
-        )}
-        {move.error && (
-          <p className="text-sm text-destructive">{errorText(move.error)}</p>
-        )}
+        <ErrorNotice error={error} onRetry={() => void refresh()} />
+        <ErrorNotice
+          error={move.error}
+          onRetry={() =>
+            move.variables &&
+            move.mutate(move.variables, { onSuccess: showApproval })
+          }
+        />
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1" aria-busy={isPending}>
             {view === "month" ? (

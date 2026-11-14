@@ -1,8 +1,10 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { FormField } from "@/features/approvals/FormField"
 import { holdImeEnter } from "@/lib/ime"
+import type { Problem } from "@/lib/nextStep"
 import { problem, withStartDate } from "./formValue"
 import type { FormValue } from "./types"
 
@@ -13,7 +15,7 @@ type Props = {
   onBack: () => void
   submitLabel: string
   busy: boolean
-  error: string | null
+  error: Problem
   withTime?: boolean
   withDetails?: boolean
 }
@@ -109,8 +111,10 @@ export function EventForm({
           </FormField>
         </>
       )}
-      {(invalid || error) && (
-        <p className="text-xs text-destructive">{invalid ?? error}</p>
+      {invalid ? (
+        <p className="text-xs text-destructive">{invalid}</p>
+      ) : (
+        <ErrorNotice error={error} onRetry={onSubmit} className="text-xs" />
       )}
       <div className="flex gap-2">
         <Button size="sm" type="submit" disabled={busy || Boolean(invalid)}>

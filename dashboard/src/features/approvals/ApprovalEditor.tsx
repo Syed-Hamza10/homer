@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { holdImeEnter } from "@/lib/ime"
 import { eventOrderProblem } from "./editable"
 import { EventForm } from "./EventForm"
 import { MailForm } from "./MailForm"
@@ -26,6 +27,7 @@ export function ApprovalEditor({
   return (
     <form
       className="flex flex-col gap-2"
+      onKeyDown={holdImeEnter}
       onSubmit={(e) => {
         e.preventDefault()
         if (!invalid) onSave(value)
