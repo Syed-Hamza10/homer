@@ -211,7 +211,11 @@ def test_calendar_this_week_is_fast_and_in_local_time(talk: Talk, run: int) -> N
     reply = talk("What's on my calendar this week?")
     reply.finished()
     assert reply.tools == ["cal_list"]
-    assert "Weekly planning" in reply.said and "14:00-14:30 Weekly planning" in reply.said
+    if local_today().weekday() >= 5:
+        start = reply.of("tool_call")[0]["args"]["start"]
+        assert start.startswith(local_today().isoformat()), start
+    else:
+        assert "14:00-14:30 Weekly planning" in reply.said, reply.said
     assert reply.seconds < 30, reply.seconds
 
 
