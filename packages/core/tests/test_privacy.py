@@ -10,7 +10,7 @@ from homer_core.privacy_hosts import CORE_HOSTS, GOOGLE_HOSTS, SEARCH_HOSTS, pri
 from homer_core.services import approvals, facts
 from homer_core.services.privacy import user_tables
 from homer_core.services.users import ensure_first_user, forget_user
-from homer_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_TOKEN_URL
+from homer_mcp_google.settings import GOOGLE_API_BASE, GOOGLE_PEOPLE_API_BASE, GOOGLE_TOKEN_URL
 from homer_mcp_search.search import SEARCH_HOST
 from homer_net.allowlist import host_key
 
@@ -100,6 +100,7 @@ def test_wipe_requires_confirmation(logged_in: TestClient, origin: dict[str, str
 def test_privacy_hosts_match_the_server_defaults() -> None:
     assert host_key(GOOGLE_API_BASE) == GOOGLE_HOSTS[0]
     assert host_key(GOOGLE_TOKEN_URL) == GOOGLE_HOSTS[1]
+    assert host_key(GOOGLE_PEOPLE_API_BASE) == GOOGLE_HOSTS[2]
     assert SEARCH_HOSTS[0] == SEARCH_HOST
     text = privacy_markdown()
     for host in (*CORE_HOSTS, *GOOGLE_HOSTS, *SEARCH_HOSTS):

@@ -1,5 +1,5 @@
 CORE_HOSTS = ("127.0.0.1:11434",)
-GOOGLE_HOSTS = ("www.googleapis.com", "oauth2.googleapis.com")
+GOOGLE_HOSTS = ("www.googleapis.com", "oauth2.googleapis.com", "people.googleapis.com")
 SEARCH_HOSTS = ("html.duckduckgo.com",)
 KEYED_SEARCH_HOSTS = {"brave": "api.search.brave.com", "tavily": "api.tavily.com"}
 SEARCH_REASONS = {
@@ -36,8 +36,9 @@ to a hosted model API, and there is no per-token bill.
 | Host | Why |
 |---|---|
 | `{CORE_HOSTS[0]}` | The local Ollama server. Model input stays on this machine. |
-| `{GOOGLE_HOSTS[0]}` | Gmail, Calendar and People, using the client's own OAuth project. |
+| `{GOOGLE_HOSTS[0]}` | Gmail and Calendar, using the client's own OAuth project. |
 | `{GOOGLE_HOSTS[1]}` | Refreshing the Google access token. |
+| `{GOOGLE_HOSTS[2]}` | Looking up a contact's address when you ask to email someone by name. |
 {search_rows}
 | a host the user asks `fetch_page` to open | One host per call, re-checked on every redirect. |
 
@@ -71,7 +72,7 @@ sqlite3 ~/.homer/data/homer.db "select host, count(*) from outbound_log group by
 ```
 
 The only rows you should see for normal use are `127.0.0.1:11434`, `www.googleapis.com`,
-`oauth2.googleapis.com` and, when web search is on, one of
+`oauth2.googleapis.com`, `people.googleapis.com` and, when web search is on, one of
 {search_names} (the last two only if you add a key).
 
 This is application-level enforcement, not a network sandbox. Say it that way to clients.

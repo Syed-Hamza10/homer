@@ -48,7 +48,7 @@ own account is set up the same way. Everything below is done once; it takes abou
 2. A browser tab opens. Sign in with the throwaway account.
 3. Google warns that the app is unverified: click **Continue**. Tick all three permissions, click **Continue**.
 4. The terminal prints `Google connected. Token written to ~/.homer/credentials/google_token.json`. The file is mode 0600; the server reads it and refreshes the access token on its own.
-5. Start the app and open the Privacy page: `www.googleapis.com` and `oauth2.googleapis.com` are the only Google hosts that should ever appear.
+5. Start the app and open the Privacy page: `www.googleapis.com`, `oauth2.googleapis.com` and `people.googleapis.com` are the only Google hosts that should ever appear.
 
 ## The 7-day rule
 
