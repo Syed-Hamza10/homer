@@ -2,9 +2,10 @@ import json
 from datetime import UTC
 from zoneinfo import ZoneInfo
 
-from homer_core.agent.router import asked_recipient
+from homer_core.agent.intents import SendStatus
 from homer_core.db.models import Approval
 from homer_core.services import approvals
+from homer_core.services.facts import keywords
 from homer_core.services.jobs.turn import Turn
 
 NOTHING_SENT = "No. Nothing has been sent from this chat."
@@ -34,13 +35,29 @@ def describe(turn: Turn, approval: Approval) -> str:
     return STATUS.get(approval.status, STATUS["pending"]).format(to=to)
 
 
-def answer(turn: Turn) -> str:
+def asked_send(turn: Turn, about: str | None) -> Approval | None:
+    """The newest email to the person named, from any chat; with no one named, this chat's
+    newest email."""
+    named = (about or "").strip().lower()
+    if not named:
+        return approvals.latest_send(turn.session, turn.user, turn.conversation_id, None)
+    for who in [named, *(word for word in keywords(named) if len(word) > 2)]:
+        found = approvals.latest_send(turn.session, turn.user, None, who)
+        if found is not None:
+            return found
+    return None
+
+
+def answer(turn: Turn, about: str | None = None) -> str:
     """Says from the approvals table whether the email asked about went out."""
-    who = asked_recipient(turn.message)
-    found = approvals.latest_send(turn.session, turn.user, turn.conversation_id, who)
+    found = asked_send(turn, about)
     if found is not None:
         return describe(turn, found)
-    return f"No. I have not sent anything to {who}." if who else NOTHING_SENT
+    return f"No. I have not sent anything to {about}." if about else NOTHING_SENT
+
+
+async def status(turn: Turn, intent: SendStatus) -> None:
+    turn.say(answer(turn, intent.about))
 
 
 def honest(turn: Turn) -> str | None:

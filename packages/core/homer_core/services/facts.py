@@ -3,14 +3,24 @@ from difflib import SequenceMatcher
 
 from sqlmodel import Session, col, select
 
-from homer_core.db.models import Fact, User
+from homer_core.db.models import Fact, User, utcnow
 from homer_core.services.errors import NotFound
 
 PROMPT_FACTS = 20
 
 
-def add_fact(session: Session, user_id: int, text: str) -> Fact:
-    fact = Fact(user_id=user_id, text=text.strip())
+def add_fact(session: Session, user_id: int, text: str, person: str | None = None) -> Fact:
+    fact = Fact(user_id=user_id, text=text.strip(), person=person)
+    session.add(fact)
+    session.commit()
+    session.refresh(fact)
+    return fact
+
+
+def update_fact(session: Session, fact: Fact, text: str, person: str | None = None) -> Fact:
+    fact.text = text.strip()
+    fact.person = person or fact.person
+    fact.updated_at = utcnow()
     session.add(fact)
     session.commit()
     session.refresh(fact)
@@ -18,9 +28,12 @@ def add_fact(session: Session, user_id: int, text: str) -> Fact:
 
 
 def list_facts(session: Session, user: User, limit: int | None = None) -> list[Fact]:
-    """Newest first."""
+    """Newest change first."""
     statement = (
-        select(Fact).where(Fact.user_id == user.id).order_by(col(Fact.id).desc()).limit(limit)
+        select(Fact)
+        .where(Fact.user_id == user.id)
+        .order_by(col(Fact.updated_at).desc(), col(Fact.id).desc())
+        .limit(limit)
     )
     return list(session.exec(statement))
 
@@ -50,6 +63,7 @@ STOP_WORDS = frozenset(
 )
 CLOSE_ENOUGH = 0.8
 PREFIX = 4
+NEAR_BEST = 0.75
 
 
 def keywords(text: str | None) -> list[str]:
@@ -71,24 +85,33 @@ def word_score(keyword: str, words: list[str]) -> float:
 
 
 def score(fact: Fact, wanted: list[str]) -> float:
-    words = re.findall(r"[\w-]+", fact.text.lower().replace("'s", ""))
+    text = f"{fact.person or ''} {fact.text}".lower().replace("'s", "")
+    words = re.findall(r"[\w-]+", text)
     return sum(word_score(keyword, words) for keyword in wanted)
+
+
+def scored(session: Session, user: User, about: str | None) -> list[tuple[float, Fact]]:
+    """Every fact with its keyword score for `about`, best first, newest first on a tie."""
+    wanted = keywords(about)
+    pairs = [(score(fact, wanted), fact) for fact in list_facts(session, user)]
+    return sorted(pairs, key=lambda pair: -pair[0])
 
 
 def matching(session: Session, user: User, about: str | None) -> list[Fact]:
     """Facts mentioning any keyword of `about` (exact, prefix or close spelling), best first;
     every fact, newest first, when `about` has no keywords."""
-    facts = list_facts(session, user)
-    wanted = keywords(about)
-    if not wanted:
-        return facts
-    scored = sorted(((score(fact, wanted), fact) for fact in facts), key=lambda pair: -pair[0])
-    best = scored[0][0] if scored else 0.0
-    return [fact for value, fact in scored if value > 0 and value >= best / 2]
+    if not keywords(about):
+        return list_facts(session, user)
+    pairs = scored(session, user, about)
+    best = pairs[0][0] if pairs else 0.0
+    return [fact for value, fact in pairs if value > 0 and value >= best / 2]
 
 
-def forget(session: Session, user: User, about: str | None) -> Fact | None:
-    """Deletes the fact that best matches `about` (the newest one on a tie or when `about` says
-    nothing specific); returns it."""
-    found = matching(session, user, about)
-    return remove(session, found[0]) if found else None
+def closest(session: Session, user: User, about: str | None) -> list[Fact]:
+    """The facts about the same person and topic as `about`: those scoring near the best, so
+    "Imran" matches every Imran fact and "Tariq's wedding" only the wedding ones."""
+    if not keywords(about):
+        return []
+    pairs = scored(session, user, about)
+    best = pairs[0][0] if pairs else 0.0
+    return [fact for value, fact in pairs if value > 0 and value >= best * NEAR_BEST]

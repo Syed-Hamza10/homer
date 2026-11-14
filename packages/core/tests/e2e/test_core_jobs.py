@@ -340,12 +340,14 @@ def test_chat_card_survives_the_stream_a_reload_and_show_the_draft(
     page.reload()
     expect(page.get_by_test_id(card_id)).to_be_visible(timeout=30_000)
 
+    replies = page.get_by_test_id("message-assistant")
+    shown = replies.count()
     box.fill("show me the draft")
     box.press("Enter")
-    expect(page.get_by_test_id("message-assistant").last).to_have_text(
-        "Here's the draft.", timeout=30_000
+    expect(replies).to_have_count(shown + 1, timeout=60_000)
+    expect(page.get_by_test_id(card_id).last.get_by_role("button", name="Send")).to_be_visible(
+        timeout=60_000
     )
-    expect(page.get_by_test_id(card_id).last.get_by_role("button", name="Send")).to_be_visible()
 
 
 NO_DRAFT = "There's no draft waiting in this chat."

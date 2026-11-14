@@ -39,7 +39,8 @@ def answering(*replies: Any, prompts: list[str] | None = None) -> FunctionModel:
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if prompts is not None:
-            prompts.append(str(getattr(messages[-1], "instructions", "")))
+            asked = " ".join(str(part.content) for part in messages[-1].parts)
+            prompts.append(f"{getattr(messages[-1], 'instructions', '')}\n{asked}")
         reply = queue.pop(0)
         if isinstance(reply, str):
             return ModelResponse(parts=[TextPart(content=reply)])
@@ -347,7 +348,10 @@ async def test_find_me_time_books_a_slot() -> None:
     ]
 
 
-@pytest.mark.parametrize("given", [{"kind": "web_search", "query": "thursday"}, {"kind": "chat"}])
+@pytest.mark.parametrize(
+    "given",
+    [{"kind": "web_search", "query": "thursday", "needs_live_data": False}, {"kind": "chat"}],
+)
 async def test_whats_on_a_weekday_reads_the_calendar(given: dict[str, Any]) -> None:
     intents = await run_extract([given], "morning! quick q, whats on thursday?")
     assert intents == [ReadCalendar(kind="read_calendar", range="date", date="2026-11-12")]

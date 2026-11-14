@@ -72,7 +72,7 @@ def test_title_is_the_first_five_words(logged_in: TestClient, post_chat: PostCha
         ),
         (
             "weather in lahore?",
-            [{"kind": "web_search", "query": "weather in Lahore"}],
+            [{"kind": "web_search", "query": "weather in Lahore", "needs_live_data": True}],
             "Weather in Lahore",
         ),
         ("Send an email to sam30rivers@example.test saying hi", [], "Send an email to Sam…"),

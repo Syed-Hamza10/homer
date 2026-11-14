@@ -15,7 +15,6 @@ from .test_core_jobs import RUNS, Reply, Talk, connect, record, timed_chat
 
 pytestmark = pytest.mark.e2e
 
-ASK_WHO = "Who should I email, and what about?"
 ELENA = "elena.marchetti@example.test"
 
 
@@ -127,11 +126,11 @@ def test_answers_never_mention_provided_text(talk: Talk, run: int) -> None:
 @pytest.mark.parametrize("run", RUNS)
 def test_vague_email_asks_and_context_names_both(talk: Talk, run: int) -> None:
     fresh = talk("email her about it")
-    assert fresh.said == ASK_WHO and fresh.actions == [], fresh.said
+    assert fresh.actions == [] and re.search(r"\bwho\b|\bname\b", fresh.said, re.I), fresh.said
     booked = talk("schedule a call with Elena Marchetti on Monday at 3pm")
     reply = talk("email her about it", booked.conversation)
     assert reply.actions == ["mail_send"], (reply.tools, reply.said)
-    assert re.match(r"Draft to Elena about .+ is ready\.", reply.said), reply.said
+    assert re.match(r"Here's your email to Elena about .+\. Press Send", reply.said), reply.said
     assert reply.of("approval_required")[0]["payload"]["to"] == ELENA
 
 

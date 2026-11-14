@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
@@ -19,15 +18,9 @@ from homer_core.agent.intents import Background, extract
 from homer_core.agent.router import (
     Command,
     Decision,
-    asks_about_draft,
-    asks_for_draft,
-    asks_for_summary,
-    asks_if_sent,
     is_conversational,
-    is_edit,
     parse_command,
     parse_decision,
-    wants_link,
 )
 from homer_core.agent.runtime import Runtime
 from homer_core.db.models import Approval, Conversation, Message, TokenCounter, User, utcnow
@@ -40,14 +33,7 @@ from homer_core.services.conversations import (
 )
 from homer_core.services.errors import DomainError
 from homer_core.services.facts import prompt_facts
-from homer_core.services.jobs import (
-    day_summary,
-    dispatch,
-    draft_question,
-    edit_email,
-    mail_status,
-    send_email,
-)
+from homer_core.services.jobs import dispatch, draft_question
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
 
@@ -60,12 +46,8 @@ MODEL_DOWN = "The AI model isn't running. Start Ollama and try again."
 CONNECTION_ERRORS = frozenset({"APIConnectionError", "APITimeoutError", "ConnectError"})
 SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "followup"})
 SLOT_LIMIT = 3
-NOTHING_PENDING = "There's no draft waiting in this chat."
-HERE_IS_THE_DRAFT = "Here's the draft."
 ALREADY_DONE = "I already drafted that one — it's above."
 REPEAT_SECONDS = 120
-NAMED = re.compile(r"\b(?:with|to|for|and)\s+([\w.+-]+@[\w.-]+|[A-Za-z][\w'-]+)")
-PRONOUNS = frozenset({"him", "her", "them", "me", "you", "the", "a", "an", "my", "this", "that"})
 
 
 @dataclass
@@ -83,7 +65,7 @@ class Outcome:
         elif event.name == "replace":
             self.shown = event.data["text"]
         elif event.name == "approval_required":
-            self.created_approval = True
+            self.created_approval |= not event.data.get("again")
             self.approval_ids.append(event.data["approval_id"])
 
 
@@ -173,18 +155,6 @@ def count_tokens(session: Session, user: User, input_tokens: int, output_tokens:
     session.commit()
 
 
-def approval_event(approval: Approval) -> ChatEvent:
-    return ChatEvent(
-        "approval_required",
-        {
-            "approval_id": approval.id,
-            "action": approval.action,
-            "preview": approval.preview,
-            "payload": json.loads(approval.payload_json),
-        },
-    )
-
-
 def text_event(outcome: Outcome, text: str) -> ChatEvent:
     outcome.answer += text
     return ChatEvent("token", {"text": text})
@@ -223,7 +193,25 @@ async def decide_pending(
     if pending:
         listed = "; ".join(f"#{a.id} {a.action}" for a in pending)
         return f"Several approvals are waiting: {listed}. Say /{decision} N to pick one."
-    return None if is_conversational(message) else NOTHING_PENDING
+    if decision == "approve" and not is_conversational(message):
+        return draft_question.NO_DRAFT
+    return None
+
+
+def pending_card(approval: Approval) -> str:
+    payload = json.loads(approval.payload_json)
+    if approval.action == approvals.SEND_ACTION:
+        to = payload.get("to_name") or payload.get("to", "")
+        return f'email draft to {to}, subject "{payload.get("subject", "")}"'
+    if approval.action == "cal_create":
+        return f"new event '{payload.get('title', '')}' at {payload.get('start', '')}"
+    return approval.preview.splitlines()[0]
+
+
+def pending_cards(session: Session, user: User, conversation_id: int) -> str:
+    """The cards waiting in this chat, in words for the intent call."""
+    waiting = approvals.list_pending(session, user, conversation_id)
+    return "; ".join(pending_card(approval) for approval in waiting) or "nothing"
 
 
 async def run_skill(session: Session, user: User, runtime: Runtime, command: Command) -> str:
@@ -271,50 +259,6 @@ async def run_skill(session: Session, user: User, runtime: Runtime, command: Com
     return "Unknown command."
 
 
-def named_earlier(message: str) -> bool:
-    """The message names someone before it says "him" or "her": "book with Hassan, then email
-    him"."""
-    pronoun = send_email.PRONOUN_TO.search(message)
-    before = message[: pronoun.start()] if pronoun else ""
-    return any(word.lower() not in PRONOUNS for word in NAMED.findall(before))
-
-
-async def routed(turn: Turn) -> bool:
-    """Answers send-status and end-of-day questions and edits of this chat's draft without the
-    intent call."""
-    if asks_if_sent(turn.message):
-        turn.say(mail_status.answer(turn))
-        return True
-    if send_email.unexplained(turn) and not named_earlier(turn.message):
-        turn.say(send_email.ASK_WHO)
-        return True
-    if asks_for_summary(turn.message):
-        turn.resolved.append({"kind": "day_summary"})
-        await day_summary.run(turn)
-        return True
-    linking = wants_link(turn.message)
-    if linking or asks_about_draft(turn.message):
-        draft = draft_question.pending_draft(turn)
-        if draft is not None and linking:
-            await draft_question.link_event(turn, draft)
-            return True
-        if draft is not None:
-            await draft_question.answer(turn, draft)
-            return True
-
-    if not is_edit(turn.message):
-        return False
-    pending = approvals.list_pending(turn.session, turn.user, turn.conversation_id)
-    drafts = [approval for approval in pending if approval.action == approvals.SEND_ACTION]
-    if len(drafts) != 1:
-        return False
-    try:
-        await edit_email.run(turn, drafts[0])
-    except (JobError, DomainError) as error:
-        turn.say(str(error))
-    return True
-
-
 async def run_jobs(turn: Turn) -> None:
     try:
         await jobs(turn)
@@ -325,23 +269,19 @@ async def run_jobs(turn: Turn) -> None:
 
 
 async def jobs(turn: Turn) -> None:
-    """Routed questions first, else one intent call and a job per intent. A job's error is said
-    and the next job runs; a refused Google token ends the turn."""
-    try:
-        if await routed(turn):
-            return
-    except ReconnectRequired:
-        raise
-    except (JobError, DomainError) as error:
-        turn.say(str(error))
-        return
-    intents = routing.routed(turn.message, turn.facts)
-    if intents is None:
-        recent = turn.history[-INTENT_HISTORY:]
-        known = Background(turn.previous, turn.facts, turn.date_format)
-        found, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
-        turn.usage.incr(usage)
-        intents = routing.refined(found, turn.message, turn.previous, turn.facts)
+    """One intent call and a job per intent. A job's error is said and the next job runs; a
+    refused Google token ends the turn."""
+    known = Background(
+        turn.previous,
+        turn.facts,
+        turn.date_format,
+        turn.user.timezone,
+        pending_cards(turn.session, turn.user, turn.conversation_id or 0),
+    )
+    recent = turn.history[-INTENT_HISTORY:]
+    found, usage = await extract(turn.runtime.intents, turn.message, recent, turn.now, known)
+    turn.usage.incr(usage)
+    intents = routing.refined(found, turn.message, turn.previous, turn.facts)
     log.info("intents", kinds=[intent.kind for intent in intents])
     for intent in intents:
         try:
@@ -385,13 +325,6 @@ async def respond(
         return
     if command is not None and command.name == "remind":
         message = f"Remind me {command.arg}"
-    if asks_for_draft(message):
-        waiting = approvals.list_pending(session, user, conversation_id)
-        if waiting:
-            yield text_event(outcome, HERE_IS_THE_DRAFT)
-            for approval in waiting:
-                yield approval_event(approval)
-            return
     settled = await decide_pending(session, user, runtime, conversation_id, message)
     if settled is not None:
         yield text_event(outcome, settled)

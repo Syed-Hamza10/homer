@@ -8,17 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models import Model
 from sqlmodel import Session
 
-from homer_core.agent.router import (
-    Command,
-    asked_recipient,
-    asks_for_draft,
-    asks_for_summary,
-    asks_if_sent,
-    is_conversational,
-    is_edit,
-    parse_command,
-    parse_decision,
-)
+from homer_core.agent.router import Command, is_conversational, parse_command, parse_decision
 from homer_core.db.models import Conversation
 from homer_core.services import approvals
 
@@ -86,6 +76,9 @@ def test_parse_command(message: str, expected: Command | None) -> None:
         ("send away", "approve"),
         ("go for it", "approve"),
         ("do it for me", None),
+        ("never mind", "reject"),
+        ("ok never mind, cancel it", "reject"),
+        ("never mind, I'll call her instead", None),
     ],
 )
 def test_parse_decision(message: str, expected: str | None) -> None:
@@ -97,39 +90,6 @@ def test_parse_decision(message: str, expected: str | None) -> None:
 )
 def test_is_conversational(message: str, expected: bool) -> None:
     assert is_conversational(message) is expected
-
-
-@pytest.mark.parametrize(
-    ("message", "expected"),
-    [
-        ("make it shorter", True),
-        ("change subject to Lunch is on me!", True),
-        ("add that I'm free Friday", True),
-        ("can you make it more formal?", True),
-        ("say thanks instead", True),
-        ("add a meeting with Priya tomorrow", False),
-        ("change the meeting to 4pm", False),
-        ("email Maya that the subject is done", False),
-        ("what is the subject of Rosa's email?", False),
-    ],
-)
-def test_is_edit(message: str, expected: bool) -> None:
-    assert is_edit(message) is expected
-
-
-@pytest.mark.parametrize(
-    ("message", "asks", "recipient"),
-    [
-        ("did you send it?", True, None),
-        ("did you send my email to Hassan?", True, "hassan"),
-        ("has it been sent to bob@example.test?", True, "bob@example.test"),
-        ("was the email sent?", True, None),
-        ("did Rosa send me anything?", False, None),
-    ],
-)
-def test_send_status_questions(message: str, asks: bool, recipient: str | None) -> None:
-    assert asks_if_sent(message) is asks
-    assert asked_recipient(message) == recipient
 
 
 @pytest.mark.parametrize(("message", "needle"), [("/brief", "Good morning"), ("/inbox", "cache")])
@@ -231,27 +191,20 @@ class TestTypedDecisions:
         assert said == "There's no draft waiting in this chat."
         assert fake_google.executed == []
 
-    @pytest.mark.parametrize("message", ["show me the draft", "Show it", "where is it?"])
-    def test_show_the_draft_reshows_the_card_without_the_model(
-        self, logged_in: TestClient, app: FastAPI, post_chat: PostChat, message: str
+    def test_never_mind_discards_the_pending_draft_without_the_model(
+        self, app: FastAPI, post_chat: PostChat, fake_google: ModuleType
     ) -> None:
         chat = start_chat(app)
-        approval_id = create_send_approval(app, chat)
-        frames = post_chat({"message": message, "conversation_id": chat})
-        assert tokens(frames) == "Here's the draft."
-        shown = [data["approval_id"] for name, data in frames if name == "approval_required"]
-        assert shown == [approval_id]
+        approval_id = create_send_approval(app, chat, "d9")
+        frames = post_chat({"message": "ok never mind, cancel it", "conversation_id": chat})
+        assert tokens(frames) == f"Approval #{approval_id} (mail_send): rejected."
+        assert fake_google.deleted == ["d9"]
         assert frames[-1][1]["input_tokens"] == 0
-        listed = logged_in.get(f"/api/approvals?conversation_id={chat}").json()
-        messages = logged_in.get(f"/api/conversations/{chat}/messages").json()
-        assert listed[0]["message_id"] == messages[-1]["id"]
 
-    def test_show_the_draft_with_nothing_pending_reaches_the_model(
-        self, app: FastAPI, post_chat: PostChat
+    def test_a_rejection_with_nothing_pending_reaches_the_model(
+        self, logged_in: TestClient, post_chat: PostChat
     ) -> None:
-        chat = start_chat(app)
-        said = tokens(post_chat({"message": "show me the draft", "conversation_id": chat}))
-        assert said.startswith("Reminder set")
+        assert tokens(post_chat({"message": "cancel"})).startswith("Reminder set")
 
     def test_bare_yes_with_nothing_pending_reaches_the_model(
         self, logged_in: TestClient, post_chat: PostChat
@@ -273,34 +226,3 @@ class TestRemindCommand:
         reminders = logged_in.get("/api/reminders").json()
         assert [(r["text"], r["status"]) for r in reminders] == [("call the dentist", "pending")]
         assert reminders[0]["due_at"].startswith("2026-10-17T08:00:00")
-
-
-@pytest.mark.parametrize(
-    ("message", "expected"),
-    [
-        ("show me the draft", True),
-        ("can you show me the email again?", True),
-        ("where's the draft", True),
-        ("let me see it", True),
-        ("show me my calendar", False),
-        ("where is the meeting", False),
-        ("show me emails from Rosa", False),
-        ("show me", False),
-    ],
-)
-def test_asks_for_draft(message: str, expected: bool) -> None:
-    assert asks_for_draft(message) is expected
-
-
-@pytest.mark.parametrize(
-    ("message", "expected"),
-    [
-        ("what did I get done today and what's still open?", True),
-        ("ok what did I send today, and what's still waiting on me?", True),
-        ("give me an end of day summary", True),
-        ("what did Elena send me?", False),
-        ("what's on tomorrow?", False),
-    ],
-)
-def test_asks_for_summary(message: str, expected: bool) -> None:
-    assert asks_for_summary(message) is expected

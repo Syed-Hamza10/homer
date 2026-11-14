@@ -151,15 +151,18 @@ class Turn:
         self.session.commit()
         self.session.refresh(approval)
         self.approvals.append(approval)
-        self.emit(
-            "approval_required",
-            {
-                "approval_id": approval.id,
-                "action": approval.action,
-                "preview": approval.preview,
-                "payload": json.loads(approval.payload_json),
-            },
-        )
+        self.show(approval)
+
+    def show(self, approval: Approval, again: bool = False) -> None:
+        """Streams the approval card; `again` marks a card shown before, which this turn did
+        not create."""
+        data = {
+            "approval_id": approval.id,
+            "action": approval.action,
+            "preview": approval.preview,
+            "payload": json.loads(approval.payload_json),
+        }
+        self.emit("approval_required", data | ({"again": True} if again else {}))
 
     async def extract[T](self, agent: Agent[None, T], prompt: str) -> T:
         result = await agent.run(prompt)

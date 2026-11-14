@@ -424,6 +424,7 @@ class TestMove:
         [
             [
                 [booked(date=day(MONDAY).isoformat(), start="12:00", end="12:45")],
+                [{"kind": "chat"}],
                 [update(match="the call we just booked", new_start="4pm")],
             ]
         ],

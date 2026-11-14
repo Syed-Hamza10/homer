@@ -21,6 +21,7 @@ from homer_core.agent.intents import OUTPUT_TOOL as INTENT_TOOL
 from homer_core.config import Settings
 from homer_core.main import create_app
 from homer_core.mcp.manager import McpManager
+from homer_core.services.jobs.memory import RECALL_TOOL
 from homer_mcp_google.auth import TokenStore
 from homer_mcp_google.client import GoogleClient
 from homer_mcp_google.settings import Settings as GoogleSettings
@@ -58,18 +59,25 @@ def job_model(
     text: str = TEXT,
     email: dict[str, str] | list[dict[str, str]] | None = None,
     seen: list[list[ModelMessage]] | None = None,
+    recalled: dict[str, Any] | None = None,
+    asked: list[str] | None = None,
 ) -> Model:
-    """Plays the three calls Homer makes: one intents list per turn (chat once they run out),
-    the subject and body for `write_email` (a list is played in order, its last one repeats),
-    and `text` for every plain answer."""
+    """Plays the calls Homer makes: one intents list per turn (chat once they run out; each
+    intent prompt is added to `asked`), the subject and body for `write_email` (a list is
+    played in order, its last one repeats), `recalled` for an answer from saved facts, and
+    `text` for every plain answer."""
     queue = list(intents)
     emails = list(email) if isinstance(email, list) else [email or WRITTEN]
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         names = {tool.name for tool in info.output_tools}
         if INTENT_TOOL in names:
+            if asked is not None:
+                asked.append(" ".join(str(part.content) for part in messages[-1].parts))
             found = queue.pop(0) if queue else [{"kind": "chat"}]
             return ModelResponse(parts=[ToolCallPart(INTENT_TOOL, {"intents": found})])
+        if RECALL_TOOL in names:
+            return ModelResponse(parts=[ToolCallPart(RECALL_TOOL, recalled or {"answer": text})])
         if "write_email" in names:
             written = emails.pop(0) if len(emails) > 1 else emails[0]
             return ModelResponse(parts=[ToolCallPart("write_email", written)])

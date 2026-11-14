@@ -18,11 +18,12 @@ from homer_core.agent.claims import HONEST, review
 from homer_core.config import Settings
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
+from homer_core.services.approvals import create
 from homer_core.services.jobs import send_email
 from homer_core.services.jobs.send_email import request_send
 from homer_core.services.jobs.turn import RECONNECT
 
-from .conftest import ORIGIN, TEXT, load_fake_server
+from .conftest import ORIGIN, load_fake_server
 
 Frames = list[tuple[str, dict[str, Any]]]
 PostChat = Callable[[dict[str, Any]], Frames]
@@ -47,6 +48,10 @@ def calls(frames: Frames) -> list[str]:
 
 def email(to: str, **extra: Any) -> dict[str, Any]:
     return {"kind": "send_email", "to": to, "body_instructions": "the invoice is paid", **extra}
+
+
+def edit(instruction: str) -> dict[str, Any]:
+    return {"kind": "edit_draft", "instruction": instruction}
 
 
 def event(**fields: Any) -> dict[str, Any]:
@@ -263,7 +268,12 @@ class TestReadEmail:
 class TestWebSearch:
     @pytest.mark.parametrize(
         ("intents", "text"),
-        [([[{"kind": "web_search", "query": "launch news"}]], "It launched.")],
+        [
+            (
+                [[{"kind": "web_search", "query": "launch news", "needs_live_data": True}]],
+                "It launched.",
+            )
+        ],
     )
     def test_answers_from_the_snippets_and_ends_with_sources(
         self, logged_in: TestClient, post_chat: PostChat, fake_search: ModuleType
@@ -275,7 +285,9 @@ class TestWebSearch:
             "- [More news](https://news.example.test/b)\n- [Old news](https://news.example.test/c)"
         )
 
-    @pytest.mark.parametrize("intents", [[[{"kind": "web_search", "query": "news off"}]]])
+    @pytest.mark.parametrize(
+        "intents", [[[{"kind": "web_search", "query": "news off", "needs_live_data": True}]]]
+    )
     def test_search_off_says_so(self, logged_in: TestClient, post_chat: PostChat) -> None:
         assert said(post_chat({"message": "news?"})).startswith("Web search is turned off")
 
@@ -343,6 +355,30 @@ class TestEdit:
         assert moved["payload"]["title"] == "Planning v2"
         wrong = logged_in.post(f"/api/approvals/{moved['id']}/edit", json=change, headers=origin)
         assert wrong.status_code == 422
+
+    def test_move_card_takes_an_event_edit(
+        self, logged_in: TestClient, app: FastAPI, origin: dict[str, str]
+    ) -> None:
+        payload = {"event_id": "e1", "changes": {"start": "2026-11-18T15:00:00+05:00"}}
+        with Session(app.state.engine) as session:
+            old = create(session, 1, "google", "cal_update", payload, "Move 'Lunch' to 15:00")
+            old_id = old.id
+        change = {"title": "Lunch", "date": "2026-11-18", "start": "16:00", "end": "17:00"}
+        response = logged_in.post(f"/api/approvals/{old_id}/edit", json=change, headers=origin)
+        assert response.status_code == 200, response.text
+        fresh = response.json()
+        assert fresh["action"] == "cal_update" and fresh["status"] == "pending"
+        assert fresh["payload"] == {
+            "event_id": "e1",
+            "changes": {"start": "2026-11-18T16:00:00", "end": "2026-11-18T17:00:00"},
+        }
+        renamed = logged_in.post(
+            f"/api/approvals/{fresh['id']}/edit", json={**change, "title": "Brunch"}, headers=origin
+        ).json()
+        assert renamed["payload"]["changes"]["title"] == "Brunch"
+        with Session(app.state.engine) as session:
+            stored = session.get(Approval, old_id)
+            assert stored is not None and stored.status == "superseded"
 
     def test_edit_hash_changes(
         self, logged_in: TestClient, app: FastAPI, origin: dict[str, str]
@@ -455,7 +491,7 @@ class TestChatEdit:
         ("intents", "written"),
         [
             (
-                [[email("Ada")]],
+                [[email("Ada")], [edit("make it shorter")]],
                 [
                     {"subject": "Invoice", "body": PAID},
                     {"subject": "Paid", "body": "Paid in full this morning."},
@@ -479,8 +515,10 @@ class TestChatEdit:
         pending = logged_in.get("/api/approvals").json()
         assert [a["id"] for a in pending] == [fresh["approval_id"]]
 
-    @pytest.mark.parametrize("intents", [[[email("bob@example.test")]]])
-    def test_subject_change_is_literal_and_needs_no_model(
+    @pytest.mark.parametrize(
+        "intents", [[[email("bob@example.test")], [edit("subject to Lunch is on me!")]]]
+    )
+    def test_subject_change_is_literal_and_needs_no_rewrite(
         self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
     ) -> None:
         chat = post_chat({"message": "email bob"})[0][1]["conversation_id"]
@@ -489,17 +527,25 @@ class TestChatEdit:
         )
         payload = of(frames, "approval_required")[0]["payload"]
         assert payload["subject"] == "Lunch is on me!" and payload["body"] == PAID_BODY
-        assert frames[-1][1]["input_tokens"] == 0
 
-    def test_edit_words_without_a_draft_go_to_the_intent_call(
+    @pytest.mark.parametrize("intents", [[[edit("make it shorter")]]])
+    def test_an_edit_without_a_draft_says_so(
         self, logged_in: TestClient, post_chat: PostChat
     ) -> None:
         frames = post_chat({"message": "make it shorter"})
-        assert of(frames, "approval_required") == [] and said(frames) == TEXT
+        assert of(frames, "approval_required") == []
+        assert said(frames) == "There's no draft waiting in this chat."
+
+
+def status(about: str | None = None) -> list[dict[str, Any]]:
+    return [{"kind": "send_status", "about": about}]
 
 
 class TestSendStatus:
-    @pytest.mark.parametrize("intents", [[[email("bob@example.test")]]])
+    @pytest.mark.parametrize(
+        "intents",
+        [[[email("bob@example.test")], status(), status("Bob"), status(), status("Zed")]],
+    )
     def test_answers_from_the_approvals(
         self, logged_in: TestClient, post_chat: PostChat, origin: dict[str, str]
     ) -> None:
@@ -517,7 +563,7 @@ class TestSendStatus:
             "No. Nothing has been sent from this chat."
         )
         assert said(post_chat({"message": "did you send it to Zed?"})) == (
-            "No. I have not sent anything to zed."
+            "No. I have not sent anything to Zed."
         )
 
     @pytest.mark.parametrize(
@@ -633,7 +679,7 @@ class TestVoice:
         ("intents", "written"),
         [
             (
-                [[email("Ada")]],
+                [[email("Ada")], [edit("make it warmer")]],
                 [
                     {"subject": "Invoice", "body": PAID},
                     {"subject": "Invoice", "body": " ".join(["Warm thanks again,"] * 8)},
@@ -686,7 +732,9 @@ class TestDaySummary:
             "body": "<untrusted>Here it is.</untrusted>",
         }
 
-    @pytest.mark.parametrize("text", ["You haven't sent any email today."])
+    @pytest.mark.parametrize(
+        ("intents", "text"), [([[{"kind": "day_summary"}]], "You haven't sent any email today.")]
+    )
     def test_is_grounded_in_sent_mail_and_open_items(
         self, post_chat: PostChat, fake_google: ModuleType, app: FastAPI
     ) -> None:
@@ -702,17 +750,13 @@ class TestDaySummary:
         assert 'ada@example.test is waiting on your reply: "Invoice 42"' in shown
         assert "Proposal follow-up" not in shown
 
-    def test_nothing_needs_no_model(self, post_chat: PostChat, fake_google: ModuleType) -> None:
+    @pytest.mark.parametrize("intents", [[[{"kind": "day_summary"}]]])
+    def test_nothing_needs_no_answer_call(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
         fake_google.MESSAGES.clear()
         frames = post_chat({"message": "what did I send today?"})
         assert said(frames) == "Nothing sent or booked today, and nothing is waiting on you."
-        assert frames[-1][1]["input_tokens"] == 0
-
-
-def test_a_pronoun_first_message_asks_without_the_model(post_chat: PostChat) -> None:
-    frames = post_chat({"message": "email her about it"})
-    assert said(frames) == "Who should I email, and what about?"
-    assert frames[-1][1]["input_tokens"] == 0
 
 
 QA_BODIES = [

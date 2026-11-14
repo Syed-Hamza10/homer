@@ -16,6 +16,7 @@ from homer_core.agent.intents import OUTPUT_TOOL
 from homer_core.config import Settings
 from homer_core.mcp.manager import McpManager
 from homer_core.services.jobs import read_email, web_search
+from homer_core.services.jobs.memory import RECALL_TOOL
 from homer_core.services.jobs.read_email import Span, sent_query, span
 from homer_core.services.jobs.web_search import cleaned, dated_query, published, ranked
 from homer_core.services.mail import is_bulk, received, who
@@ -80,9 +81,12 @@ def model(intents: Turns, replies: list[str], instructions: list[str]) -> Model:
         return answers.pop(0) if len(answers) > 1 else answers[0]
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        if OUTPUT_TOOL in {tool.name for tool in info.output_tools}:
+        names = {tool.name for tool in info.output_tools}
+        if OUTPUT_TOOL in names:
             found = queue.pop(0) if queue else [{"kind": "chat"}]
             return ModelResponse(parts=[ToolCallPart(OUTPUT_TOOL, {"intents": found})])
+        if RECALL_TOOL in names:
+            return ModelResponse(parts=[ToolCallPart(RECALL_TOOL, {"answer": reply()})])
         instructions.append(str(getattr(messages[-1], "instructions", "")))
         return ModelResponse(parts=[TextPart(content=reply())])
 
@@ -93,8 +97,8 @@ def model(intents: Turns, replies: list[str], instructions: list[str]) -> Model:
     return FunctionModel(function=respond, stream_function=stream, model_name="test")
 
 
-def search(query: str) -> list[list[dict[str, Any]]]:
-    return [[{"kind": "web_search", "query": query}]]
+def search(query: str, live: bool = True) -> list[list[dict[str, Any]]]:
+    return [[{"kind": "web_search", "query": query, "needs_live_data": live}]]
 
 
 class TestWebSearch:
@@ -151,7 +155,7 @@ class TestWebSearch:
 
     @pytest.mark.parametrize(
         ("intents", "replies"),
-        [(search("capital of Australia"), ["The capital of Australia is Canberra."])],
+        [(search("capital of Australia", False), ["The capital of Australia is Canberra."])],
     )
     def test_stable_knowledge_is_answered_without_search(self, post_chat: PostChat) -> None:
         frames = post_chat({"message": "what's the capital of Australia"})
@@ -204,12 +208,19 @@ def test_talk_about_the_sources_is_removed(text: str, expected: str) -> None:
     assert cleaned(text) == expected
 
 
+def calculate(expression: str) -> list[list[dict[str, Any]]]:
+    return [[{"kind": "calculate", "expression": expression}]]
+
+
 class TestCalculator:
-    def test_sums_need_no_model(self, post_chat: PostChat) -> None:
+    @pytest.mark.parametrize("intents", [calculate("17 times 23")])
+    def test_sums_need_no_answer_call(self, post_chat: PostChat) -> None:
         frames = post_chat({"message": "what is 17 times 23"})
         assert said(frames) == "17 times 23 = 391" and calls(frames) == []
 
-    @pytest.mark.parametrize("replies", [["0.87"]])
+    @pytest.mark.parametrize(
+        ("intents", "replies"), [(calculate("3,400 US dollars to euros"), ["0.87"])]
+    )
     def test_currency_uses_one_searched_rate(
         self, post_chat: PostChat, fake_search: ModuleType
     ) -> None:
@@ -219,6 +230,7 @@ class TestCalculator:
             "3,400 USD is about 2,958 EUR, at 1 USD = 0.87 EUR.\n\n**Sources**\n"
         )
 
+    @pytest.mark.parametrize("intents", [calculate("10 miles to km")])
     def test_units_are_converted_in_code(self, post_chat: PostChat) -> None:
         assert said(post_chat({"message": "10 miles to km"})) == "10 miles is 16.0934 km."
 
@@ -257,20 +269,30 @@ class TestMemory:
         assert [fact["text"] for fact in facts] == ["You drink oat milk."]
 
     @pytest.mark.parametrize(
-        "intents",
-        [[remember("x"), remember("x"), [{"kind": "forget", "about": "the gym thing"}]]],
+        ("intents", "replies"),
+        [
+            (
+                [
+                    remember("x"),
+                    remember("x"),
+                    [{"kind": "recall", "about": "Dana"}],
+                    [{"kind": "recall", "about": "me"}],
+                    [{"kind": "forget", "about": "the gym thing"}],
+                ],
+                ["Dana prefers calls after 3pm.", "Your cat is called Mango."],
+            )
+        ],
     )
-    def test_recall_lists_and_forget_says_when_nothing_matches(
-        self, post_chat: PostChat, logged_in: TestClient
+    def test_recall_answers_and_forget_says_when_nothing_matches(
+        self, post_chat: PostChat, logged_in: TestClient, instructions: list[str]
     ) -> None:
         post_chat({"message": "Remember that Dana prefers calls after 3pm"})
         post_chat({"message": "remember that my cat is called Mango"})
         assert said(post_chat({"message": "what do you remember about Dana?"})) == (
-            "Here is what I have saved about Dana:\n- Dana prefers calls after 3pm."
+            "Dana prefers calls after 3pm."
         )
         assert said(post_chat({"message": "what do you know about me?"})) == (
-            "Here is what I have saved:\n- Your cat is called Mango.\n"
-            "- Dana prefers calls after 3pm."
+            "Your cat is called Mango."
         )
         assert said(post_chat({"message": "forget the gym thing"})) == (
             "I have nothing saved about the gym thing. What I have saved:\n"
@@ -402,7 +424,14 @@ class TestRoundThree:
 
     @pytest.mark.parametrize(
         "intents",
-        [[[{"kind": "web_search", "query": q} for q in ("nyc mayor blocked", "la mayor blocked")]]],
+        [
+            [
+                [
+                    {"kind": "web_search", "query": q, "needs_live_data": True}
+                    for q in ("nyc mayor blocked", "la mayor blocked")
+                ]
+            ]
+        ],
     )
     def test_a_blocked_search_is_not_tried_again_in_the_turn(
         self, post_chat: PostChat, fake_search: ModuleType
@@ -411,11 +440,19 @@ class TestRoundThree:
         assert fake_search.queries == ["nyc mayor blocked"]
 
     @pytest.mark.parametrize(
-        ("message", "expected"),
+        ("message", "intents", "expected"),
         [
-            ("whats 15% of 240", "15% of 240 = 36"),
-            ("what's 20% tip on 85 dollars", "20% tip on 85 dollars = 17"),
-            ("how many grams in a pound", "1 pound is 453.5924 grams."),
+            ("whats 15% of 240", calculate("15% of 240"), "15% of 240 = 36"),
+            (
+                "what's 20% tip on 85 dollars",
+                calculate("20% tip on 85 dollars"),
+                "20% tip on 85 dollars = 17",
+            ),
+            (
+                "how many grams in a pound",
+                calculate("how many grams in a pound"),
+                "1 pound is 453.5924 grams.",
+            ),
         ],
     )
     def test_arithmetic_never_reaches_the_web(
@@ -427,8 +464,8 @@ class TestRoundThree:
     @pytest.mark.parametrize(
         ("intents", "replies"),
         [
-            (search("days in a leap year"), ["A leap year has 366 days."]),
-            (search("good goldfish names"), ["Try Bubbles or Comet."]),
+            (search("days in a leap year", False), ["A leap year has 366 days."]),
+            (search("good goldfish names", False), ["Try Bubbles or Comet."]),
         ],
     )
     def test_stable_facts_and_small_questions_stay_in_chat(self, post_chat: PostChat) -> None:
@@ -441,13 +478,32 @@ class TestRoundThree:
 
     @pytest.mark.parametrize(
         ("intents", "replies"),
-        [([[{"kind": "web_search", "query": "zainab allergies"}]], ["Mushrooms."])],
+        [
+            (
+                [[{"kind": "web_search", "query": "zainab allergies", "needs_live_data": True}]],
+                ["Mushrooms."],
+            )
+        ],
     )
     def test_questions_about_people_in_memory_never_search(self, post_chat: PostChat) -> None:
         post_chat({"message": "remember that my sister Zainab is vegetarian and hates mushrooms"})
         frames = post_chat({"message": "what's zainab allergic to right now"})
         assert calls(frames) == []
 
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [
+            (
+                [
+                    remember("x"),
+                    remember("x"),
+                    [{"kind": "recall", "about": "zainab"}],
+                    [{"kind": "forget"}],
+                ],
+                ["Your sister Zainab is vegetarian and hates mushrooms."],
+            )
+        ],
+    )
     def test_recall_and_forget_by_name(self, post_chat: PostChat, logged_in: TestClient) -> None:
         saved = post_chat(
             {"message": "ok so remember that my sister Zainab is vegetarian and hates mushrooms"}
@@ -468,16 +524,18 @@ class TestRoundThree:
         ]
 
     @pytest.mark.parametrize(
-        ("message", "query"),
+        ("message", "intents", "query"),
         [
-            ("any unread mail?", "is:unread in:inbox"),
-            ("anything that needs my attention?", "is:unread in:inbox -category:promotions"),
+            ("any unread mail?", read("any unread mail?"), "is:unread in:inbox"),
+            (
+                "anything that needs my attention?",
+                read("anything that needs my attention?"),
+                "is:unread in:inbox -category:promotions",
+            ),
         ],
     )
     @pytest.mark.parametrize("replies", [["1. Asks to pay invoice 42\n2. Asks about the proposal"]])
-    def test_mail_reads_skip_the_intent_call_and_list_messages(
-        self, post_chat: PostChat, message: str, query: str
-    ) -> None:
+    def test_mail_reads_list_messages(self, post_chat: PostChat, message: str, query: str) -> None:
         frames = post_chat({"message": message})
         assert of(frames, "tool_call")[0]["args"]["query"].startswith(query)
         text = said(frames)
