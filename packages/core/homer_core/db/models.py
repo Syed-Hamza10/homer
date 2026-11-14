@@ -42,6 +42,7 @@ class Message(SQLModel, table=True):
     stopped: bool = False
     created_approval: bool = False
     context_json: str | None = None
+    choice_json: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 

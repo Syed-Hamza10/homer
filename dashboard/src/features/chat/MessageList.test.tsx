@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { MemoryRouter } from "react-router"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
@@ -160,5 +160,94 @@ describe("MessageList", () => {
       "Searched the web · 1 source",
     )
     expect(document.body.textContent).not.toContain("max_results")
+  })
+})
+
+describe("MessageList choice cards", () => {
+  const choice = {
+    question_id: "q1",
+    prompt: "Which Sam do you mean?",
+    options: [
+      { id: "a", label: "Sam Lee", detail: "sam.lee@example.test · Contact" },
+      { id: "b", label: "Sam Ruiz", detail: "sam.ruiz@example.test · Contact" },
+    ],
+    allow_other: true,
+    answered: null,
+  }
+  const asked: Message[] = [
+    messages[0],
+    {
+      id: 2,
+      role: "assistant",
+      content: "Which Sam do you mean?",
+      created_at: "2026-11-10T10:00:05",
+      choice,
+    },
+  ]
+
+  it("puts a stored card under its message and sends the pick", () => {
+    const onChoose = vi.fn()
+    wrap(
+      <MessageList
+        messages={asked}
+        draft={null}
+        activity={[]}
+        status={null}
+        onRegenerate={vi.fn()}
+        onChoose={onChoose}
+      />,
+    )
+    const card = screen.getByTestId("choice-q1")
+    const offered = screen.getByTestId("message-assistant")
+    expect(offered.compareDocumentPosition(card)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    fireEvent.click(screen.getByRole("button", { name: /Sam Ruiz/ }))
+    expect(onChoose).toHaveBeenCalledExactlyOnceWith(choice, choice.options[1])
+  })
+
+  it("keeps an older card shut once the chat moved on", () => {
+    const later: Message[] = [
+      ...asked,
+      {
+        id: 3,
+        role: "user",
+        content: "the one",
+        created_at: "2026-11-10T10:01:00",
+      },
+      {
+        id: 4,
+        role: "assistant",
+        content: "Ok.",
+        created_at: "2026-11-10T10:01:02",
+      },
+    ]
+    wrap(
+      <MessageList
+        messages={later}
+        draft={null}
+        activity={[]}
+        status={null}
+        onRegenerate={vi.fn()}
+      />,
+    )
+    const row = screen.getByRole("button", { name: /Sam Lee/ })
+    expect((row as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("shows a streamed card under the streaming reply", () => {
+    wrap(
+      <MessageList
+        messages={messages.slice(0, 1)}
+        draft={{ user: "email sam", assistant: "Which Sam do you mean?" }}
+        activity={[{ kind: "choice", ...choice }]}
+        status={null}
+        onRegenerate={vi.fn()}
+      />,
+    )
+    const reply = screen.getByTestId("message-assistant")
+    expect(reply.compareDocumentPosition(screen.getByTestId("choice-q1"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
   })
 })

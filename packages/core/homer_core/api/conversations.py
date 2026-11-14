@@ -1,13 +1,18 @@
+import json
+
 from fastapi import APIRouter, Response
 
 from homer_core.api.deps import CurrentUser, SessionDep
 from homer_core.api.schemas.conversations import (
+    ChoiceCard,
     ConversationOut,
     MessageOut,
     RegenerateOut,
     RenameIn,
 )
+from homer_core.db.models import Message
 from homer_core.services import conversations
+from homer_core.services.jobs.choice import card
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -20,11 +25,18 @@ def list_conversations(user: CurrentUser, session: SessionDep) -> list[Conversat
     ]
 
 
+def message_out(message: Message) -> MessageOut:
+    out = MessageOut.model_validate(message, from_attributes=True)
+    if not message.choice_json:
+        return out
+    shown = ChoiceCard.model_validate(card(json.loads(message.choice_json)))
+    return out.model_copy(update={"choice": shown})
+
+
 @router.get("/{conversation_id}/messages")
 def list_messages(conversation_id: int, user: CurrentUser, session: SessionDep) -> list[MessageOut]:
     return [
-        MessageOut.model_validate(item, from_attributes=True)
-        for item in conversations.list_messages(session, user, conversation_id)
+        message_out(item) for item in conversations.list_messages(session, user, conversation_id)
     ]
 
 

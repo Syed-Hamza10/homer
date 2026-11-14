@@ -101,6 +101,8 @@ class Turn:
     resolved: list[dict[str, Any]] = field(default_factory=list)
     facts: list[str] = field(default_factory=list)
     blocked: dict[str, str] = field(default_factory=dict)
+    picked: dict[str, dict[str, Any]] = field(default_factory=dict)
+    question: dict[str, Any] | None = None
 
     @property
     def date_format(self) -> DateFormat:

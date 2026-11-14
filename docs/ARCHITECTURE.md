@@ -141,14 +141,27 @@ and search server defaults.
    its message, so cards survive a reload. A `draft_question` answers from the waiting draft and
    re-sends its card (marked `again`, so the turn does not count as having made one). After the first turn the title becomes a short
    one from the resolved intent (`services/conversations.title_for`).
-8. Regenerate: `POST /api/conversations/{id}/regenerate` deletes the last user/assistant pair and
+8. Pick-one questions: a job raises `jobs/choice.Choice(slot, prompt, options, text)`; the turn
+   says the short prompt, emits a `choice` event and stores the question on the assistant message
+   (`messages.choice_json`: the card, the paused intent, the original message, the slot and each
+   option's value). `GET .../messages` returns the card as `choice`, so it survives a reload. A
+   click posts `/api/chat` with `choice: {question_id, option_id}`; `stream` marks the card
+   answered and re-runs only the paused intent (no intent call) with the original message and
+   `turn.picked[slot]` set to the option's value, which the job reads before searching. An unknown,
+   answered or foreign option falls back to the normal flow with the typed label. Earlier turns
+   show the model the question with every option written out (`text`), so a typed answer works.
+9. Regenerate: `POST /api/conversations/{id}/regenerate` deletes the last user/assistant pair and
    returns the user text; the browser sends it again through `/api/chat`. A reply with
    `created_approval` is 409 and the button is hidden for it.
 
 ### The jobs
 
-- `send_email`: address as given, else `contacts_search` (cached 10 min per first name), else
-  recent senders from `mail_search from:<name>`; none asks for the address, several ask which.
+- `send_email`: address as given, else `contacts_search` (cached 5 min per first name); one
+  matching contact wins, else `mail_search in:sent to:<name>` and `from:<name>` add people the
+  user wrote to (newest first) and people who wrote (newest first, mailing lists and the user's
+  own address left out). No-reply, notification, update, newsletter and "via"/"by" senders are
+  dropped, addresses are merged, at most 5 are kept; none asks for the address, several send a
+  pick-one card ("Contact", "You emailed them 3 days ago", "Emailed you on 12 Nov").
   `reply_to_latest_from` replies in that sender's newest thread. One `write_email` structured call
   writes subject and body in the client's tone; `mail_draft`; a `mail_send` approval created
   through `services/approvals.create` with payload `{draft_id, to, subject, body, thread_id}`;
@@ -222,9 +235,9 @@ this client, so anything else the app contacted would show up here.
 | POST | `/api/auth/login` | `{passphrase}` | 204 + cookie; 401 wrong; 429 after 5 failures in 60 s |
 | POST | `/api/auth/logout` | – | 204, cookie cleared |
 | GET | `/api/auth/me` | – | `{user_id, name}` |
-| POST | `/api/chat` | `{conversation_id?: int, message}` | `text/event-stream`; 404 unknown conversation |
+| POST | `/api/chat` | `{conversation_id?: int, message, choice?: {question_id, option_id}}` | `text/event-stream`; 404 unknown conversation |
 | GET | `/api/conversations` | – | `[{id, title, created_at, updated_at}]` newest first |
-| GET | `/api/conversations/{id}/messages` | – | `[{id, conversation_id, role, content, stopped, created_approval, created_at}]`; 404 if not the user's |
+| GET | `/api/conversations/{id}/messages` | – | `[{id, conversation_id, role, content, stopped, created_approval, created_at, choice}]` (`choice` is the stored pick-one card or null); 404 if not the user's |
 | PATCH | `/api/conversations/{id}` | `{title}` | the conversation; 422 blank; 404 unknown |
 | DELETE | `/api/conversations/{id}` | – | 204; its messages go too, approvals stay (they have no conversation link); 404 unknown |
 | POST | `/api/conversations/{id}/regenerate` | – | `{message}` (the removed user text); 409 when the last message is not an assistant reply or it created an approval |
@@ -284,6 +297,9 @@ SSE events on `/api/chat`, in order:
   into one activity line above the reply that updates in place and ends as a summary ("Searched
   the web · 2 sources"); clicking it lists one plain row per tool call, never raw JSON or page
   text. "Thinking…" shows until the first `status` or `tool_call`
+- `choice` `{question_id, prompt, options: [{id, label, detail}], allow_other, answered}` after
+  the prompt's tokens when a job needs the user to pick one; the chat draws one button row per
+  option (keys 1-9) and "Someone else…", which focuses the composer
 - `token` `{text}` repeated
 - `replace` `{text}` replaces the text shown so far (claim guard)
 - `done` `{input_tokens, output_tokens}`

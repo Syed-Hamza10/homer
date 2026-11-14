@@ -5,10 +5,11 @@ import { ApprovalCard } from "@/features/approvals/ApprovalCard"
 import type { Approval } from "@/features/approvals/types"
 import { pairSteps } from "./activity"
 import { ActivityLine } from "./ActivityLine"
+import { ChoiceCard } from "./ChoiceCard"
 import { MessageBubble } from "./MessageBubble"
 import { ReconnectLink } from "./ReconnectLink"
 import { splitSources } from "./sources"
-import type { ActivityItem, Message } from "./types"
+import type { ActivityItem, ChoiceEvent, ChoiceOption, Message } from "./types"
 
 type Props = {
   messages: Message[]
@@ -18,10 +19,15 @@ type Props = {
   activity: ActivityItem[]
   status: string | null
   onRegenerate: () => void
+  onChoose?: (card: ChoiceEvent, option: ChoiceOption) => void
+  onOther?: () => void
 }
 
 type Requested = Extract<ActivityItem, { kind: "approval" }>
 type Reconnect = Extract<ActivityItem, { kind: "reconnect" }>
+type Asked = Extract<ActivityItem, { kind: "choice" }>
+
+const ignore = () => {}
 
 function draftStart(messages: Message[], user: string): number {
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -51,6 +57,8 @@ export function MessageList({
   activity,
   status,
   onRegenerate,
+  onChoose = ignore,
+  onOther = ignore,
 }: Props) {
   const end = useRef<HTMLDivElement>(null)
   const start = draft ? draftStart(messages, draft.user) : -1
@@ -68,6 +76,9 @@ export function MessageList({
       item.kind === "approval" &&
       (draft !== null || !known.get(item.approval_id)?.message_id),
   )
+  const asked = draft
+    ? activity.filter((item): item is Asked => item.kind === "choice")
+    : []
   const answered =
     !draft && steps.length + reconnects.length > 0 && last?.role === "assistant"
   const shown = answered ? stored.slice(0, -1) : stored
@@ -101,6 +112,14 @@ export function MessageList({
       {(placed.get(m.id) ?? []).map((approval) => (
         <ApprovalCard key={approval.id} approval={approval} />
       ))}
+      {m.choice && (
+        <ChoiceCard
+          card={m.choice}
+          active={!draft && m === last}
+          onPick={(option) => m.choice && onChoose(m.choice, option)}
+          onOther={onOther}
+        />
+      )}
     </div>
   )
 
@@ -143,6 +162,15 @@ export function MessageList({
                 pending
               />
             )}
+            {asked.map((item) => (
+              <ChoiceCard
+                key={item.question_id}
+                card={item}
+                active={false}
+                onPick={ignore}
+                onOther={ignore}
+              />
+            ))}
             {live.map((item) => (
               <ApprovalCard
                 key={item.approval_id}
