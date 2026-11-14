@@ -115,15 +115,24 @@ def neutral_event(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def event_body(fields: dict[str, Any]) -> dict[str, Any]:
+def event_body(fields: dict[str, Any], timezone: str | None = None) -> dict[str, Any]:
     names = {"title": "summary", "description": "description", "location": "location"}
     body: dict[str, Any] = {names[k]: v for k, v in fields.items() if k in names}
+    zone = {"timeZone": timezone} if timezone else {}
     for key in ("start", "end"):
         if key in fields:
-            body[key] = {"dateTime": parse_time(fields[key]).isoformat()}
+            body[key] = {"dateTime": parse_time(fields[key]).isoformat(), **zone}
     if "attendees" in fields:
         body["attendees"] = [{"email": email} for email in fields["attendees"]]
     return body
+
+
+def notify(payload: dict[str, Any]) -> dict[str, str]:
+    return {"sendUpdates": payload.get("send_updates", "all")}
+
+
+def zone_of(timezone: str | None) -> dict[str, str]:
+    return {"timezone": timezone} if timezone else {}
 
 
 def span_text(opens: datetime, closes: datetime) -> str:
@@ -183,10 +192,23 @@ def thread_summary(thread: dict[str, Any], names: dict[str, str]) -> dict[str, A
 class GoogleTools:
     def __init__(self, client: GoogleClient) -> None:
         self.client = client
+        self.account: str | None = None
 
     async def health(self) -> dict[str, Any]:
         """Reports whether the server is up and which version it runs."""
         return {"ok": True, "version": version("homer-mcp-google")}
+
+    async def _send_updates(self, *groups: list[str]) -> str:
+        """Google's sendUpdates: all when anyone besides the account is invited, so they get
+        an email about the change; none for a personal event."""
+
+        invited = {email.lower() for group in groups for email in group}
+        if not invited:
+            return "none"
+        if self.account is None:
+            profile = await self.client.get(f"{GMAIL}/profile")
+            self.account = str(profile["emailAddress"]).lower()
+        return "all" if invited - {self.account} else "none"
 
     async def _label_names(self) -> dict[str, str]:
         listing = await self.client.get(f"{GMAIL}/labels")
@@ -512,6 +534,8 @@ class GoogleTools:
             "attendees": attendees or [],
             "description": description,
             "location": location,
+            "send_updates": await self._send_updates(attendees or []),
+            **zone_of(timezone),
         }
         who = f" with {', '.join(payload['attendees'])}" if payload["attendees"] else ""
         preview = f"Create event '{title}' on {span_text(opens, closes)}{who}"
@@ -527,9 +551,13 @@ class GoogleTools:
         attendees: list[str] | None = None,
         description: str | None = None,
         location: str | None = None,
+        timezone: str | None = None,
     ) -> dict[str, Any]:
-        """Asks the user to approve changing an event's fields. Never changes it by itself."""
-        current = neutral_event(await self.client.get(f"{CALENDAR}/{event_id}"))
+        """Asks the user to approve changing an event's fields, never changing it by itself; a
+        move carries both start and end, and times without an offset are read in `timezone`."""
+
+        raw = await self.client.get(f"{CALENDAR}/{event_id}")
+        current = neutral_event(raw)
         given = {
             "title": title,
             "start": start,
@@ -541,10 +569,22 @@ class GoogleTools:
         changes = {key: value for key, value in given.items() if value is not None}
         if not changes:
             raise ValueError("nothing to change")
-        check_span(changes.get("start", current["start"]), changes.get("end", current["end"]))
+        opens, closes = check_span(
+            changes.get("start", current["start"]), changes.get("end", current["end"]), timezone
+        )
+        if "start" in changes or "end" in changes:
+            changes |= {"start": opens.isoformat(), "end": closes.isoformat()}
         lines = [f"{key}: {current[key]} -> {value}" for key, value in changes.items()]
         preview = f"Update event '{current['title']}':\n" + "\n".join(lines)
-        return approval("cal_update", {"event_id": event_id, "changes": changes}, preview)
+        payload = {
+            "event_id": event_id,
+            "changes": changes,
+            "send_updates": await self._send_updates(
+                current["attendees"], changes.get("attendees", [])
+            ),
+            **zone_of(timezone or raw["start"].get("timeZone")),
+        }
+        return approval("cal_update", payload, preview)
 
     @guarded
     async def cal_delete(self, event_id: str) -> dict[str, Any]:
@@ -552,7 +592,11 @@ class GoogleTools:
         current = neutral_event(await self.client.get(f"{CALENDAR}/{event_id}"))
         span = span_text(*check_span(current["start"], current["end"]))
         preview = f"Delete event '{current['title']}' on {span}"
-        return approval("cal_delete", {"event_id": event_id}, preview)
+        payload = {
+            "event_id": event_id,
+            "send_updates": await self._send_updates(current["attendees"]),
+        }
+        return approval("cal_delete", payload, preview)
 
     @guarded
     async def contacts_search(self, query: str) -> dict[str, Any]:
@@ -594,16 +638,19 @@ class GoogleTools:
                 sent = await self.client.post(f"{GMAIL}/drafts/send", {"id": payload["draft_id"]})
                 return {"sent": True, "message_id": sent["id"], "thread_id": sent["threadId"]}
             case "cal_create":
-                created = await self.client.post(CALENDAR, event_body(payload))
+                body = event_body(payload, payload.get("timezone"))
+                created = await self.client.post(CALENDAR, body, params=notify(payload))
                 return neutral_event(created)
             case "cal_update":
-                updated = await self.client.patch(
-                    f"{CALENDAR}/{payload['event_id']}", event_body(payload["changes"])
-                )
-                return neutral_event(updated)
+                body = event_body(payload["changes"], payload.get("timezone"))
+                path = f"{CALENDAR}/{payload['event_id']}"
+                return neutral_event(await self.client.patch(path, body, params=notify(payload)))
             case "cal_delete":
-                await self.client.delete(f"{CALENDAR}/{payload['event_id']}")
+                await self.client.delete(
+                    f"{CALENDAR}/{payload['event_id']}", params=notify(payload)
+                )
                 return {"deleted": True, "event_id": payload["event_id"]}
+
             case "mail_label":
                 return await self._modify_labels(
                     payload["message_id"], payload.get("add"), payload.get("remove")

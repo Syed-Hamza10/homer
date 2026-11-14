@@ -101,7 +101,7 @@ def mail_search(query: str, max_results: int = 10) -> list[dict[str, Any]]:
 @server.tool
 def mail_get(message_id: str) -> dict[str, Any]:
     """Returns one message with its body."""
-    return MESSAGES.get(message_id) or {"error": f"no message {message_id}"}
+    return MESSAGES.get(message_id) or {"error": "google_error", "status": 404, "message": "x"}
 
 
 @server.tool
@@ -210,7 +210,11 @@ def cal_create(
 
 @server.tool
 def cal_update(
-    event_id: str, title: str | None = None, start: str | None = None, end: str | None = None
+    event_id: str,
+    title: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    timezone: str | None = None,
 ) -> dict[str, Any]:
     """Asks the user to approve changing an event. Never changes it by itself."""
     given = {"title": title, "start": start, "end": end}

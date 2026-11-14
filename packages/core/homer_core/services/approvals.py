@@ -21,6 +21,7 @@ CHANNEL_WEB = "web"
 SEND_ACTION = "mail_send"
 DRAFT_DELETE_TOOL = "mail_draft_delete"
 SUPERSEDED = "superseded"
+NOTIFY_NOTE = "Attendees will be notified."
 
 
 class NotPending(DomainError):
@@ -36,6 +37,13 @@ def payload_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def with_notice(preview: str, payload: dict[str, Any]) -> str:
+    """Says so when Google will email the attendees about this calendar change."""
+    if payload.get("send_updates") != "all" or NOTIFY_NOTE in preview:
+        return preview
+    return f"{preview}\n{NOTIFY_NOTE}"
+
+
 def create(
     session: Session,
     user_id: int,
@@ -44,6 +52,7 @@ def create(
     payload: dict[str, Any],
     preview: str,
 ) -> Approval:
+    preview = with_notice(preview, payload)
     approval = Approval(
         user_id=user_id,
         server=server,
