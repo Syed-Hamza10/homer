@@ -10,9 +10,11 @@ from homer_mcp_search.settings import LogFn
 from homer_mcp_search.untrusted import wrap
 from homer_net import Allowlist, AllowlistedClient, BlockedHostError
 from homer_net.allowlist import host_key
+from homer_net.pinning import PinnedTransport
 
 MAX_BYTES = 2 * 1024 * 1024
 TIMEOUT_SECONDS = 15
+MAX_REDIRECTS = 5
 USER_AGENT = "Homer/0.1 (+local assistant)"
 
 
@@ -23,16 +25,26 @@ def is_public(address: str) -> bool:
     return ip.is_global
 
 
-async def resolve_public(hostname: str) -> str | None:
-    """Returns an error code when the hostname is unresolvable or maps to a non-public address."""
+class RefusedAddressError(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+async def resolve(hostname: str) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(hostname, None)
+    return [info[4][0] for info in infos]
+
+
+async def pin_address(hostname: str) -> str:
+    """Returns one resolved address, refusing unresolvable hosts or any non-public answer."""
     try:
-        infos = await asyncio.get_running_loop().getaddrinfo(hostname, None)
-    except socket.gaierror:
-        return "unresolvable_host"
-    addresses = [info[4][0] for info in infos]
+        addresses = await resolve(hostname)
+    except socket.gaierror as error:
+        raise RefusedAddressError("unresolvable_host") from error
     if not addresses or not all(is_public(address) for address in addresses):
-        return "private_address"
-    return None
+        raise RefusedAddressError("private_address")
+    return addresses[0]
 
 
 def extract(body: bytes, url: str) -> tuple[str, str]:
@@ -58,19 +70,29 @@ async def fetch_page(url: str, log: LogFn) -> dict[str, Any]:
     parts = urlsplit(url)
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         return {"error": "invalid_url"}
-    refusal = await resolve_public(parts.hostname)
-    if refusal:
-        return {"error": refusal}
+    transport = PinnedTransport(pin_address)
+    try:
+        transport.pins[parts.hostname] = await pin_address(parts.hostname)
+    except RefusedAddressError as error:
+        return {"error": error.code}
     allowlist = Allowlist([host_key(url)])
     headers = {"User-Agent": USER_AGENT}
     try:
         async with asyncio.timeout(TIMEOUT_SECONDS):
             async with AllowlistedClient(
-                allowlist, log, timeout=TIMEOUT_SECONDS, headers=headers
+                allowlist,
+                log,
+                timeout=TIMEOUT_SECONDS,
+                headers=headers,
+                transport=transport,
+                trust_env=False,
+                max_redirects=MAX_REDIRECTS,
             ) as c:
                 outcome = await read_capped(c, url)
     except BlockedHostError as error:
         return {"error": "blocked_host", "host": error.host}
+    except RefusedAddressError as error:
+        return {"error": error.code}
     except TimeoutError:
         return {"error": "timeout"}
     except Exception as error:
