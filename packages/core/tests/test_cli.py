@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from homer_core import cli, platform
 from homer_core.cli import app
+from homer_core.config import read_passphrase
 from homer_core.db.session import make_engine, run_migrations
 from homer_core.llm import chat_model_tag
 from homer_core.platform import ensure_home
@@ -191,3 +192,37 @@ def test_uninstall_reads_the_manifest_before_deleting_the_venv(
     monkeypatch.setattr(cli.shutil, "rmtree", lambda path, **_: events.append("delete"))
     assert runner.invoke(app, ["uninstall", "--yes"]).exit_code == 0
     assert events[0] == "manifest" and "delete" in events
+
+
+def test_passphrase_replaces_the_old_line_and_keeps_the_rest(home: Path) -> None:
+    env = home / ".env"
+    env.write_text('TIMEZONE=UTC\nHOMER_PASSPHRASE="old"\nPORT=8100\n')
+    result = runner.invoke(app, ["passphrase"], input="new pass\nnew pass\n")
+    assert result.exit_code == 0, result.output
+    assert env.read_text() == 'TIMEZONE=UTC\nPORT=8100\nHOMER_PASSPHRASE="new pass"\n'
+    assert env.stat().st_mode & 0o777 == 0o600
+    assert "new pass" not in result.output
+    assert "Sign in again" in result.output
+
+
+def test_passphrase_creates_the_env_file_and_escapes_quotes(home: Path) -> None:
+    result = runner.invoke(app, ["passphrase"], input='a"b\\c\na"b\\c\n')
+    assert result.exit_code == 0, result.output
+    assert read_passphrase(home) == 'a"b\\c'
+
+
+def test_passphrase_rejects_a_mismatch(home: Path) -> None:
+    (home / ".env").write_text('HOMER_PASSPHRASE="old"\n')
+    result = runner.invoke(app, ["passphrase"], input="one\ntwo\none\ntwo\none\ntwo\n")
+    assert result.exit_code != 0
+    assert read_passphrase(home) == "old"
+
+
+def test_passphrase_check_does_not_change_anything(home: Path) -> None:
+    env = home / ".env"
+    env.write_text('HOMER_PASSPHRASE="old"\n')
+    right = runner.invoke(app, ["passphrase", "--check"], input="old\n")
+    wrong = runner.invoke(app, ["passphrase", "--check"], input="nope\n")
+    assert right.exit_code == 0
+    assert wrong.exit_code == 1
+    assert env.read_text() == 'HOMER_PASSPHRASE="old"\n'

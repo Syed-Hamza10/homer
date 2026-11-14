@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from homer_core.auth import SESSION_COOKIE
+from homer_core.config import Settings, write_passphrase
 
 
 def test_login_sets_http_only_cookie(client: TestClient, origin: dict[str, str]) -> None:
@@ -72,3 +73,22 @@ def test_logout_clears_cookie(logged_in: TestClient, origin: dict[str, str]) -> 
 
 def test_health_is_public(client: TestClient) -> None:
     assert client.get("/api/health").status_code == 200
+
+
+def test_login_accepts_a_passphrase_changed_in_env_since_start(
+    client: TestClient, origin: dict[str, str], settings: Settings
+) -> None:
+    write_passphrase(settings.homer_home, "changed")
+    response = client.post("/api/auth/login", json={"passphrase": "changed"}, headers=origin)
+    assert response.status_code == 204
+    assert settings.homer_passphrase.get_secret_value() == "changed"
+    old = client.post("/api/auth/login", json={"passphrase": "test-pass"}, headers=origin)
+    assert old.status_code == 401
+
+
+def test_login_still_rejects_a_wrong_passphrase_when_env_exists(
+    client: TestClient, origin: dict[str, str], settings: Settings
+) -> None:
+    write_passphrase(settings.homer_home, "changed")
+    response = client.post("/api/auth/login", json={"passphrase": "nope"}, headers=origin)
+    assert response.status_code == 401
