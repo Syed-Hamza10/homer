@@ -51,7 +51,7 @@ def google_check(settings: Settings, now: datetime) -> Check:
     status = local_status(settings, now)
     match status.state:
         case "not_connected":
-            detail = "not connected: run homer-mcp-google-setup"
+            detail = "not connected: see GOOGLE_SETUP.md, then run homer setup google"
         case "expired":
             detail = "expired: reconnect in Settings"
         case _:

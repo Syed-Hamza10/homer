@@ -81,3 +81,44 @@ def test_timedatectl_zone_reads_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="Europe/Berlin\n", stderr=""),
     )
     assert platform.timedatectl_zone() == "Europe/Berlin"
+
+
+def test_restart_without_a_service_file_explains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(platform.platform, "system", lambda: "Darwin")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(platform.subprocess, "run", lambda command, **_: calls.append(command))
+    with pytest.raises(FileNotFoundError, match="homer serve"):
+        platform.restart_service()
+    assert calls == []
+
+
+def test_restart_kicks_the_launch_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(platform.platform, "system", lambda: "Darwin")
+    agent = platform.server_service_file()
+    agent.parent.mkdir(parents=True)
+    agent.write_text("<plist/>")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(platform.subprocess, "run", lambda command, **_: calls.append(command))
+    platform.restart_service()
+    assert calls[0][:3] == ["launchctl", "kickstart", "-k"]
+    assert calls[0][3].endswith("/dev.homer.server")
+
+
+def test_remove_service_unloads_and_deletes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(platform.platform, "system", lambda: "Linux")
+    unit = platform.server_service_file()
+    assert unit == tmp_path / ".config" / "systemd" / "user" / "homer.service"
+    unit.parent.mkdir(parents=True)
+    unit.write_text("[Unit]")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(platform.subprocess, "run", lambda command, **_: calls.append(command))
+    platform.remove_service(unit)
+    assert calls == [["systemctl", "--user", "disable", "--now", "homer.service"]]
+    assert not unit.exists()

@@ -2,16 +2,28 @@ import hashlib
 import os
 import re
 import shutil
+import socket
 import subprocess
+import threading
+from collections.abc import Iterator
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "scripts" / "install.sh"
+WORKFLOW = REPO / ".github" / "workflows" / "release.yml"
 
 needs_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
 needs_uv = pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not available")
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 def run_installer(tmp_path: Path, *args: str, env: dict[str, str] | None = None) -> tuple:
@@ -20,6 +32,11 @@ def run_installer(tmp_path: Path, *args: str, env: dict[str, str] | None = None)
         **os.environ,
         "HOMER_HOME": str(home),
         "HOMER_PASSPHRASE": "test-pass",
+        "GITHUB_TOKEN": "",
+        "HOMER_GITHUB_TOKEN": "",
+        "GH_TOKEN": "",
+        "GH_CONFIG_DIR": str(tmp_path / "gh"),
+        "PORT": str(free_port()),
         **(env or {}),
     }
     result = subprocess.run(
@@ -29,8 +46,26 @@ def run_installer(tmp_path: Path, *args: str, env: dict[str, str] | None = None)
         capture_output=True,
         text=True,
         timeout=60,
+        start_new_session=True,
     )
     return home, result
+
+
+@pytest.fixture
+def release_server(tmp_path: Path) -> Iterator[tuple[Path, str]]:
+    root = tmp_path / "releases"
+    (root / "latest" / "download").mkdir(parents=True)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(root)))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield root / "latest" / "download", f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+    server.server_close()
+
+
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
 
 
 def write_release(directory: Path, names: tuple[str, ...]) -> None:
@@ -67,12 +102,12 @@ def test_install_script_dry_run_changes_nothing(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "Dry run only" in result.stdout
     assert str(home) in result.stdout
-    assert "install uv 0." in result.stdout
-    assert "install Ollama 0." in result.stdout
+    assert re.search(r"1\. (use uv at /|install uv 0\.)", result.stdout)
+    assert "skip Ollama (--skip-ollama)" in result.stdout
     assert "verify every wheel against SHA256SUMS" in result.stdout
     assert "requirements.lock as constraints" in result.stdout
     assert re.search(r"timezone: [A-Za-z_]+(/[A-Za-z_+-]+)*$", result.stdout, re.MULTILINE)
-    assert re.search(r"\.env with TIMEZONE=\S+ and pull", result.stdout)
+    assert re.search(r"\.env with TIMEZONE=\S+$", result.stdout, re.MULTILINE)
     assert not home.exists()
 
 
@@ -165,3 +200,77 @@ def test_render_rejects_an_unknown_service(tmp_path: Path) -> None:
     _, result = run_installer(tmp_path, "--render", "nope")
     assert result.returncode == 1
     assert "unknown service definition" in result.stderr
+
+
+@needs_bash
+def test_dry_run_reflects_the_skip_flags(tmp_path: Path) -> None:
+    _, result = run_installer(tmp_path, "--dry-run", "--skip-models", "--wheels-dir", "dist")
+    assert result.returncode == 0, result.stderr
+    assert "skip the model downloads" in result.stdout
+    assert "register no services" in result.stdout
+    assert "the wheels in dist" in result.stdout
+
+
+@needs_bash
+@needs_uv
+def test_install_without_a_terminal_or_passphrase_says_what_to_do(tmp_path: Path) -> None:
+    home, result = run_installer(tmp_path, "--wheels-dir", "dist", env={"HOMER_PASSPHRASE": ""})
+    assert result.returncode == 1
+    assert "HOMER_PASSPHRASE" in result.stderr
+    assert not (home / ".env").exists()
+
+
+@needs_bash
+@needs_uv
+def test_public_release_is_downloaded_from_sha256sums(
+    tmp_path: Path, release_server: tuple[Path, str]
+) -> None:
+    directory, base_url = release_server
+    write_release(directory, (*WHEELS, "requirements.lock"))
+    (directory / WHEELS[1]).write_bytes(b"tampered")
+    home, result = run_installer(tmp_path, env={"HOMER_RELEASE_URL": base_url})
+    assert "Downloading release latest" in result.stdout
+    assert result.returncode == 1
+    assert "checksum mismatch" in result.stderr
+    assert not (home / "venv").exists()
+
+
+@needs_bash
+@needs_uv
+def test_public_release_refuses_a_path_in_sha256sums(
+    tmp_path: Path, release_server: tuple[Path, str]
+) -> None:
+    directory, base_url = release_server
+    (directory / "SHA256SUMS").write_text(f"{'0' * 64}  ../escape.whl\n")
+    _, result = run_installer(tmp_path, env={"HOMER_RELEASE_URL": base_url})
+    assert result.returncode == 1
+    assert "unexpected file in SHA256SUMS" in result.stderr
+    assert not (tmp_path / "escape.whl").exists()
+
+
+@needs_bash
+@needs_uv
+def test_missing_public_release_explains_the_private_repo(
+    tmp_path: Path, release_server: tuple[Path, str]
+) -> None:
+    _, base_url = release_server
+    _, result = run_installer(tmp_path, env={"HOMER_RELEASE_URL": base_url})
+    assert result.returncode == 1
+    assert "private" in result.stderr
+
+
+def test_release_checksums_list_bare_file_names() -> None:
+    workflow = WORKFLOW.read_text()
+    assert "sha256sum -- *.whl requirements.lock > SHA256SUMS" in workflow
+    assert "./*.whl" not in workflow
+
+
+@needs_bash
+def test_install_refuses_a_port_used_by_another_program(
+    tmp_path: Path, release_server: tuple[Path, str]
+) -> None:
+    _, base_url = release_server
+    port = base_url.rsplit(":", 1)[1]
+    home, result = run_installer(tmp_path, "--dry-run", env={"PORT": port})
+    assert result.returncode == 1
+    assert f"port {port} is used by another program" in result.stderr

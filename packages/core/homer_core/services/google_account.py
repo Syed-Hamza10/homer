@@ -36,6 +36,8 @@ class GoogleStatus(BaseModel):
     connected_at: datetime | None = None
     days_left: int | None = None
     connecting: bool = False
+    client_secret_found: bool = False
+    client_secret_path: str = ""
 
 
 def token_path(settings: Settings) -> Path:
@@ -73,7 +75,10 @@ def status_at(connected_at: datetime | None, now: datetime) -> GoogleStatus:
 
 
 def local_status(settings: Settings, now: datetime) -> GoogleStatus:
-    return status_at(consent_time(token_path(settings)), now)
+    secret = client_secret_path(settings)
+    return status_at(consent_time(token_path(settings)), now).model_copy(
+        update={"client_secret_found": secret.exists(), "client_secret_path": str(secret)}
+    )
 
 
 async def live_status(settings: Settings, manager: McpManager, now: datetime) -> GoogleStatus:

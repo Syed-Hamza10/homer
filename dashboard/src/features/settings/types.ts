@@ -51,6 +51,8 @@ export type GoogleStatus = {
   connected_at: string | null
   days_left: number | null
   connecting: boolean
+  client_secret_found: boolean
+  client_secret_path: string
 }
 
 export type SearchProvider = "duckduckgo" | "brave" | "tavily"

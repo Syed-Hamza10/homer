@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils"
 import { statusLabel } from "./googleStatus"
 import { useConnectGoogle, useGoogleStatus } from "./useGoogle"
 
+const GOOGLE_SETUP_URL =
+  "https://github.com/Syed-Hamza10/homer/blob/main/docs/GOOGLE_SETUP.md"
+
 type RowProps = { label: string; value: string; alert?: boolean }
 
 function Row({ label, value, alert = false }: RowProps) {
@@ -17,6 +20,38 @@ function Row({ label, value, alert = false }: RowProps) {
     <div className="flex justify-between gap-4 border-t border-border/70 py-2.5 text-sm">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span className={cn(alert && "text-destructive")}>{value}</span>
+    </div>
+  )
+}
+
+function SetupSteps({ path }: { path: string }) {
+  return (
+    <div
+      data-testid="google-setup"
+      className="flex flex-col gap-2 rounded-md border border-border/70 p-3 text-sm"
+    >
+      <p>
+        Before you connect, Homer needs a sign-in file from your own Google
+        Cloud project. It takes about 15 minutes, once.
+      </p>
+      <ol className="list-decimal pl-5 text-muted-foreground">
+        <li>
+          Follow{" "}
+          <a
+            className="underline"
+            href={GOOGLE_SETUP_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            the Google setup guide
+          </a>{" "}
+          to create a Desktop OAuth client.
+        </li>
+        <li>
+          Save the downloaded file as <code className="break-all">{path}</code>
+        </li>
+        <li>Press Connect and sign in with Google.</li>
+      </ol>
     </div>
   )
 }
@@ -48,6 +83,9 @@ export function GoogleAccount() {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Loading.</p>
+        )}
+        {data?.state === "not_connected" && !data.client_secret_found && (
+          <SetupSteps path={data.client_secret_path} />
         )}
         <div className="flex items-center gap-3">
           <Button

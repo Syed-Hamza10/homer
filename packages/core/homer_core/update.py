@@ -90,7 +90,7 @@ def run(command: list[str], env: dict[str, str] | None = None) -> str:
 
 def build_venv(target: Path, wheels: list[Path], constraints: Path) -> None:
     uv = uv_binary()
-    run([uv, "venv", "--python", sys.executable, str(target)])
+    run([uv, "venv", "--relocatable", "--python", sys.executable, str(target)])
     python = str(target / "bin" / "python")
     run([uv, "pip", "install", "--python", python, "-c", str(constraints), *map(str, wheels)])
 

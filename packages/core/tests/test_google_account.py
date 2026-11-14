@@ -68,6 +68,8 @@ def test_doctor_warns_from_day_five(settings: Settings) -> None:
 def test_status_not_connected(logged_in: TestClient) -> None:
     body = logged_in.get("/api/google/status").json()
     assert body["state"] == "not_connected" and body["connecting"] is False
+    assert body["client_secret_found"] is False
+    assert body["client_secret_path"].endswith("credentials/client_secret.json")
 
 
 def test_status_connected_shows_the_account(logged_in: TestClient, settings: Settings) -> None:
@@ -112,6 +114,7 @@ def test_connect_starts_the_setup_flow(
     response = logged_in.post("/api/google/connect", headers=origin)
     assert response.status_code == 202
     assert response.json()["connecting"] is True
+    assert response.json()["client_secret_found"] is True
     assert started == ["homer-mcp-google-setup"]
 
 

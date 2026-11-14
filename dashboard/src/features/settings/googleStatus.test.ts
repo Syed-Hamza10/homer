@@ -8,6 +8,8 @@ const status = (fields: Partial<GoogleStatus>): GoogleStatus => ({
   connected_at: null,
   days_left: 7,
   connecting: false,
+  client_secret_found: true,
+  client_secret_path: "",
   ...fields,
 })
 
