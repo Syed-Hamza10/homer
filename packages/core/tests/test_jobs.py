@@ -130,6 +130,27 @@ class TestSendEmail:
         assert fake_google.executed == []
 
     @pytest.mark.parametrize("intents", [[[email("Ada")]]])
+    def test_warming_contacts_ask_to_try_again(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.contacts_error = "google_contacts_warming"
+        frames = post_chat({"message": "Email Ada that the invoice is paid"})
+        assert said(frames) == (
+            "Google's contacts service is waking up; please try again in a few seconds."
+        )
+        assert of(frames, "approval_required") == [] and fake_google.drafted == []
+
+    @pytest.mark.parametrize("intents", [[[email("bob@example.test")]]])
+    def test_failed_contacts_lookup_does_not_fail_an_address_send(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.contacts_error = "google_contacts_warming"
+        frames = post_chat({"message": "Email bob@example.test that the invoice is paid"})
+        assert said(frames) == READY.format(who="bob@example.test")
+        assert calls(frames) == ["contacts_search", "mail_draft"]
+        assert of(frames, "approval_required")[0]["payload"]["to"] == "bob@example.test"
+
+    @pytest.mark.parametrize("intents", [[[email("Ada")]]])
     def test_unique_name_resolves_through_contacts(
         self, logged_in: TestClient, post_chat: PostChat
     ) -> None:

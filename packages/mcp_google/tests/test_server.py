@@ -1,5 +1,7 @@
+import asyncio
 import json
 import sqlite3
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -353,6 +355,28 @@ async def test_contacts_search(mcp: Client) -> None:
     found = await call(mcp, "contacts_search", query="keller")
     assert found["contacts"] == [{"name": "Tomas Keller", "email": "tomas.keller@example.test"}]
     assert (await call(mcp, "contacts_search", query="nobody"))["contacts"] == []
+
+
+async def test_server_warms_contacts_on_start_and_retries_a_cold_search(
+    sim: httpx.Client, tmp_path: Path, write_token: Callable[..., Path], spawn: Spawn
+) -> None:
+    write_token(tmp_path)
+    async with spawn(tmp_path) as client:
+        deadline = time.monotonic() + 10
+        while not sim.get("/_sim/people-queries").json() and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+        sim.post("/_sim/people-cold")
+        found = await call(client, "contacts_search", query="maya")
+    assert found["contacts"][0]["email"] == "maya.lindqvist@example.test"
+    assert sim.get("/_sim/people-queries").json() == ["", "maya", "maya"]
+
+
+async def test_server_without_a_token_does_not_warm_up(
+    sim: httpx.Client, tmp_path: Path, spawn: Spawn
+) -> None:
+    async with spawn(tmp_path) as client:
+        await call(client, "health")
+    assert sim.get("/_sim/people-queries").json() == []
 
 
 async def test_outbound_log_rows(mcp: Client, home: Path) -> None:

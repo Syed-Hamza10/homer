@@ -70,6 +70,7 @@ CONTACTS = [
 executed: list[dict[str, Any]] = []
 labeled: list[dict[str, Any]] = []
 drafted: list[dict[str, Any]] = []
+contacts_error: str | None = None
 updated: list[dict[str, Any]] = []
 deleted: list[str] = []
 slot_requests: list[dict[str, Any]] = []
@@ -229,8 +230,10 @@ def cal_delete(event_id: str) -> dict[str, Any]:
 
 
 @server.tool
-def contacts_search(query: str) -> list[dict[str, Any]]:
+def contacts_search(query: str) -> list[dict[str, Any]] | dict[str, Any]:
     """Searches contacts by name or address."""
+    if contacts_error:
+        return {"error": contacts_error}
     needle = query.lower()
     return [c for c in CONTACTS if needle in f"{c['name']} {c['email']}".lower()]
 
