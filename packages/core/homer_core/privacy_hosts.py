@@ -4,9 +4,9 @@ SEARCH_HOSTS = ("html.duckduckgo.com",)
 KEYED_SEARCH_HOSTS = {"brave": "api.search.brave.com", "tavily": "api.tavily.com"}
 SEARCH_REASONS = {
     SEARCH_HOSTS[0]: "DuckDuckGo HTML search, only when web search is on.",
-    KEYED_SEARCH_HOSTS["brave"]: "Brave Search API with the client's own key. Only the search "
+    KEYED_SEARCH_HOSTS["brave"]: "Brave Search API, only if you add a key. Only the search "
     "question is sent.",
-    KEYED_SEARCH_HOSTS["tavily"]: "Tavily search API with the client's own key. Only the search "
+    KEYED_SEARCH_HOSTS["tavily"]: "Tavily search API, only if you add a key. Only the search "
     "question is sent.",
 }
 INSTALL_HOSTS = (
@@ -21,9 +21,10 @@ INSTALL_HOSTS = (
 )
 
 
-def privacy_markdown(search_hosts: tuple[str, ...] = SEARCH_HOSTS) -> str:
+def privacy_markdown() -> str:
+    search_hosts = (*SEARCH_HOSTS, *KEYED_SEARCH_HOSTS.values())
     search_rows = "\n".join(f"| `{host}` | {SEARCH_REASONS[host]} |" for host in search_hosts)
-    search_names = " and ".join(f"`{host}`" for host in search_hosts)
+    search_names = ", ".join(f"`{host}`" for host in search_hosts)
     return f"""# Privacy
 
 Homer runs on your machine. Conversations, mail cache, calendar cache, approvals and the
@@ -34,7 +35,7 @@ to a hosted model API, and there is no per-token bill.
 
 | Host | Why |
 |---|---|
-| `{CORE_HOSTS[0]}` | The local Ollama server. No email or document leaves the machine. |
+| `{CORE_HOSTS[0]}` | The local Ollama server. Model input stays on this machine. |
 | `{GOOGLE_HOSTS[0]}` | Gmail, Calendar and People, using the client's own OAuth project. |
 | `{GOOGLE_HOSTS[1]}` | Refreshing the Google access token. |
 {search_rows}
@@ -70,7 +71,8 @@ sqlite3 ~/.homer/data/homer.db "select host, count(*) from outbound_log group by
 ```
 
 The only rows you should see for normal use are `127.0.0.1:11434`, `www.googleapis.com`,
-`oauth2.googleapis.com` and, when web search is on, {search_names}.
+`oauth2.googleapis.com` and, when web search is on, one of
+{search_names} (the last two only if you add a key).
 
 This is application-level enforcement, not a network sandbox. Say it that way to clients.
 """

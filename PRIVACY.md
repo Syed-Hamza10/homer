@@ -8,10 +8,12 @@ to a hosted model API, and there is no per-token bill.
 
 | Host | Why |
 |---|---|
-| `127.0.0.1:11434` | The local Ollama server. No email or document leaves the machine. |
+| `127.0.0.1:11434` | The local Ollama server. Model input stays on this machine. |
 | `www.googleapis.com` | Gmail, Calendar and People, using the client's own OAuth project. |
 | `oauth2.googleapis.com` | Refreshing the Google access token. |
 | `html.duckduckgo.com` | DuckDuckGo HTML search, only when web search is on. |
+| `api.search.brave.com` | Brave Search API, only if you add a key. Only the search question is sent. |
+| `api.tavily.com` | Tavily search API, only if you add a key. Only the search question is sent. |
 | a host the user asks `fetch_page` to open | One host per call, re-checked on every redirect. |
 
 Every runtime call goes through one allowlisted HTTP client. The client refuses any other host
@@ -51,6 +53,7 @@ sqlite3 ~/.homer/data/homer.db "select host, count(*) from outbound_log group by
 ```
 
 The only rows you should see for normal use are `127.0.0.1:11434`, `www.googleapis.com`,
-`oauth2.googleapis.com` and, when web search is on, `html.duckduckgo.com`.
+`oauth2.googleapis.com` and, when web search is on, one of
+`html.duckduckgo.com`, `api.search.brave.com`, `api.tavily.com` (the last two only if you add a key).
 
 This is application-level enforcement, not a network sandbox. Say it that way to clients.

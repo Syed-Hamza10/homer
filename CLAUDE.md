@@ -31,4 +31,4 @@ After every build step: a chat summary in simple technical English, and a one-pa
 - Python: `ruff` for lint and format, `snake_case` modules and functions, `PascalCase` classes, type hints everywhere, `pyproject.toml` per package, tests in `tests/` mirroring the package layout, `test_<module>.py`.
 - TypeScript: `PascalCase` components, `camelCase` hooks and functions, one component per file, feature folders under `src/features/<page>/`.
 - Directories: `kebab-case` for repo-level folders, Python packages `snake_case`.
-- Commits use the repo-local identity already configured. Never use the `company-account` account.
+- Commits use the repo-local identity already configured.

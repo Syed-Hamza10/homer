@@ -45,7 +45,7 @@ The top of the inline script has the settings:
 
 ```js
 const WAITLIST_ENDPOINT = "";
-const CONTACT_EMAIL = "hello@homer.example";
+const CONTACT_EMAIL = "syed.hamza.ds@gmail.com";
 const DEMO_VIDEO = "demo.mp4";
 const DEMO_POSTER = "demo-poster.jpg";
 ```
@@ -54,8 +54,7 @@ The form checks the email, role and firm size in the browser, then:
 
 - **When `WAITLIST_ENDPOINT` is empty (the default):** it opens the visitor's email app with a
   pre-filled message to `CONTACT_EMAIL` and shows a success note telling them to press Send.
-  `hello@homer.example` is a placeholder and receives nothing. Replace it with a real inbox before
-  launch, and change the footer link in `index.html` to match.
+  Keep the footer link in `index.html` in step with `CONTACT_EMAIL`.
 - **When `WAITLIST_ENDPOINT` is set:** it sends `POST` with
   `Content-Type: application/json` and the body `{"email": "...", "role": "...", "firm_size": "..."}`.
   Any 2xx response shows the success state; anything else shows an error with the contact address.
@@ -75,7 +74,7 @@ The form checks the email, role and firm size in the browser, then:
 
 ## Before launch
 
-- Replace `hello@homer.example` in the script and the footer.
+- Confirm `syed.hamza.ds@gmail.com` in the script and the footer is the inbox you want public.
 - Add `demo.mp4` and `demo-poster.jpg` once the video is recorded.
 - Re-read every claim against `docs/CASE_STUDY.md` if the product changes. The page uses only
   numbers from there and from the QA logs.
