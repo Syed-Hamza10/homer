@@ -39,11 +39,19 @@ def clock(moment: datetime) -> str:
     return f"{hour}:{moment:%M}"
 
 
+def event_time(payload: dict[str, Any], key: str, zone: ZoneInfo) -> datetime:
+    """A payload time without an offset is in the event's own timezone, never the machine's."""
+    parsed = datetime.fromisoformat(payload[key].replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(payload.get("timezone") or zone.key))
+    return parsed.astimezone(zone)
+
+
 def when_line(payload: dict[str, Any], timezone: str) -> str:
     """'Saturday 14 Nov, 3:00–3:30 pm PKT' for the event's start and end."""
     zone = ZoneInfo(timezone)
-    start = datetime.fromisoformat(payload["start"]).astimezone(zone)
-    end = datetime.fromisoformat(payload["end"]).astimezone(zone)
+    start = event_time(payload, "start", zone)
+    end = event_time(payload, "end", zone)
     start_half, end_half = f"{start:%p}".lower(), f"{end:%p}".lower()
     first = clock(start) if start_half == end_half else f"{clock(start)} {start_half}"
     return f"{start:%A} {start.day} {start:%b}, {first}–{clock(end)} {end_half} {start:%Z}"
