@@ -125,6 +125,12 @@ class TestWebSearch:
             "https://news.example.test/b",
         ]
         assert "Page A text" in instructions[1]
+        assert [status["text"] for status in of(frames, "status")] == [
+            "Searching the web…",
+            "Writing the answer…",
+            "Reading 2 pages…",
+            "Writing the answer…",
+        ]
         assert said(frames) == (
             "It launched on Monday.\n\n**Sources**\n- [Launch news](https://news.example.test/a)\n"
             "- [More news](https://news.example.test/b)"

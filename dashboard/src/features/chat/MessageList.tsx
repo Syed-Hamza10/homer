@@ -3,8 +3,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApprovalCard } from "@/features/approvals/ApprovalCard"
 import type { Approval } from "@/features/approvals/types"
+import { pairSteps } from "./activity"
 import { ActivityLine } from "./ActivityLine"
 import { MessageBubble } from "./MessageBubble"
+import { ReconnectLink } from "./ReconnectLink"
+import { splitSources } from "./sources"
 import type { ActivityItem, Message } from "./types"
 
 type Props = {
@@ -18,7 +21,7 @@ type Props = {
 }
 
 type Requested = Extract<ActivityItem, { kind: "approval" }>
-type Step = Exclude<ActivityItem, { kind: "approval" }>
+type Reconnect = Extract<ActivityItem, { kind: "reconnect" }>
 
 function draftStart(messages: Message[], user: string): number {
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -56,16 +59,26 @@ export function MessageList({
   const showDraftUser = draft && start < 0
   const placed = byMessage(approvals)
   const known = new Map(approvals.map((a) => [a.id, a]))
-  const steps = activity.filter(
-    (item): item is Step => item.kind !== "approval",
+  const steps = pairSteps(activity)
+  const reconnects = activity.filter(
+    (item): item is Reconnect => item.kind === "reconnect",
   )
   const live = activity.filter(
     (item): item is Requested =>
       item.kind === "approval" &&
       (draft !== null || !known.get(item.approval_id)?.message_id),
   )
-  const answered = !draft && steps.length > 0 && last?.role === "assistant"
+  const answered =
+    !draft && steps.length + reconnects.length > 0 && last?.role === "assistant"
   const shown = answered ? stored.slice(0, -1) : stored
+  const reply = draft ? draft.assistant : answered ? last.content : ""
+  const sources = splitSources(reply).sources.length
+  const running =
+    draft !== null &&
+    (status !== null ||
+      draft.assistant === "" ||
+      steps.some((step) => step.summary === undefined))
+  const showActivity = steps.length > 0 || (draft !== null && status !== null)
   const regenerable =
     !draft &&
     last?.role === "assistant" &&
@@ -104,10 +117,18 @@ export function MessageList({
         )}
         {shown.map(turn)}
         {showDraftUser && <MessageBubble role="user" content={draft.user} />}
-        {steps.length > 0 && (
-          <div className="-my-3 flex flex-col gap-1">
-            {steps.map((item, index) => (
-              <ActivityLine key={index} item={item} />
+        {(showActivity || reconnects.length > 0) && (
+          <div className="-my-3 flex flex-col gap-2">
+            {showActivity && (
+              <ActivityLine
+                steps={steps}
+                running={running}
+                status={status}
+                sources={sources}
+              />
+            )}
+            {reconnects.map((item, index) => (
+              <ReconnectLink key={index} url={item.url} />
             ))}
           </div>
         )}
@@ -118,7 +139,7 @@ export function MessageList({
               <MessageBubble
                 role="assistant"
                 content={draft.assistant}
-                status={status}
+                quiet={showActivity}
                 pending
               />
             )}

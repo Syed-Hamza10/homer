@@ -18,18 +18,20 @@ describe("MessageBubble", () => {
     expect(screen.getByRole("status").textContent).toBe("Thinking…")
   })
 
-  it("shows the status event text while waiting", () => {
+  it("leaves the waiting line to the activity line when quiet", () => {
+    render(<MessageBubble role="assistant" content="" pending quiet />)
+    expect(screen.queryByRole("status")).toBeNull()
+  })
+
+  it("never shows untrusted tags", () => {
     render(
       <MessageBubble
         role="assistant"
-        content=""
-        status="Checking your calendar…"
-        pending
+        content="<untrusted>He is free.</untrusted>"
       />,
     )
-    expect(screen.getByRole("status").textContent).toBe(
-      "Checking your calendar…",
-    )
+    expect(screen.getByText("He is free.")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("untrusted")
   })
 
   it("hides the status once text streams in", () => {
