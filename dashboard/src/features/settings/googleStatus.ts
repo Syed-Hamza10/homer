@@ -1,5 +1,14 @@
 import type { GoogleStatus } from "./types"
 
+export type ConnectStep = "missing" | "ready" | "waiting" | "connected"
+
+export function connectStep(status: GoogleStatus): ConnectStep {
+  if (status.connecting && status.auth_url) return "waiting"
+  if (status.state === "connected" || status.state === "expiring")
+    return "connected"
+  return status.client_secret_found ? "ready" : "missing"
+}
+
 function days(count: number | null): string {
   return count === 1 ? "1 day" : `${count ?? 0} days`
 }

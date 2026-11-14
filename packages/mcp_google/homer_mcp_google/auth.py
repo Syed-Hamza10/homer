@@ -1,4 +1,5 @@
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/contacts.readonly",
 ]
+NO_BROWSER_FLAG = "--no-browser"
 
 
 class ReconnectRequired(Exception):
@@ -32,17 +34,25 @@ class TokenStore:
         self.path.write_text(json.dumps(token, indent=2))
 
 
-def connect(settings: Settings) -> Path:
-    """Runs the consent flow in the browser; writes the token with its consent time, mode 0600."""
+def connect(settings: Settings, open_browser: bool = True) -> Path:
+    """Runs the consent flow and writes the token with its consent time, mode 0600.
+
+    Without a browser it prints only the sign-in link, for the caller to show the user.
+    """
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     flow = InstalledAppFlow.from_client_secrets_file(str(settings.client_secret_path), SCOPES)
-    credentials = flow.run_local_server(port=0)
+    if open_browser:
+        credentials = flow.run_local_server(port=0)
+    else:
+        credentials = flow.run_local_server(
+            port=0, open_browser=False, authorization_prompt_message="{url}"
+        )
     token = {**json.loads(credentials.to_json()), "connected_at": datetime.now(UTC).isoformat()}
     TokenStore(settings.token_path).save(token)
     return settings.token_path
 
 
 def setup() -> None:
-    path = connect(Settings.from_env())
+    path = connect(Settings.from_env(), open_browser=NO_BROWSER_FLAG not in sys.argv[1:])
     print(f"Google connected. Token written to {path}")
