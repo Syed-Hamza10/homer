@@ -1,9 +1,11 @@
 import json
 import sys
+import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -13,7 +15,12 @@ from homer_core.config import Settings
 from homer_core.doctor import google_check
 from homer_core.mcp.manager import McpManager
 from homer_core.services import google_account
-from homer_core.services.google_account import consent_time, status_at, token_path
+from homer_core.services.google_account import (
+    consent_time,
+    first_link,
+    status_at,
+    token_path,
+)
 
 CONSENT = datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
 
@@ -116,6 +123,95 @@ def test_connect_starts_the_setup_flow(
     assert response.json()["connecting"] is True
     assert response.json()["client_secret_found"] is True
     assert started == ["homer-mcp-google-setup"]
+
+
+FAKE_SETUP = """
+    import json, os, sys, time
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    home = Path(os.environ["HOMER_HOME"])
+    if "--no-browser" not in sys.argv or "{link}" == "":
+        sys.exit(1)
+    print("{link}")
+    deadline = time.monotonic() + 10
+    while not (home / "go").exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    token = {{"token": "t", "refresh_token": "r", "connected_at": datetime.now(UTC).isoformat()}}
+    (home / "credentials" / "google_token.json").write_text(json.dumps(token))
+"""
+LINK = (
+    "https://accounts.google.com/o/oauth2/auth?client_id=test&redirect_uri=http%3A%2F%2Flocalhost"
+)
+
+
+def fake_setup(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, link: str
+) -> list[str]:
+    secret = google_account.client_secret_path(settings)
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text("{}")
+    script = tmp_path / "fake-setup"
+    script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(FAKE_SETUP.format(link=link)))
+    script.chmod(0o755)
+    started: list[str] = []
+    monkeypatch.setattr(
+        google_account, "find_executable", lambda name: started.append(name) or str(script)
+    )
+    return started
+
+
+def test_first_link_skips_other_output() -> None:
+    assert first_link(["starting\n", f"{LINK}\n", "later\n"]) == LINK
+    assert first_link(["no link here\n"]) is None
+
+
+@pytest.mark.parametrize(
+    ("consented", "before"),
+    [(None, "not_connected"), (datetime.now(UTC) - timedelta(days=8), "expired")],
+)
+def test_connect_without_a_browser_returns_the_link_until_the_token_lands(
+    app: FastAPI,
+    logged_in: TestClient,
+    settings: Settings,
+    origin: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    consented: datetime | None,
+    before: str,
+) -> None:
+    if consented is not None:
+        write_token(settings, consented)
+    started = fake_setup(settings, tmp_path, monkeypatch, LINK)
+    response = logged_in.post("/api/google/connect?no_browser=1", headers=origin)
+    assert response.status_code == 202
+    assert started == ["homer-mcp-google-setup"]
+    assert (response.json()["state"], response.json()["auth_url"]) == (before, LINK)
+
+    waiting = logged_in.get("/api/google/status").json()
+    assert (waiting["state"], waiting["connecting"], waiting["auth_url"]) == (before, True, LINK)
+
+    (settings.homer_home / "go").touch()
+    process = app.state.google_connector.process
+    assert process is not None and process.wait(timeout=10) == 0
+
+    done = logged_in.get("/api/google/status").json()
+    assert (done["state"], done["connecting"], done["auth_url"]) == ("connected", False, None)
+    assert done["email"] == "tester@example.test"
+
+
+def test_connect_without_a_browser_fails_when_no_link_appears(
+    logged_in: TestClient,
+    settings: Settings,
+    origin: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_setup(settings, tmp_path, monkeypatch, "")
+    response = logged_in.post("/api/google/connect?no_browser=1", headers=origin)
+    assert response.status_code == 409
+    assert "did not start" in response.json()["detail"]
+    assert logged_in.get("/api/google/status").json()["auth_url"] is None
 
 
 class TestRevoked:

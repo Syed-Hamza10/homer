@@ -44,15 +44,18 @@ own account is set up the same way. Everything below is done once; it takes abou
 
 ## 6. Run the one-time consent flow
 
-1. On an installed machine, press **Connect** in Settings, or run `~/.homer/venv/bin/homer setup google`. From the repo: `uv run homer-mcp-google-setup`.
-2. A browser tab opens. Sign in with the throwaway account.
-3. Google warns that the app is unverified: click **Continue**. Tick all three permissions, click **Continue**.
-4. The terminal prints `Google connected. Token written to ~/.homer/credentials/google_token.json`. The file is mode 0600; the server reads it and refreshes the access token on its own.
-5. Start the app and open the Privacy page: `www.googleapis.com`, `oauth2.googleapis.com` and `people.googleapis.com` are the only Google hosts that should ever appear.
+1. On an installed machine, open Settings. The Google account card checks for the file from step 5; if it says the OAuth client is missing, save the file at the path it shows and press **Check again**.
+2. Press **Sign in with Google**. Homer does not open a browser; it shows a sign-in link with **Copy link** and **Open** buttons.
+3. Copy the link and open it in a private/incognito window, then sign in with the throwaway account. Google answers "400. That's an error ... malformed" when the normal browser is signed into several Google accounts at once; a private window avoids it.
+4. Google warns that the app is unverified: click **Continue**. Tick all three permissions, click **Continue**.
+5. The private window says the flow is complete and can be closed. Settings changes to **Connected as** the account's address within a few seconds. The token is at `~/.homer/credentials/google_token.json`, mode 0600; the server reads it and refreshes the access token on its own.
+6. Start the app and open the Privacy page: `www.googleapis.com`, `oauth2.googleapis.com` and `people.googleapis.com` are the only Google hosts that should ever appear.
+
+From a terminal instead: `~/.homer/venv/bin/homer setup google`, or from the repo `uv run homer-mcp-google-setup`. That opens the sign-in page in the default browser and prints `Google connected. Token written to ...` when done. Add `--no-browser` to `homer-mcp-google-setup` to print the link instead, then open it in a private window.
 
 ## The 7-day rule
 
 While the consent screen is in **Testing**, Google expires the refresh token after 7 days. From day 5
 the Today page and `homer doctor` warn; once it expires the chat answers "Your Google connection has
-expired". Press Reconnect in Settings (or run `uv run homer-mcp-google-setup` again). Moving the app to **In production** removes the limit but
+expired". Press Reconnect in Settings, which shows the same sign-in link as step 6 (or run `uv run homer-mcp-google-setup` again). Moving the app to **In production** removes the limit but
 needs Google's verification review, which is a step for the real client account, not the throwaway.

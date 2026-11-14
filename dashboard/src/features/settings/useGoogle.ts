@@ -3,7 +3,7 @@ import { getJson, postJson } from "@/lib/api"
 import type { GoogleStatus } from "./types"
 
 export const googleKey = ["google", "status"]
-const POLL_MS = 2000
+export const POLL_MS = 2000
 
 export function useGoogleStatus() {
   return useQuery({
@@ -17,7 +17,8 @@ export function useGoogleStatus() {
 export function useConnectGoogle() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => postJson<GoogleStatus>("/api/google/connect", {}),
+    mutationFn: () =>
+      postJson<GoogleStatus>("/api/google/connect?no_browser=1", {}),
     onSuccess: (status) => queryClient.setQueryData(googleKey, status),
   })
 }

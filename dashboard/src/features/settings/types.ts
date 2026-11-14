@@ -54,6 +54,7 @@ export type GoogleStatus = {
   connecting: boolean
   client_secret_found: boolean
   client_secret_path: string
+  auth_url: string | null
 }
 
 export type SearchProvider = "duckduckgo" | "brave" | "tavily"
