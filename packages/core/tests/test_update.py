@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+import subprocess
 import threading
 import zipfile
 from collections.abc import Iterator
@@ -104,6 +105,8 @@ def test_update_stages_verifies_and_swaps(home: Path, release: FakeRelease, rest
     assert result.exit_code == 0, result.output
     assert (home / "venv" / "bin" / "homer").exists()
     assert (home / "venv.prev" / "marker").read_text() == "live"
+    swapped = subprocess.run([str(home / "venv" / "bin" / "homer"), "doctor", "--quick"])
+    assert swapped.returncode == 0
     assert not (home / "venv.new").exists()
     assert restarts == ["restart"]
     assert "venv.prev" in result.output
