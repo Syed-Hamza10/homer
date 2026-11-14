@@ -1,6 +1,6 @@
 [project]
 name = "homer-eval"
-version = "0.1.0"
+version = "0.1.1"
 description = "Gmail, Calendar and People simulator: the fixture for every Google test and eval."
 requires-python = ">=3.12,<3.13"
 dependencies = [

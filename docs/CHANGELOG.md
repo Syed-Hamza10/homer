@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-11-14)
+
+Everything merged after the first public release: security review fixes, protected drafts and chat state, Today page live data, the clickable recipient choice, passphrase help and reset, the Connect Google panel, one intent call instead of regex routing, memory corrections, relative times, self-correction, faster cards, optional Brave/Tavily search keys, and the round 6–7 QA fixes.
+
 ## Unreleased
 
 - QA round 7: mail status only for messages about sending, checked against the Sent folder; "what does <name> want" reads their mail; "no wait, I mean Wednesday" corrects the last calendar read or card; "why that time?" on a right booking explains instead of making a duplicate card; a reminder "on my calendar" is an event; drafts drop invented reassurance and mention an earlier answer in one sentence; closing wishes name only today; per-step timing logs, recipient reuse within a chat, snippet-only weather answers and a 15 s search budget.
