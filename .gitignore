@@ -31,3 +31,17 @@ token*.json
 
 # QA transcripts may contain real addresses
 docs/qa/
+
+# Agent worktrees and local tooling
+.claude/
+
+# Test and tooling output
+playwright-report/
+test-results/
+coverage/
+*.log
+.pnpm-store/
+
+# Large media kept out of git (publish the demo video elsewhere and link it)
+site/*.mp4
+site/*.mov
