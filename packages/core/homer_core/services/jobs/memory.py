@@ -43,8 +43,11 @@ Facts:
 
 
 MAIL_ASKED = re.compile(
-    r"\b(?:e-?mails?|mail|inbox|unread|messages?|repl(?:y|ies)|sent|drafts?)\b", re.IGNORECASE
+    r"\b(?:e-?mails?|mail|inbox|unread|messages?|repl(?:y|ies)|sent|drafts?)\b"
+    r"|\bwhat did \w+(?: \w+)? (?:ask|say|write|send|want|need)\b",
+    re.IGNORECASE,
 )
+SENDER = re.compile(r"\bwhat did (?P<who>[A-Z][\w'-]+)", re.IGNORECASE)
 
 
 class RecallAnswer(BaseModel):
@@ -186,7 +189,10 @@ def rerouted(turn: Turn, intent: Recall) -> Intent:
     asked = f"{intent.about or ''} {turn.message}"
     if MAIL_ASKED.search(asked):
         log.info("recall_rerouted", to="read_email", message=turn.message)
-        return ReadEmail(kind="read_email", question=intent.about or turn.message)
+        who = SENDER.search(turn.message)
+        sender = who["who"] if who and who["who"].lower() not in ("i", "you", "we") else None
+        question = turn.message if sender else intent.about or turn.message
+        return ReadEmail(kind="read_email", question=question, sender=sender)
     if CALENDAR_ASKED.search(asked):
         log.info("recall_rerouted", to="read_calendar", message=turn.message)
         return calendar_read(turn.message, turn.now.date())

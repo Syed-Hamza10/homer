@@ -113,8 +113,7 @@ def date_table(now: datetime) -> str:
     saturday = monday + timedelta(days=5)
     lines = [f"today: {describe(today)}", f"tomorrow: {describe(today + timedelta(days=1))}"]
     lines += [describe(today + timedelta(days=n)) for n in range(2, TABLE_DAYS)]
-    first, last = this_week(today)
-    lines.append(f"this week: {first.isoformat()} to {last.isoformat()}")
+    lines.append(f"this week: {monday.isoformat()} to {(monday + timedelta(days=6)).isoformat()}")
     lines.append(
         f"next week: {(monday + timedelta(days=7)).isoformat()} to "
         f"{(monday + timedelta(days=13)).isoformat()}"

@@ -582,3 +582,10 @@ class TestRoundSix:
         assert of(fixed, "approval_required")[0]["payload"]["start"].startswith(
             f"{day(5).isoformat()}T16:00"
         )
+
+
+@pytest.mark.parametrize("intents", [[[{"kind": "recall", "about": "Samuel Okafor"}]]])
+def test_what_someone_asked_reads_their_mail_when_nothing_is_saved(post_chat: PostChat) -> None:
+    frames = post_chat({"message": "Thanks. What did Samuel Okafor ask me about?"})
+    assert "mail_search" in calls(frames) and "nothing saved" not in said(frames)
+    assert of(frames, "tool_call")[0]["args"]["query"].startswith("from:Samuel")

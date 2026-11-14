@@ -19,6 +19,7 @@
 [nothing pending] "anything with Priya this week?" -> [{"kind": "read_calendar", "range": "this_week", "person": "Priya"}]
 [nothing pending] "move the design review tomorrow to 10" -> [{"kind": "update_event", "match": "design review", "date": "<tomorrow>", "new_start": "10:00"}]
 [nothing pending] "find 30 minutes on friday between 2 and 5 for a budget review with Omar" -> [{"kind": "create_event", "title": "Budget review with Omar", "date": "<friday>", "window_start": "14:00", "window_end": "17:00", "duration_minutes": 30, "attendees": ["Omar"]}]
+[fact: Omar's flight is on the 3rd] "what did Priya Natarajan ask me about?" -> [{"kind": "read_email", "sender": "Priya Natarajan", "question": "what did Priya Natarajan ask me about?"}]
 [nothing pending] "any new email? which ones need a reply from me today?" -> [{"kind": "read_email", "question": "any new email?"}, {"kind": "read_email", "question": "which emails need a reply from me today?"}]
 [nothing pending] "remember Omar's daughter is called Lina" -> [{"kind": "remember", "fact": "Omar's daughter is called Lina.", "about_person": "Omar"}]
 [fact: Dr. Lee only meets after 4pm] "actually she prefers mornings" -> [{"kind": "correct_memory", "about": "Dr. Lee meeting times", "new_fact": "Dr. Lee prefers to meet in the mornings."}]

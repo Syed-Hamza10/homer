@@ -420,9 +420,9 @@ def test_this_week_runs_to_sunday_and_past_it_on_a_weekend(
     assert this_week(today) == (first, last)
 
 
-def test_the_date_table_names_the_same_week_as_the_code() -> None:
+def test_the_date_table_keeps_calendar_weeks_on_a_weekend() -> None:
     table = date_table(SATURDAY)
-    assert "this week: 2026-11-14 to 2026-11-22" in table
+    assert "this week: 2026-11-09 to 2026-11-15" in table
     assert "next week: 2026-11-16 to 2026-11-22" in table
 
 
