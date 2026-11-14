@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/screenshots/logo.png" alt="Homer" width="420">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/logo-dark.png">
+    <img src="docs/readme/logo-light.png" alt="Homer" width="360">
+  </picture>
 </p>
 
 <p align="center">
