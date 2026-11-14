@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import sqlite3
 import time
@@ -13,6 +14,7 @@ from fastmcp import Client
 
 from homer_mcp_google.auth import TokenStore
 from homer_mcp_google.client import GoogleClient
+from homer_mcp_google.messages import build_raw
 from homer_mcp_google.settings import Settings
 from homer_mcp_google.tools import TOOL_NAMES
 from homer_net import BlockedHostError
@@ -99,6 +101,58 @@ async def test_draft_send_needs_approval_then_execute_sends(mcp: Client, sim: ht
     assert done["message_id"] in changes["changed_ids"]
     assert int(changes["cursor"]) > int(cursor)
     assert (await call(mcp, "mail_changes_since", cursor=changes["cursor"]))["changed_ids"] == []
+
+
+AUTH = {"Authorization": "Bearer sim-access-token"}
+GMAIL_SIM = "/gmail/v1/users/me"
+
+
+def sent_message(sim: httpx.Client, message_id: str) -> tuple[str, str, str]:
+    message = sim.get(f"{GMAIL_SIM}/messages/{message_id}", headers=AUTH).json()
+    headers = {h["name"].lower(): h["value"] for h in message["payload"]["headers"]}
+    body = base64.urlsafe_b64decode(message["payload"]["body"]["data"] + "==").decode()
+    return headers["to"], headers["subject"], body.strip()
+
+
+async def approved_send(mcp: Client) -> dict[str, Any]:
+    draft = await call(
+        mcp, "mail_draft", to="maya.lindqvist@example.test", subject="Plan", body="Approved text."
+    )
+    return (await call(mcp, "mail_send", draft_id=draft["draft_id"]))["payload"]
+
+
+async def test_send_restores_a_tampered_draft_to_the_approved_content(
+    mcp: Client, sim: httpx.Client
+) -> None:
+    payload = await approved_send(mcp)
+    raw = build_raw("attacker@example.test", "Plan", "Changed text.", None)
+    sim.put(
+        f"{GMAIL_SIM}/drafts/{payload['draft_id']}",
+        json={"id": payload["draft_id"], "message": {"raw": raw}},
+        headers=AUTH,
+    ).raise_for_status()
+    done = await call(mcp, "execute", action="mail_send", payload=payload)
+    assert sent_message(sim, done["message_id"]) == (
+        "maya.lindqvist@example.test",
+        "Plan",
+        "Approved text.",
+    )
+
+
+async def test_send_recreates_a_missing_draft_from_the_approved_content(
+    mcp: Client, sim: httpx.Client
+) -> None:
+    payload = await approved_send(mcp)
+    sim.delete(f"{GMAIL_SIM}/drafts/{payload['draft_id']}", headers=AUTH).raise_for_status()
+    before = sim.get("/_sim/state").json()["sent"]
+    done = await call(mcp, "execute", action="mail_send", payload=payload)
+    assert done.get("sent") is True, done
+    assert sim.get("/_sim/state").json()["sent"] == before + 1
+    assert sent_message(sim, done["message_id"]) == (
+        "maya.lindqvist@example.test",
+        "Plan",
+        "Approved text.",
+    )
 
 
 async def test_send_with_unknown_draft_id_lists_recent_drafts(

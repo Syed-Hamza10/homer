@@ -146,6 +146,10 @@ def notify(payload: dict[str, Any]) -> dict[str, str]:
     return {"sendUpdates": payload.get("send_updates", "all")}
 
 
+def mail_content(to: str, subject: str, body: str) -> tuple[str, str, str]:
+    return to.strip(), subject.strip(), body.replace("\r\n", "\n").strip()
+
+
 def zone_of(timezone: str | None) -> dict[str, str]:
     return {"timezone": timezone} if timezone else {}
 
@@ -675,12 +679,44 @@ class GoogleTools:
         primary = [entry for entry in found.get("sendAs", []) if entry.get("isPrimary")]
         return str(primary[0].get("displayName") or "") if primary else ""
 
+    async def _recreated_draft(self, approved: tuple[str, str, str], thread_id: str | None) -> str:
+        """A new draft with the approved content, in its thread while that thread still exists."""
+        try:
+            message = await self._draft_message(*approved, thread_id)
+        except GoogleError as error:
+            if error.status != 404:
+                raise
+            message = await self._draft_message(*approved, None)
+        return (await self.client.post(f"{GMAIL}/drafts", {"message": message}))["id"]
+
+    async def _approved_draft(self, payload: dict[str, Any]) -> str:
+        """The id of a draft holding exactly the approved recipient, subject and body: a changed
+        draft is rewritten first and a missing one is created again."""
+        draft_id = payload["draft_id"]
+        approved = mail_content(payload["to"], payload["subject"], payload["body"])
+        thread_id = payload.get("thread_id") or None
+        try:
+            draft = await self.client.get(f"{GMAIL}/drafts/{draft_id}", format="full")
+        except GoogleError as error:
+            if error.status != 404:
+                raise
+            return await self._recreated_draft(approved, thread_id)
+        current = neutral_message(draft["message"], {}, with_body=True)
+        body = current["body"].removeprefix("<untrusted>").removesuffix("</untrusted>")
+        if mail_content(current["to"], current["subject"], body) != approved:
+            message = await self._draft_message(*approved, thread_id)
+            await self.client.put(
+                f"{GMAIL}/drafts/{draft_id}", {"id": draft_id, "message": message}
+            )
+        return draft_id
+
     @guarded
     async def execute(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Performs an approved action with its approval payload. Executor use only."""
         match action:
             case "mail_send":
-                sent = await self.client.post(f"{GMAIL}/drafts/send", {"id": payload["draft_id"]})
+                draft_id = await self._approved_draft(payload)
+                sent = await self.client.post(f"{GMAIL}/drafts/send", {"id": draft_id})
                 return {"sent": True, "message_id": sent["id"], "thread_id": sent["threadId"]}
             case "cal_create":
                 body = event_body(payload, payload.get("timezone"))
