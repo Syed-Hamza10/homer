@@ -34,6 +34,10 @@ def server_env(settings: Settings) -> dict[str, str]:
         "GOOGLE_API_BASE": settings.google_api_base,
         "GOOGLE_TOKEN_URL": settings.google_token_url,
         "WEB_SEARCH": str(settings.web_search).lower(),
+        "SEARCH_PROVIDER": settings.search_provider,
+        "SEARCH_API_PROVIDER": settings.search_api_provider,
+        "SEARCH_API_KEY": settings.search_api_key.get_secret_value(),
+        "SEARCH_FALLBACK": str(settings.search_fallback).lower(),
     }
 
 

@@ -19,6 +19,7 @@ from homer_core.platform import ensure_home, restart_service, tail_file
 from homer_core.privacy_hosts import privacy_markdown
 from homer_core.services.backup import create_backup
 from homer_core.services.rules import get_rules, save_rules
+from homer_core.services.search_settings import load_search
 from homer_core.services.users import first_user, forget_user
 from homer_core.update import UpdateError
 from homer_core.update import rollback as rollback_venv
@@ -91,7 +92,7 @@ def logs(follow: Annotated[bool, typer.Option("--follow", "-f")] = False) -> Non
 
 @app.command()
 def privacy(output: Annotated[Path | None, typer.Option("--output", "-o")] = None) -> None:
-    text = privacy_markdown()
+    text = privacy_markdown(load_search(Settings()).hosts())
     if output is None:
         Console().print(text)
         return

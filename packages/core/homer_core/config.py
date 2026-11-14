@@ -1,6 +1,7 @@
 import os
 import secrets
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,6 +18,10 @@ class Settings(BaseSettings):
     ollama_url: str = "http://127.0.0.1:11434"
     homer_passphrase: SecretStr
     web_search: bool = True
+    search_provider: Literal["duckduckgo", "brave", "tavily"] = "duckduckgo"
+    search_api_provider: Literal["brave", "tavily"] = "brave"
+    search_api_key: SecretStr = SecretStr("")
+    search_fallback: bool = True
     google_api_base: str = "https://www.googleapis.com"
     google_token_url: str = "https://oauth2.googleapis.com/token"
     host: str = "127.0.0.1"

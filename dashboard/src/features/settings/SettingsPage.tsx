@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { GoogleAccount } from "./GoogleAccount"
 import { ModelHint } from "./ModelHint"
 import { TimezoneSelect } from "./TimezoneSelect"
+import { WebSearch } from "./WebSearch"
 import type { ClientRules, ModelTier, SelfEmailStatus } from "./types"
 import {
   useHealth,
@@ -232,6 +233,7 @@ export function SettingsPage() {
           </CardContent>
         </Card>
         <GoogleAccount />
+        <WebSearch />
       </main>
     </ScrollArea>
   )

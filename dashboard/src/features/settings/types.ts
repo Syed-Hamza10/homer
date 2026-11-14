@@ -52,3 +52,28 @@ export type GoogleStatus = {
   days_left: number | null
   connecting: boolean
 }
+
+export type SearchProvider = "duckduckgo" | "brave" | "tavily"
+
+export type KeyedProvider = "brave" | "tavily"
+
+export type SearchSettings = {
+  provider: SearchProvider
+  api_provider: KeyedProvider
+  fallback: boolean
+  key_hint: string | null
+  hosts: string[]
+}
+
+export type SearchUpdate = {
+  provider: SearchProvider
+  api_provider: KeyedProvider
+  fallback: boolean
+  api_key?: string
+}
+
+export type SearchProbe = {
+  status: "ok" | "blocked" | "invalid_key" | "limited" | "failed" | "off"
+  provider: string
+  results: number
+}
