@@ -14,21 +14,46 @@ export function mailFields(approval: PendingApproval): MailEdit | null {
   }
 }
 
+const timed = (
+  start: string,
+  end: string,
+  title: string,
+  attendees: string[],
+): EventEdit | null =>
+  start.includes("T")
+    ? {
+        title,
+        date: start.slice(0, 10),
+        start: start.slice(11, 16),
+        end: end.slice(11, 16),
+        attendees,
+      }
+    : null
+
+const quotedTitle = (preview: string): string =>
+  /'(.+?)'/.exec(preview)?.[1] ?? ""
+
 export function eventFields(approval: PendingApproval): EventEdit | null {
   const { payload } = approval
-  const start = text(payload.start)
-  const end = text(payload.end)
-  if (approval.action !== "cal_create" || !start.includes("T")) return null
-  return {
-    title: text(payload.title),
-    date: start.slice(0, 10),
-    start: start.slice(11, 16),
-    end: end.slice(11, 16),
-    attendees: Array.isArray(payload.attendees)
-      ? payload.attendees.map(String)
-      : [],
+  if (approval.action === "cal_update") {
+    const changes = (payload.changes ?? {}) as Record<string, unknown>
+    return timed(
+      text(changes.start),
+      text(changes.end),
+      text(changes.title) || quotedTitle(approval.preview),
+      [],
+    )
   }
+  if (approval.action !== "cal_create") return null
+  return timed(
+    text(payload.start),
+    text(payload.end),
+    text(payload.title),
+    Array.isArray(payload.attendees) ? payload.attendees.map(String) : [],
+  )
 }
+
+export const editsGuests = (action: string): boolean => action !== "cal_update"
 
 export function primaryLabel(action: string): string {
   if (action === "mail_send") return "Send"

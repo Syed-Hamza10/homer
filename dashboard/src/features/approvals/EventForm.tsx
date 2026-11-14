@@ -2,9 +2,13 @@ import { Input } from "@/components/ui/input"
 import { FormField } from "./FormField"
 import type { EventEdit } from "./types"
 
-type Props = { value: EventEdit; onChange: (value: EventEdit) => void }
+type Props = {
+  value: EventEdit
+  onChange: (value: EventEdit) => void
+  guests?: boolean
+}
 
-export function EventForm({ value, onChange }: Props) {
+export function EventForm({ value, onChange, guests = true }: Props) {
   return (
     <>
       <FormField label="Title">
@@ -36,20 +40,22 @@ export function EventForm({ value, onChange }: Props) {
           />
         </FormField>
       </div>
-      <FormField label="Attendees (comma separated)">
-        <Input
-          value={value.attendees.join(", ")}
-          onChange={(e) =>
-            onChange({
-              ...value,
-              attendees: e.target.value
-                .split(",")
-                .map((a) => a.trim())
-                .filter(Boolean),
-            })
-          }
-        />
-      </FormField>
+      {guests && (
+        <FormField label="Attendees (comma separated)">
+          <Input
+            value={value.attendees.join(", ")}
+            onChange={(e) =>
+              onChange({
+                ...value,
+                attendees: e.target.value
+                  .split(",")
+                  .map((a) => a.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+        </FormField>
+      )}
     </>
   )
 }
