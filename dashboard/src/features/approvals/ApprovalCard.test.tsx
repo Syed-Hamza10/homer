@@ -32,12 +32,12 @@ function renderCard(approval: PendingApproval) {
 }
 
 describe("ApprovalCard", () => {
-  it("reads as an email preview with one primary Send", () => {
+  it("reads as an email preview with one primary Send email", () => {
     renderCard(mail)
     expect(screen.getByRole("heading").textContent).toBe("Email to Sam Rivers")
     expect(screen.getByText("Launch")).toBeTruthy()
     expect(screen.getByText(/The launch moved to Friday/)).toBeTruthy()
-    const send = screen.getByRole("button", { name: "Send" })
+    const send = screen.getByRole("button", { name: "Send email" })
     expect(send.dataset.variant).toBe("brand")
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Discard" })).toBeTruthy()
@@ -49,9 +49,9 @@ describe("ApprovalCard", () => {
     )
     vi.stubGlobal("fetch", fetch)
     renderCard(mail)
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send email" }))
     expect(await screen.findByText("Sent")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Send" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Send email" })).toBeNull()
   })
 
   it("shows a decided status from the server without buttons", () => {

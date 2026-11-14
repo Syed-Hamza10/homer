@@ -25,6 +25,7 @@ const timed = (
         title,
         date: start.slice(0, 10),
         start: start.slice(11, 16),
+        end_date: end.slice(0, 10) || start.slice(0, 10),
         end: end.slice(11, 16),
         attendees,
       }
@@ -53,11 +54,25 @@ export function eventFields(approval: PendingApproval): EventEdit | null {
   )
 }
 
+export function followedEndDate(
+  startDate: string,
+  endDate: string,
+  nextStart: string,
+): string {
+  return endDate === startDate || endDate < nextStart ? nextStart : endDate
+}
+
+export function eventOrderProblem(value: EventEdit): string | null {
+  return `${value.end_date}T${value.end}` <= `${value.date}T${value.start}`
+    ? "The end must be after the start."
+    : null
+}
+
 export const editsGuests = (action: string): boolean => action !== "cal_update"
 
 export function primaryLabel(action: string): string {
-  if (action === "mail_send") return "Send"
-  if (action === "cal_create") return "Create"
+  if (action === "mail_send") return "Send email"
+  if (action === "cal_create") return "Create event"
   return "Approve"
 }
 

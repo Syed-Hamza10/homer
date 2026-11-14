@@ -3,7 +3,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, model_validator
 from sqlalchemy import update
 from sqlmodel import Session
 
@@ -50,8 +50,23 @@ class EventEdit(BaseModel):
     title: str
     date: Annotated[str, BeforeValidator(iso_date)]
     start: Annotated[str, BeforeValidator(clock)]
+    end_date: Annotated[str | None, BeforeValidator(iso_date)] = None
     end: Annotated[str, BeforeValidator(clock)]
     attendees: list[Address] = []
+
+    @property
+    def opens(self) -> str:
+        return f"{self.date}T{self.start}:00"
+
+    @property
+    def closes(self) -> str:
+        return f"{self.end_date or self.date}T{self.end}:00"
+
+    @model_validator(mode="after")
+    def check_order(self) -> "EventEdit":
+        if self.closes <= self.opens:
+            raise ValueError("end must be after start")
+        return self
 
 
 def problem(result: Any) -> str | None:
@@ -92,8 +107,8 @@ async def edited_event(
     payload = json.loads(approval.payload_json)
     args = {
         "title": change.title,
-        "start": f"{change.date}T{change.start}:00",
-        "end": f"{change.date}T{change.end}:00",
+        "start": change.opens,
+        "end": change.closes,
         "attendees": change.attendees,
         "description": payload.get("description", ""),
         "location": payload.get("location", ""),
@@ -116,8 +131,8 @@ async def edited_update(
     payload = json.loads(approval.payload_json)
     args: dict[str, Any] = {
         "event_id": payload["event_id"],
-        "start": f"{change.date}T{change.start}:00",
-        "end": f"{change.date}T{change.end}:00",
+        "start": change.opens,
+        "end": change.closes,
         "timezone": payload.get("timezone") or user.timezone,
     }
     if change.title.strip() and change.title.strip() != current_title(approval.preview):

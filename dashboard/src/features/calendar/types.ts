@@ -43,8 +43,9 @@ export type EventFields = {
 
 export type FormValue = {
   title: string
-  date: string
+  startDate: string
   start: string
+  endDate: string
   end: string
   attendees: string
   description: string

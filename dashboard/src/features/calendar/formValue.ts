@@ -1,11 +1,13 @@
+import { followedEndDate } from "@/features/approvals/editable"
 import { addDays, instantOf, wallString, wallTime } from "@/lib/zoned"
 import type { WallTime } from "@/lib/zoned"
 import type { CalendarEvent, EventFields, FormValue } from "./types"
 
 export const emptyForm: FormValue = {
   title: "",
-  date: "",
+  startDate: "",
   start: "",
+  endDate: "",
   end: "",
   attendees: "",
   description: "",
@@ -17,8 +19,9 @@ export function fromWalls(start: WallTime, end: WallTime): FormValue {
   const closes = wallString(end)
   return {
     ...emptyForm,
-    date: opens.slice(0, 10),
+    startDate: opens.slice(0, 10),
     start: opens.slice(11),
+    endDate: closes.slice(0, 10),
     end: closes.slice(11),
   }
 }
@@ -33,7 +36,11 @@ export function fromInstants(
 
 export function fromEvent(event: CalendarEvent, timeZone: string): FormValue {
   const when = event.all_day
-    ? { ...emptyForm, date: event.start.slice(0, 10) }
+    ? {
+        ...emptyForm,
+        startDate: event.start.slice(0, 10),
+        endDate: event.start.slice(0, 10),
+      }
     : fromInstants(new Date(event.start), new Date(event.end), timeZone)
   return {
     ...when,
@@ -52,11 +59,19 @@ export function attendeeList(text: string): string[] {
 }
 
 export function startOf(value: FormValue): string {
-  return `${value.date}T${value.start}`
+  return `${value.startDate}T${value.start}`
 }
 
 export function endOf(value: FormValue): string {
-  return `${value.date}T${value.end}`
+  return `${value.endDate}T${value.end}`
+}
+
+export function withStartDate(value: FormValue, startDate: string): FormValue {
+  return {
+    ...value,
+    startDate,
+    endDate: followedEndDate(value.startDate, value.endDate, startDate),
+  }
 }
 
 export function toFields(value: FormValue): EventFields {
@@ -72,9 +87,10 @@ export function toFields(value: FormValue): EventFields {
 
 export function problem(value: FormValue, withTime: boolean): string | null {
   if (withTime) {
-    if (!value.date || !value.start || !value.end)
-      return "Pick a date and times."
-    if (value.end <= value.start) return "The end must be after the start."
+    if (!value.startDate || !value.start || !value.endDate || !value.end)
+      return "Pick a start and an end."
+    if (endOf(value) <= startOf(value))
+      return "The end must be after the start."
   }
   const bad = attendeeList(value.attendees).find(
     (email) => !email.includes("@"),

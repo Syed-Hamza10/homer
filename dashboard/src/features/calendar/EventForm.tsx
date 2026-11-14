@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { FormField } from "@/features/approvals/FormField"
-import { problem } from "./formValue"
+import { holdImeEnter } from "@/lib/ime"
+import { problem, withStartDate } from "./formValue"
 import type { FormValue } from "./types"
 
 type Props = {
@@ -35,6 +36,7 @@ export function EventForm({
   return (
     <form
       className="flex flex-col gap-2"
+      onKeyDown={holdImeEnter}
       onSubmit={(event) => {
         event.preventDefault()
         if (!invalid) onSubmit()
@@ -50,15 +52,15 @@ export function EventForm({
         </FormField>
       )}
       {withTime && (
-        <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-          <FormField label="Date">
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <FormField label="Start date">
             <Input
               type="date"
-              value={value.date}
-              onChange={(e) => set("date")(e.target.value)}
+              value={value.startDate}
+              onChange={(e) => onChange(withStartDate(value, e.target.value))}
             />
           </FormField>
-          <FormField label="Start">
+          <FormField label="Start time">
             <Input
               type="time"
               step={900}
@@ -66,7 +68,15 @@ export function EventForm({
               onChange={(e) => set("start")(e.target.value)}
             />
           </FormField>
-          <FormField label="End">
+          <FormField label="End date">
+            <Input
+              type="date"
+              value={value.endDate}
+              min={value.startDate}
+              onChange={(e) => set("endDate")(e.target.value)}
+            />
+          </FormField>
+          <FormField label="End time">
             <Input
               type="time"
               step={900}

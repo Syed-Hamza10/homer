@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { eventOrderProblem } from "./editable"
 import { EventForm } from "./EventForm"
 import { MailForm } from "./MailForm"
 import type { ApprovalEdit } from "./types"
@@ -20,13 +21,14 @@ export function ApprovalEditor({
   onCancel,
 }: Props) {
   const [value, setValue] = useState<ApprovalEdit>(initial)
+  const invalid = "to" in value ? null : eventOrderProblem(value)
 
   return (
     <form
       className="flex flex-col gap-2"
       onSubmit={(e) => {
         e.preventDefault()
-        onSave(value)
+        if (!invalid) onSave(value)
       }}
     >
       {"to" in value ? (
@@ -34,8 +36,9 @@ export function ApprovalEditor({
       ) : (
         <EventForm value={value} onChange={setValue} guests={guests} />
       )}
+      {invalid && <p className="text-xs text-destructive">{invalid}</p>}
       <div className="flex gap-2">
-        <Button size="sm" type="submit" disabled={saving}>
+        <Button size="sm" type="submit" disabled={saving || Boolean(invalid)}>
           Save
         </Button>
         <Button size="sm" type="button" variant="outline" onClick={onCancel}>

@@ -23,7 +23,7 @@ export function QuickCreate({ initial, onClose, onApproval }: Props) {
         value={value}
         onChange={setValue}
         onBack={onClose}
-        submitLabel="Create"
+        submitLabel="Review event"
         busy={create.isPending}
         error={errorText(create.error)}
         onSubmit={() =>
