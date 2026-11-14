@@ -18,3 +18,15 @@ export function attendeeLine(attendees: string[]): string {
   if (names.length <= 3) return names.join(", ")
   return `${names.slice(0, 3).join(", ")} +${names.length - 3}`
 }
+
+export function clockTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+}
+
+export function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`
+}

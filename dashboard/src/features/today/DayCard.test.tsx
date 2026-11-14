@@ -31,7 +31,6 @@ const card: DayCardData = {
   next_event_id: "e1",
   emails: [
     {
-      message_id: "m1",
       thread_id: "t1",
       sender: "Rosa Lindqvist <rosa@example.com>",
       subject: "Revised proposal",
@@ -39,8 +38,12 @@ const card: DayCardData = {
       reason: "Priority contact",
     },
   ],
+  needs_you: 1,
+  unread: 7,
   follow_ups: [],
   approvals: [{ id: 4, action: "mail_send", preview: "Send to Tomas" }],
+  live: true,
+  as_of: null,
 }
 
 function show(data: DayCardData) {

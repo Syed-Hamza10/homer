@@ -1,47 +1,18 @@
 from datetime import UTC, datetime
 
-import structlog
 from fastapi import APIRouter
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from homer_core.agent.runtime import Runtime
 from homer_core.api.deps import CurrentUser, RuntimeDep, SchedulerDep, SessionDep, SettingsDep
 from homer_core.api.schemas.reminders import ReminderOut
-from homer_core.api.schemas.skills import (
-    BriefOut,
-    EventOut,
-    FollowUpOut,
-    TodayOut,
-)
-from homer_core.db.models import CalendarEventCache, EmailCache, User
-from homer_core.mcp.manager import ExecuteFailed, ServerUnavailable
-from homer_core.services import approvals, briefs, followups, google_account
-from homer_core.services.calendar import list_events, local_day_bounds, refresh_calendar
-from homer_core.services.day import day_card
-from homer_core.services.inbox import list_inbox, refresh_inbox
+from homer_core.api.schemas.skills import BriefOut, FollowUpOut, TodayOut
+from homer_core.db.models import User
+from homer_core.services import briefs, followups, google_account
+from homer_core.services import day as day_service
+from homer_core.services.calendar import local_day_bounds
 from homer_core.services.rules import get_rules
 
-log = structlog.get_logger(__name__)
-
 router = APIRouter(prefix="/api/today", tags=["today"])
-
-
-async def _prime(user: User, session: Session, runtime: Runtime) -> None:
-    rules = get_rules(session, user.id)
-    events = session.exec(
-        select(CalendarEventCache).where(CalendarEventCache.user_id == user.id)
-    ).first()
-    if events is None:
-        try:
-            await refresh_calendar(session, user, runtime.manager, days=14)
-        except (ExecuteFailed, ServerUnavailable):
-            log.exception("today_calendar_failed")
-    messages = session.exec(select(EmailCache).where(EmailCache.user_id == user.id)).first()
-    if messages is None:
-        try:
-            await refresh_inbox(session, user, runtime.manager, rules)
-        except (ExecuteFailed, ServerUnavailable):
-            log.exception("today_inbox_failed")
 
 
 @router.get("")
@@ -52,27 +23,29 @@ async def today(
     scheduler: SchedulerDep,
     settings: SettingsDep,
 ) -> TodayOut:
-    await _prime(user, session, runtime)
     rules = get_rules(session, user.id)
     now = datetime.now(UTC)
     day = briefs.day_string(now, user.timezone)
-    start, end = local_day_bounds(now, user.timezone)
-    events = list_events(session, user, start, end)
-    messages = list_inbox(session, user)
-    reminders = briefs.due_reminders(session, user, end)
-    active = followups.active_followups(session, user, end)
+    _, end = local_day_bounds(now, user.timezone)
+    snap = await day_service.snapshot(session, user, runtime.manager, rules, now)
+    name = await day_service.greeting_name(user, runtime.manager)
     return TodayOut(
         day=day,
         brief=_brief(session, user, briefs.MORNING, day),
         digest=_brief(session, user, briefs.DIGEST, day),
-        events=[EventOut.from_row(event) for event in events],
-        reminders=[ReminderOut.model_validate(row, from_attributes=True) for row in reminders],
-        follow_ups=[FollowUpOut.from_row(row, rules) for row in active],
-        unread=len([message for message in messages if message.unread]),
-        pending_approvals=len(approvals.list_pending(session, user)),
+        showing=briefs.current_kind(now, user.timezone),
+        reminders=[
+            ReminderOut.model_validate(row, from_attributes=True)
+            for row in briefs.due_reminders(session, user, end)
+        ],
+        follow_ups=[
+            FollowUpOut.from_row(row, rules)
+            for row in followups.active_followups(session, user, end)
+        ],
+        background_refresh=settings.scheduler_enabled,
         health=scheduler.health,
         google=google_account.local_status(settings, now),
-        card=day_card(session, user, now),
+        card=day_service.day_card(session, user, snap, name, now),
     )
 
 

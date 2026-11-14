@@ -1,6 +1,13 @@
 import type { GoogleStatus } from "@/features/settings/types"
 
-export type Brief = { kind: string; day: string; content: string }
+export type BriefKind = "morning" | "digest"
+
+export type Brief = {
+  kind: BriefKind
+  day: string
+  content: string
+  generated_at: string
+}
 
 export type Reminder = {
   id: number
@@ -8,15 +15,6 @@ export type Reminder = {
   due_at: string
   status: string
   created_at: string
-}
-
-export type Event = {
-  event_id: string
-  title: string
-  start: string
-  end: string
-  location: string
-  attendees: string[]
 }
 
 export type FollowUp = {
@@ -45,11 +43,10 @@ export type Today = {
   day: string
   brief: Brief | null
   digest: Brief | null
-  events: Event[]
+  showing: BriefKind
   reminders: Reminder[]
   follow_ups: FollowUp[]
-  unread: number
-  pending_approvals: number
+  background_refresh: boolean
   health: Health | null
   google: GoogleStatus
   card: DayCardData
@@ -65,7 +62,6 @@ export type Meeting = {
 }
 
 export type EmailNeed = {
-  message_id: string
   thread_id: string
   sender: string
   subject: string
@@ -88,6 +84,10 @@ export type DayCardData = {
   meetings: Meeting[]
   next_event_id: string | null
   emails: EmailNeed[]
+  needs_you: number
+  unread: number
   follow_ups: FollowUpDue[]
   approvals: ApprovalWaiting[]
+  live: boolean
+  as_of: string | null
 }

@@ -1,6 +1,8 @@
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
+import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from homer_core.db.models import (
@@ -10,9 +12,19 @@ from homer_core.db.models import (
     FollowUp,
     User,
 )
-from homer_core.services.day import day_card, greeting
+from homer_core.mcp.manager import PROFILE_TOOL, McpManager, ServerUnavailable
+from homer_core.services.day import (
+    PROFILES,
+    day_card,
+    greeting,
+    greeting_name,
+    snapshot,
+)
+from homer_core.services.names import call_name, humanise, person
+from homer_core.services.rules import ClientRules
 
 NOW = datetime(2026, 11, 6, 10, 0, tzinfo=UTC)
+UPDATED = NOW - timedelta(minutes=20)
 
 
 def make_session() -> Session:
@@ -29,6 +41,7 @@ def email(message_id: str, thread_id: str, **fields: object) -> EmailCache:
         sender=f"Sender {message_id} <{message_id}@example.com>",
         subject=f"Subject {message_id}",
         received_at=NOW - timedelta(minutes=int(message_id[1:])),
+        updated_at=UPDATED,
         **fields,
     )
 
@@ -46,6 +59,7 @@ def seed(session: Session) -> User:
                 title="Standup",
                 start_at=NOW - timedelta(hours=1),
                 end_at=NOW - timedelta(minutes=45),
+                updated_at=UPDATED,
             ),
             CalendarEventCache(
                 user_id=1,
@@ -85,24 +99,128 @@ def seed(session: Session) -> User:
     return user
 
 
-def test_day_card_from_cached_data() -> None:
+class Stub:
+    def __init__(self, answers: dict[str, Any]) -> None:
+        self.answers = answers
+
+    async def call(self, server: str, tool: str, args: dict[str, Any]) -> Any:
+        if tool not in self.answers:
+            raise ServerUnavailable("google is down")
+        return self.answers[tool]
+
+
+DOWN = cast(McpManager, Stub({}))
+
+
+@pytest.fixture(autouse=True)
+def forget_profiles() -> None:
+    PROFILES.clear()
+
+
+async def test_card_falls_back_to_the_cache_and_says_when() -> None:
     with make_session() as session:
-        card = day_card(session, seed(session), NOW)
+        user = seed(session)
+        snap = await snapshot(session, user, DOWN, ClientRules(), NOW)
+        card = day_card(session, user, snap, "Alex", NOW)
     assert card.greeting == "Good morning, Alex."
+    assert card.live is False and card.as_of == UPDATED
     assert [meeting.event_id for meeting in card.meetings] == ["past", "next"]
     assert card.next_event_id == "next"
     assert card.meetings[1].join_url == "https://meet.example.com/abc"
     assert card.meetings[1].attendees == ["elena@example.com"]
-    assert [(item.message_id, item.reason) for item in card.emails] == [
-        ("m1", "Priority contact"),
-        ("m2", "Waiting on your reply"),
-        ("m3", "Priority contact"),
+    assert [(item.thread_id, item.reason) for item in card.emails] == [
+        ("t1", "Priority contact"),
+        ("t2", "Waiting on your reply"),
+        ("t3", "Priority contact"),
     ]
+    assert card.needs_you == 5 and card.unread == 5
     assert [item.subject for item in card.follow_ups] == ["Proposal"]
     assert [item.preview for item in card.approvals] == ["Send to Rosa"]
 
 
+async def test_card_reads_today_live_and_replaces_the_cached_day() -> None:
+    google = Stub(
+        {
+            "cal_list": {
+                "events": [
+                    {
+                        "id": "fresh",
+                        "title": "Made a minute ago",
+                        "start": "2026-11-06T09:00:00Z",
+                        "end": "2026-11-06T09:30:00Z",
+                    }
+                ]
+            },
+            "mail_labels": {"labels": [{"id": "INBOX", "unread": 24, "total": 31}]},
+            PROFILE_TOOL: {"email": "me@example.com", "name": "Alex Morgan"},
+            "mail_list_threads": {
+                "threads": [
+                    {"id": "a", "from": "Ana <ana@example.com>", "subject": "Hi", "label_ids": []},
+                    {
+                        "id": "b",
+                        "from": "Bo <bo@example.com>",
+                        "subject": "Re: plan",
+                        "label_ids": ["INBOX", "SENT", "UNREAD"],
+                        "internal_date": "1762419600000",
+                    },
+                    {
+                        "id": "c",
+                        "from": "Alex <ME@example.com>",
+                        "subject": "Re: client contract",
+                        "label_ids": ["INBOX", "SENT", "UNREAD"],
+                    },
+                ]
+            },
+        }
+    )
+    with make_session() as session:
+        user = seed(session)
+        snap = await snapshot(session, user, cast(McpManager, google), ClientRules(), NOW)
+        card = day_card(session, user, snap, "", NOW)
+    assert card.live is True and card.as_of is None
+    assert [meeting.event_id for meeting in card.meetings] == ["fresh"]
+    assert card.unread == 24 and card.needs_you == 1
+    assert card.emails[0].thread_id == "b" and card.emails[0].reason == "Waiting on your reply"
+    assert card.greeting == "Good morning."
+
+
 def test_greeting_by_local_time() -> None:
-    assert greeting("Alex Morgan", NOW.replace(hour=13), "Europe/London") == "Good afternoon, Alex."
+    assert greeting("Alex", NOW.replace(hour=13), "Europe/London") == "Good afternoon, Alex."
     assert greeting("Alex", NOW.replace(hour=20), "Europe/London") == "Good evening, Alex."
     assert greeting("", NOW.replace(hour=2), "Asia/Tokyo") == "Good morning."
+    assert greeting("", NOW.replace(hour=11, minute=30), "Asia/Karachi") == "Good afternoon."
+
+
+@pytest.mark.parametrize(
+    ("display", "expected"),
+    [
+        ("Alex Morgan", "Alex"),
+        ("BSDSF21A019-Syed Hamza Shah", "Hamza"),
+        ("BSDSF21A019 - Hamza Shah", "Hamza"),
+        ("Dr. Elena Marchetti", "Elena"),
+        ("Mr Omar", "Omar"),
+        ("Syed", "Syed"),
+        ("JORDAN REYES", "Jordan"),
+        ("ali@example.com", ""),
+        ("", ""),
+    ],
+)
+def test_call_name(display: str, expected: str) -> None:
+    assert call_name(display) == expected
+
+
+async def test_greeting_name_prefers_settings_then_the_gmail_profile() -> None:
+    profile = cast(McpManager, Stub({PROFILE_TOOL: {"name": "BSDSF21A019-Syed Hamza Shah"}}))
+    assert await greeting_name(User(id=7, name="Alex Morgan", timezone="UTC"), profile) == "Alex"
+    assert await greeting_name(User(id=7, name="there", timezone="UTC"), profile) == "Hamza"
+    PROFILES.clear()
+    assert await greeting_name(User(id=7, name="there", timezone="UTC"), DOWN) == ""
+    assert 7 not in PROFILES
+
+
+def test_addresses_read_as_names() -> None:
+    known = {"hassan.k@example.com": "Hassan"}
+    assert humanise("Ask hassan.k@example.com", known) == "Ask Hassan"
+    assert humanise("hassan30khawaja@example.com owns it", {}) == "Hassan owns it"
+    assert person("Elena M <elena@example.com>", {}) == "Elena"
+    assert person("hassan.k@example.com", known) == "Hassan"

@@ -1,17 +1,16 @@
 import type { ReactNode } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import { attendeeLine, personName, untilLabel } from "./dayFormat"
+import {
+  attendeeLine,
+  clockTime,
+  personName,
+  plural,
+  untilLabel,
+} from "./dayFormat"
 import { DayRow } from "./DayRow"
 import type { DayCardData } from "./types"
 
 type Props = { card: DayCardData; now: number }
-
-function clock(value: string): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -24,10 +23,6 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? "" : "s"}`
-}
-
 export function DayCard({ card, now }: Props) {
   const { meetings, emails, follow_ups, approvals } = card
   const quiet =
@@ -37,7 +32,9 @@ export function DayCard({ card, now }: Props) {
     !approvals.length
   const summary = [
     plural(meetings.length, "meeting"),
-    plural(emails.length, "email") + " need you",
+    plural(card.needs_you, "email") +
+      (card.needs_you === 1 ? " needs" : " need") +
+      " you",
     plural(approvals.length, "approval") + " waiting",
   ].join(" · ")
 
@@ -50,6 +47,15 @@ export function DayCard({ card, now }: Props) {
             {card.greeting}
           </h2>
           <p className="text-sm text-muted-foreground">{summary}</p>
+          {!card.live && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="stale-note"
+            >
+              Google is not answering
+              {card.as_of ? ` · as of ${clockTime(card.as_of)}` : ""}
+            </p>
+          )}
         </div>
 
         {meetings.length > 0 && (
@@ -59,7 +65,7 @@ export function DayCard({ card, now }: Props) {
               return (
                 <DayRow
                   key={meeting.event_id}
-                  lead={clock(meeting.start)}
+                  lead={clockTime(meeting.start)}
                   title={meeting.title || "Untitled"}
                   detail={attendeeLine(meeting.attendees) || undefined}
                   badge={
@@ -83,10 +89,16 @@ export function DayCard({ card, now }: Props) {
         )}
 
         {emails.length > 0 && (
-          <Group title="Emails that need you">
+          <Group
+            title={
+              card.needs_you > emails.length
+                ? `Emails that need you (${emails.length} of ${card.needs_you})`
+                : "Emails that need you"
+            }
+          >
             {emails.map((email) => (
               <DayRow
-                key={email.message_id}
+                key={email.thread_id}
                 title={email.subject || "(no subject)"}
                 detail={`${personName(email.sender)} · ${email.reason}`}
                 action={{

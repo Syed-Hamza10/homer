@@ -1,10 +1,11 @@
 import json
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from homer_core.api.schemas.reminders import ReminderOut
-from homer_core.db.models import CalendarEventCache, DailyBrief, EmailCache, FollowUp
+from homer_core.db.models import CalendarEventCache, DailyBrief, EmailCache, FollowUp, as_utc
 from homer_core.services.day import DayCard
 from homer_core.services.followups import draft_body
 from homer_core.services.google_account import GoogleStatus
@@ -88,21 +89,23 @@ class BriefOut(BaseModel):
     kind: str
     day: str
     content: str
+    generated_at: datetime
 
     @classmethod
     def from_row(cls, row: DailyBrief) -> "BriefOut":
-        return cls(kind=row.kind, day=row.day, content=row.content)
+        return cls(
+            kind=row.kind, day=row.day, content=row.content, generated_at=as_utc(row.created_at)
+        )
 
 
 class TodayOut(BaseModel):
     day: str
     brief: BriefOut | None
     digest: BriefOut | None
-    events: list[EventOut]
+    showing: Literal["morning", "digest"]
     reminders: list[ReminderOut]
     follow_ups: list[FollowUpOut]
-    unread: int
-    pending_approvals: int
+    background_refresh: bool
     health: HealthReport | None
     google: GoogleStatus
     card: DayCard
