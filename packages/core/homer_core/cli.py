@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlmodel import Session
 
-from homer_core.config import HOME, Settings
+from homer_core.config import HOME, Settings, home_dir, read_passphrase, write_passphrase
 from homer_core.db.models import User
 from homer_core.db.session import make_engine, run_migrations
 from homer_core.doctor import run_checks
@@ -235,6 +236,29 @@ def eval_(
     if executable is None:
         raise typer.BadParameter("homer-eval is not installed; it ships with the dev workspace")
     raise typer.Exit(code=subprocess.run([executable, "--runs", "3"], check=False).returncode)
+
+
+@app.command(help="Change the passphrase that unlocks the Homer dashboard.")
+def passphrase(
+    check: Annotated[
+        bool, typer.Option("--check", help="Verify a passphrase without changing it.")
+    ] = False,
+) -> None:
+    console = Console()
+    home = home_dir()
+    if check:
+        stored = read_passphrase(home)
+        given = typer.prompt("Passphrase", hide_input=True)
+        if stored is not None and secrets.compare_digest(given.encode(), stored.encode()):
+            console.print("That is the passphrase.")
+            return
+        console.print("[red]That is not the passphrase.[/red]")
+        raise typer.Exit(code=1)
+    new = typer.prompt("New passphrase", hide_input=True, confirmation_prompt=True)
+    if not new.strip():
+        raise typer.BadParameter("the passphrase cannot be empty")
+    path = write_passphrase(home, new)
+    console.print(f"Passphrase saved in {path}. Sign in again with the new one.")
 
 
 @setup.command("google", help="Connect a Google account in the browser.")

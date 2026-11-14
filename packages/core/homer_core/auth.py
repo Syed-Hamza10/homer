@@ -5,9 +5,10 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from itsdangerous import BadSignature, TimestampSigner
+from pydantic import SecretStr
 from starlette.responses import JSONResponse
 
-from homer_core.config import Settings, own_origins
+from homer_core.config import Settings, own_origins, read_passphrase
 from homer_core.services.errors import DomainError
 
 SESSION_COOKIE = "homer_session"
@@ -50,12 +51,19 @@ class LoginLimiter:
         self.failures.clear()
 
 
+def _matches(given: str, expected: str) -> bool:
+    return secrets.compare_digest(given.encode(), expected.encode())
+
+
 def verify_passphrase(settings: Settings, passphrase: str, limiter: LoginLimiter) -> None:
+    """On a mismatch, re-reads .env once so `homer passphrase` works without a restart."""
     limiter.check()
-    expected = settings.homer_passphrase.get_secret_value()
-    if not secrets.compare_digest(passphrase.encode(), expected.encode()):
-        limiter.record_failure()
-        raise InvalidPassphrase("wrong passphrase")
+    if not _matches(passphrase, settings.homer_passphrase.get_secret_value()):
+        current = read_passphrase(settings.homer_home)
+        if current is None or not _matches(passphrase, current):
+            limiter.record_failure()
+            raise InvalidPassphrase("wrong passphrase")
+        settings.homer_passphrase = SecretStr(current)
     limiter.reset()
 
 

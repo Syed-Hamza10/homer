@@ -139,6 +139,8 @@ def test_install_script_refuses_an_unlisted_wheel(tmp_path: Path) -> None:
     home, result = run_installer(tmp_path, "--wheels-dir", str(release))
     assert result.returncode == 1
     assert "is not listed in SHA256SUMS" in result.stderr
+    assert f"stored in {home}/.env" in result.stdout
+    assert "homer passphrase" in result.stdout
     assert not (home / "venv").exists()
 
 

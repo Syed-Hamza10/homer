@@ -74,6 +74,10 @@ export function LoginPage() {
                 onChange={(event) => setPassphrase(event.target.value)}
                 aria-invalid={error ? true : undefined}
               />
+              <p className="text-xs text-muted-foreground">
+                This is the passphrase you chose when you installed Homer. It
+                only unlocks this app on this computer.
+              </p>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button
                 type="submit"
@@ -83,6 +87,19 @@ export function LoginPage() {
                 Unlock
               </Button>
             </form>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none underline underline-offset-2">
+                Forgot it?
+              </summary>
+              <ol className="mt-2 list-decimal space-y-1 pl-4">
+                <li>Open the Terminal app on this computer.</li>
+                <li>
+                  Run <code className="font-mono">homer passphrase</code> and
+                  type a new passphrase twice.
+                </li>
+                <li>Come back here and sign in with the new passphrase.</li>
+              </ol>
+            </details>
           </CardContent>
         </Card>
         <p className="text-center text-xs font-medium text-muted-foreground">

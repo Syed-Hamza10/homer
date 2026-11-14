@@ -315,6 +315,7 @@ EOF
   [ "$PORT" = "8000" ] || printf 'PORT=%s\n' "$PORT" >>"$ENV_FILE"
   chmod 600 "$ENV_FILE"
   log "Wrote $ENV_FILE"
+  log "Your passphrase is stored in $ENV_FILE (readable only by you). To change it later, run: homer passphrase"
 elif grep -q '^TIMEZONE=' "$ENV_FILE"; then
   log "Keeping existing $ENV_FILE"
 else

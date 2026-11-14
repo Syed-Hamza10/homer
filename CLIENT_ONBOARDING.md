@@ -123,6 +123,17 @@ ollama ps
 `CONTEXT` must be `16384` and the model size about 7.7 GB. If it says 4096, the service environment
 is wrong; re-run the installer and do not start Ollama with `brew services`.
 
+### Your passphrase
+
+The passphrase is what you type on the sign-in page. You chose it during the install. It only
+unlocks Homer on this computer; it is not a Google or Apple password and nothing is sent anywhere.
+
+It is stored in `~/.homer/.env`, a file only your user can read. Homer does not show it back.
+
+To change it, or if you forget it, open Terminal and run `homer passphrase`. Type the new one
+twice (nothing shows while you type), then sign in again. No restart is needed. To check a
+passphrase without changing it, run `homer passphrase --check`.
+
 ## 4. Connect Google
 
 Use the client's own Google Cloud project and account. The full click-by-click guide is

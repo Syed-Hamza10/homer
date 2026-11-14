@@ -3,12 +3,20 @@ import secrets
 from pathlib import Path
 from typing import Literal
 
+from dotenv import dotenv_values
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from homer_core.platform import system_timezone
 
-HOME = Path(os.environ.get("HOMER_HOME", "~/.homer")).expanduser()
+PASSPHRASE_KEY = "HOMER_PASSPHRASE"
+
+
+def home_dir() -> Path:
+    return Path(os.environ.get("HOMER_HOME", "~/.homer")).expanduser()
+
+
+HOME = home_dir()
 
 
 class Settings(BaseSettings):
@@ -52,3 +60,26 @@ def session_secret(settings: Settings) -> str:
         path.touch(mode=0o600)
         path.write_text(secrets.token_urlsafe(32))
     return path.read_text().strip()
+
+
+def read_passphrase(home: Path) -> str | None:
+    return dotenv_values(home / ".env").get(PASSPHRASE_KEY)
+
+
+def write_passphrase(home: Path, passphrase: str) -> Path:
+    """Replaces the HOMER_PASSPHRASE line in home/.env, or adds it, keeping mode 0600."""
+    path = home / ".env"
+    escaped = passphrase.replace("\\", "\\\\").replace('"', '\\"')
+    line = f'{PASSPHRASE_KEY}="{escaped}"'
+    kept = (
+        [x for x in path.read_text().splitlines() if not x.startswith(f"{PASSPHRASE_KEY}=")]
+        if path.exists()
+        else []
+    )
+    home.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(".env.tmp")
+    temporary.touch(mode=0o600)
+    temporary.write_text("\n".join([*kept, line]) + "\n")
+    temporary.chmod(0o600)
+    temporary.replace(path)
+    return path
