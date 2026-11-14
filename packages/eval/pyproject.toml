@@ -9,7 +9,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "typer>=0.15",
-    "pydantic-ai-slim[openai]>=1.0",
+    "pydantic-ai-slim[openai]>=2.67.0",
     "pyyaml>=6.0",
     "rich>=13.0",
 ]
