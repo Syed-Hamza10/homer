@@ -30,7 +30,6 @@
 
 One line, on a Mac with Apple Silicon (16 GB or more) or a Linux machine with an NVIDIA GPU (8 GB or more). You need about 30 GB of free disk.
 
-<!-- TODO: confirm this line against the installer's final public URL before publishing -->
 ```sh
 /bin/bash -c "$(curl -fsSL https://github.com/Syed-Hamza10/homer/releases/latest/download/install.sh)"
 ```
