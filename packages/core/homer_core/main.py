@@ -125,11 +125,13 @@ def create_app(
 
 
 def mount_spa(app: FastAPI, static: Path) -> None:
+    root = static.resolve()
+
     @app.get("/{path:path}", include_in_schema=False)
     async def spa(path: str) -> FileResponse:
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
-        target = (static / path).resolve()
-        if target.is_file() and target.is_relative_to(static):
+        target = (root / path).resolve()
+        if target.is_file() and target.is_relative_to(root):
             return FileResponse(target)
-        return FileResponse(static / "index.html")
+        return FileResponse(root / "index.html")
