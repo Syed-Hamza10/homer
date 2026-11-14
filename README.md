@@ -37,7 +37,7 @@ One line, on a Mac with Apple Silicon (16 GB or more) or a Linux machine with an
 /bin/bash -c "$(curl -fsSL https://github.com/Syed-Hamza10/homer/releases/latest/download/install.sh)"
 ```
 
-The installer sets everything up: Ollama, Homer, and the model (a 6 GB download, the slow part). It asks you for a passphrase, starts Homer in the background, and opens **http://127.0.0.1:8000**.
+The installer sets everything up: Ollama, Homer, and the model. It asks you for a passphrase, starts Homer in the background, and opens **http://127.0.0.1:8000**.
 
 Then, in Homer:
 
