@@ -304,7 +304,7 @@ def test_latest_news_searches_and_cites(web_stack: Stack, run: int) -> None:
     record("test_latest_news_searches_and_cites", reply)
     reply.finished()
     assert reply.tools[0] == "web_search", (reply.tools, reply.said)
-    assert "Sources:" in reply.said and "http" in reply.said, reply.said
+    assert "**Sources**" in reply.said and "](http" in reply.said, reply.said
     assert reply.seconds < 60, reply.seconds
 
 
