@@ -26,22 +26,23 @@
 - **You can check what it talked to.** Every outbound request goes through one allowlisted HTTP client and is logged. The Privacy page shows every host, with call counts.
 - **Honest about the rest.** Google still sees your Google traffic, because that is where your mail lives. When web search is on, the search engine sees your query. Nothing else is contacted.
 
-## See it in 60 seconds
+## Try it
 
-**You need:** macOS on Apple Silicon with 16 GB RAM, or Linux with an 8 GB NVIDIA GPU; about 30 GB free disk; a Google account with [your own OAuth client](docs/GOOGLE_SETUP.md).
+One line, on a Mac with Apple Silicon (16 GB or more) or a Linux machine with an NVIDIA GPU (8 GB or more). You need about 30 GB of free disk.
 
-<!-- TODO: keep this line in sync with the installer's public one-liner in CLIENT_ONBOARDING.md -->
+<!-- TODO: confirm this line against the installer's final public URL before publishing -->
 ```sh
-bash <(curl -fsSL https://github.com/Syed-Hamza10/homer/releases/latest/download/install.sh)
+curl -fsSL https://raw.githubusercontent.com/Syed-Hamza10/homer/main/scripts/install.sh | bash
 ```
 
-What happens next:
+The installer sets everything up: Ollama, Homer, and the model (a 6 GB download, the slow part). It asks you for a passphrase, starts Homer in the background, and opens **http://127.0.0.1:8000**.
 
-1. The installer checks RAM and disk, installs pinned `uv` and Ollama, verifies every wheel against `SHA256SUMS`, pulls the models (about 10 GB), asks for a passphrase and registers a launchd or systemd user service.
-2. Save your OAuth client as `~/.homer/credentials/client_secret.json` and run `~/.homer/venv/bin/homer setup google`.
-3. Open **http://127.0.0.1:8000**, sign in with your passphrase and ask *"What's on my calendar tomorrow?"*. The first answer takes about 10 s longer while the model loads.
+Then, in Homer:
 
-The full procedure, operations and troubleshooting are in [CLIENT_ONBOARDING.md](CLIENT_ONBOARDING.md).
+1. **Settings → Google → Connect.** Sign in with the Google account you want Homer to use. For now this needs your own Google OAuth client, about 15 minutes in Google Cloud following [GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md); one-click sign-in is on the roadmap.
+2. Ask something: *"What's on my calendar tomorrow?"* The first answer takes about 10 seconds longer while the model loads.
+
+Updating later is `homer update`. Everything else, including uninstalling and troubleshooting, is in [CLIENT_ONBOARDING.md](CLIENT_ONBOARDING.md).
 
 ## What it does
 
@@ -165,4 +166,4 @@ Homer is source-available under the [PolyForm Noncommercial License 1.0.0](LICEN
 
 ## Credits
 
-Built by Hamza (backend, integrations, dashboard) and Hassan (model choice, evals). Homer runs [Qwen 3.5](https://ollama.com/library/qwen3.5) through [Ollama](https://ollama.com) and is built with [Pydantic AI](https://ai.pydantic.dev), [FastAPI](https://fastapi.tiangolo.com) and the [Model Context Protocol](https://modelcontextprotocol.io).
+Built by Hamza (backend, integrations, dashboard) and Hassan (frontend, evals, model work). Homer runs [Qwen 3.5](https://ollama.com/library/qwen3.5) through [Ollama](https://ollama.com) and is built with [Pydantic AI](https://ai.pydantic.dev), [FastAPI](https://fastapi.tiangolo.com) and the [Model Context Protocol](https://modelcontextprotocol.io).
