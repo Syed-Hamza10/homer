@@ -1,8 +1,10 @@
 import json
 import re
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator
+from sqlalchemy import update
 from sqlmodel import Session
 
 from homer_core.agent.intents import clock, iso_date
@@ -20,6 +22,9 @@ from homer_core.services.errors import DomainError
 from homer_core.services.jobs.send_email import request_send
 
 QUOTED_TITLE = re.compile(r"'(.+?)'")
+
+
+Editor = Callable[[Session, User, McpManager, Approval, Any], Awaitable[Approval]]
 
 
 class NotEditable(DomainError):
@@ -56,8 +61,9 @@ def problem(result: Any) -> str | None:
 
 
 async def edited_mail(
-    session: Session, user: User, manager: McpManager, payload: dict[str, Any], change: MailEdit
+    session: Session, user: User, manager: McpManager, approval: Approval, change: MailEdit
 ) -> Approval:
+    payload = json.loads(approval.payload_json)
     args = {
         "draft_id": payload["draft_id"],
         "to": change.to,
@@ -81,8 +87,9 @@ async def edited_mail(
 
 
 async def edited_event(
-    session: Session, user: User, manager: McpManager, payload: dict[str, Any], change: EventEdit
+    session: Session, user: User, manager: McpManager, approval: Approval, change: EventEdit
 ) -> Approval:
+    payload = json.loads(approval.payload_json)
     args = {
         "title": change.title,
         "start": f"{change.date}T{change.start}:00",
@@ -123,6 +130,22 @@ async def edited_update(
     return create_from_tool_result(session, user.id, "google", result)
 
 
+EDITORS: dict[tuple[str, type[BaseModel]], Editor] = {
+    ("mail_send", MailEdit): edited_mail,
+    ("cal_create", EventEdit): edited_event,
+    ("cal_update", EventEdit): edited_update,
+}
+
+
+def reopen(session: Session, approval: Approval) -> None:
+    session.exec(
+        update(Approval)
+        .where(Approval.id == approval.id, Approval.status == SUPERSEDED)
+        .values(status="pending", decided_at=None)
+    )
+    session.commit()
+
+
 async def edit(
     session: Session,
     user: User,
@@ -130,24 +153,20 @@ async def edit(
     manager: McpManager,
     change: MailEdit | EventEdit,
 ) -> Approval:
-    """Applies the edit, supersedes the pending approval and returns its fresh replacement."""
+    """Supersedes the pending approval before touching Gmail or Calendar, so an approve racing
+    the edit finds nothing pending, then returns its fresh replacement. A failed edit puts the
+    old approval back."""
     approval = get_approval(session, user, approval_id)
     if approval.status != "pending":
         raise NotPending(f"approval {approval.id} is {approval.status}, not pending")
-    payload = json.loads(approval.payload_json)
-    match approval.action, change:
-        case "mail_send", MailEdit():
-            fresh = await edited_mail(session, user, manager, payload, change)
-        case "cal_create", EventEdit():
-            fresh = await edited_event(session, user, manager, payload, change)
-        case "cal_update", EventEdit():
-            fresh = await edited_update(session, user, manager, approval, change)
-        case _:
-            raise NotEditable(f"approval {approval.id} ({approval.action}) cannot take that edit")
+    editor = EDITORS.get((approval.action, type(change)))
+    if editor is None:
+        raise NotEditable(f"approval {approval.id} ({approval.action}) cannot take that edit")
+    transition_from_pending(session, approval, SUPERSEDED)
     try:
-        transition_from_pending(session, approval, SUPERSEDED)
-    except NotPending:
-        transition_from_pending(session, fresh, SUPERSEDED)
+        fresh = await editor(session, user, manager, approval, change)
+    except BaseException:
+        reopen(session, approval)
         raise
     fresh.conversation_id = approval.conversation_id
     fresh.message_id = approval.message_id
