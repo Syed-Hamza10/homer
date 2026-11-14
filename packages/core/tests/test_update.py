@@ -53,13 +53,16 @@ class FakeRelease:
         self.metadata.parent.mkdir(parents=True)
         self.base_url = base_url
 
-    def publish(self, doctor_exit: int = 0, tamper: bool = False) -> None:
+    def publish(self, doctor_exit: int = 0, tamper: str | None = None) -> None:
         fake_wheel(self.assets / WHEEL, doctor_exit)
         (self.assets / "requirements.lock").write_text("# empty\n")
-        digest = hashlib.sha256((self.assets / WHEEL).read_bytes()).hexdigest()
-        (self.assets / "SHA256SUMS").write_text(f"{digest}  {WHEEL}\n")
+        sums = "".join(
+            f"{hashlib.sha256((self.assets / name).read_bytes()).hexdigest()}  {name}\n"
+            for name in (WHEEL, "requirements.lock")
+        )
+        (self.assets / "SHA256SUMS").write_text(sums)
         if tamper:
-            (self.assets / WHEEL).write_bytes(b"not the wheel")
+            (self.assets / tamper).write_bytes(b"not what was signed")
         assets = [
             {"name": path.name, "url": f"{self.base_url}/assets/{path.name}"}
             for path in self.assets.iterdir()
@@ -112,10 +115,11 @@ def test_update_stages_verifies_and_swaps(home: Path, release: FakeRelease, rest
     assert "venv.prev" in result.output
 
 
+@pytest.mark.parametrize("tampered", [WHEEL, "requirements.lock"])
 def test_update_refuses_a_checksum_mismatch(
-    home: Path, release: FakeRelease, restarts: list
+    home: Path, release: FakeRelease, restarts: list, tampered: str
 ) -> None:
-    release.publish(tamper=True)
+    release.publish(tamper=tampered)
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 1
     assert "checksum mismatch" in result.output

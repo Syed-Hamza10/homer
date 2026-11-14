@@ -59,17 +59,20 @@ def download_release(api: str, version: str, token: str | None, target: Path) ->
     return wheels
 
 
-def verify_checksums(directory: Path, wheels: list[Path]) -> None:
+def verify_checksums(directory: Path) -> None:
+    """Every downloaded asset, the wheels and requirements.lock alike, must match SHA256SUMS."""
     sums: dict[str, str] = {}
     for line in (directory / "SHA256SUMS").read_text().splitlines():
         digest, _, name = line.partition(" ")
         sums[name.strip().lstrip("*")] = digest
-    for wheel in wheels:
-        expected = sums.get(wheel.name)
+    for asset in sorted(directory.iterdir()):
+        if asset.name == "SHA256SUMS":
+            continue
+        expected = sums.get(asset.name)
         if expected is None:
-            raise UpdateError(f"{wheel.name} is not listed in SHA256SUMS")
-        if hashlib.sha256(wheel.read_bytes()).hexdigest() != expected:
-            raise UpdateError(f"checksum mismatch for {wheel.name}")
+            raise UpdateError(f"{asset.name} is not listed in SHA256SUMS")
+        if hashlib.sha256(asset.read_bytes()).hexdigest() != expected:
+            raise UpdateError(f"checksum mismatch for {asset.name}")
 
 
 def uv_binary() -> str:
@@ -118,7 +121,7 @@ def update(home: Path, version: str) -> None:
         with tempfile.TemporaryDirectory(prefix="homer-update-") as temporary:
             directory = Path(temporary)
             wheels = download_release(release_api(), version, read_token(home), directory)
-            verify_checksums(directory, wheels)
+            verify_checksums(directory)
             build_venv(new, wheels, directory / "requirements.lock")
         check_venv(new, home)
     except UpdateError:
