@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 from homer_mcp_google.auth import ReconnectRequired, TokenStore
@@ -31,6 +32,7 @@ class GoogleClient:
         if log is None:
             log = SqliteLog(settings.db_path) if settings.db_path.exists() else no_log
         self.http = AllowlistedClient(allowlist, log=log, timeout=TIMEOUT)
+        self._refresh_lock = asyncio.Lock()
 
     def base_for(self, path: str) -> str:
         return self.settings.people_api if path.startswith("/v1/people") else self.settings.api_base
@@ -45,7 +47,7 @@ class GoogleClient:
         token = self.store.load()
         response = await self._send(method, path, token["token"], params, json)
         if response.status_code == 401:
-            token = await self._refresh(token)
+            token = await self._fresh_token(token["token"])
             response = await self._send(method, path, token["token"], params, json)
         if response.status_code >= 400:
             raise GoogleError(response.status_code, _error_message(response))
@@ -66,6 +68,14 @@ class GoogleClient:
             json=json,
             headers={"Authorization": f"Bearer {access_token}"},
         )
+
+    async def _fresh_token(self, stale_access: str) -> dict[str, Any]:
+        """Concurrent 401s share one refresh; a token refreshed meanwhile is reused."""
+        async with self._refresh_lock:
+            current = self.store.load()
+            if current["token"] != stale_access:
+                return current
+            return await self._refresh(current)
 
     async def _refresh(self, token: dict[str, Any]) -> dict[str, Any]:
         response = await self.http.post(
