@@ -22,6 +22,10 @@ def test_server_env_carries_home_and_google_settings(tmp_path: Path) -> None:
         "GOOGLE_API_BASE": "https://www.googleapis.com",
         "GOOGLE_TOKEN_URL": "https://oauth2.googleapis.com/token",
         "WEB_SEARCH": "true",
+        "SEARCH_PROVIDER": "duckduckgo",
+        "SEARCH_API_PROVIDER": "brave",
+        "SEARCH_API_KEY": "",
+        "SEARCH_FALLBACK": "true",
     }
 
 

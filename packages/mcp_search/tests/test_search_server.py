@@ -102,7 +102,7 @@ async def test_health(client: Client) -> None:
 
 async def test_tools_are_listed(client: Client) -> None:
     names = {tool.name for tool in await client.list_tools()}
-    assert names == {"health", "web_search", "fetch_page"}
+    assert names == {"health", "web_search", "search_test", "fetch_page"}
 
 
 async def test_fetch_page_refuses_local_server(client: Client, local_server: str) -> None:
@@ -133,6 +133,14 @@ async def test_web_search_off_short_circuits(
     ]:
         result = await client_search_off.call_tool(name, args)
         assert result.data == {"error": "web_search_off"}
+    assert outbound_rows() == []
+
+
+async def test_search_test_reports_off_without_a_call(
+    client_search_off: Client, outbound_rows: Rows
+) -> None:
+    result = await client_search_off.call_tool("search_test")
+    assert result.data == {"status": "off", "provider": "", "results": 0}
     assert outbound_rows() == []
 
 

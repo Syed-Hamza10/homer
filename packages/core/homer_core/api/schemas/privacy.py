@@ -13,6 +13,7 @@ class HostsResponse(BaseModel):
     hosts: list[HostOut]
     web_search: bool
     web_search_configured: bool
+    search_hosts: list[str]
 
 
 class UsageResponse(BaseModel):

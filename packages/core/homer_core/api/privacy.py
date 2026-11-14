@@ -13,6 +13,7 @@ from homer_core.api.schemas.privacy import (
 from homer_core.services import privacy
 from homer_core.services.errors import DomainError
 from homer_core.services.privacy import host_usage, token_usage
+from homer_core.services.search_settings import load_search
 
 router = APIRouter(prefix="/api/privacy", tags=["privacy"])
 
@@ -24,6 +25,7 @@ def hosts(user: CurrentUser, session: SessionDep, settings: SettingsDep) -> Host
         hosts=[HostOut.model_validate(item, from_attributes=True) for item in host_usage(session)],
         web_search=settings.web_search,
         web_search_configured=settings.web_search if configured is None else configured,
+        search_hosts=list(load_search(settings).hosts()) if settings.web_search else [],
     )
 
 

@@ -113,6 +113,27 @@ All checks should read `ok`. Then open the Privacy page. For normal use the host
 only `127.0.0.1:11434`, `www.googleapis.com`, `oauth2.googleapis.com` and, if web search is on,
 `html.duckduckgo.com`. The page also shows `$0.00` spent on inference and the live token counts.
 
+### Optional: a search API key
+
+DuckDuckGo needs no key but sometimes blocks a burst of searches for 20 minutes or more. A free key
+from [Brave Search](https://brave.com/search/api/) ($5 of free credit a month, about 1,000
+searches; a card is asked for to prevent abuse) or [Tavily](https://tavily.com/) (1,000 free
+credits a month, no card) fixes that.
+
+1. Create the key on the provider's site.
+2. Open Settings, Web search. Pick "DuckDuckGo" with that service as the backup (the key is used
+   only when DuckDuckGo blocks), or pick Brave or Tavily to use the key for every search.
+3. Paste the key and press Save. The field then shows `Saved · …abcd`, the last four characters.
+4. Press "Test search". It reports ok, blocked or "did not accept the key".
+
+The change applies on the next search; no restart. The key is stored in
+`~/.homer/credentials/search.json` (mode 600), left out of backups unless `--include-secrets`, and
+no API returns it. Only the search question goes to the provider, never emails or documents; the
+Privacy page then lists `api.search.brave.com` or `api.tavily.com`. Without the dashboard, set
+`SEARCH_PROVIDER` (`duckduckgo`, `brave` or `tavily`), `SEARCH_API_PROVIDER` (`brave` or `tavily`,
+the backup when the provider is DuckDuckGo), `SEARCH_API_KEY` and `SEARCH_FALLBACK` (default
+`true`) in `~/.homer/.env` and restart.
+
 ## 6. Operations
 
 The CLI lives at `~/.homer/venv/bin/homer`. Add that directory to `PATH` or use the path

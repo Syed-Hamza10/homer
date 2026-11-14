@@ -4,6 +4,7 @@ export type HostsResponse = {
   hosts: HostUsage[]
   web_search: boolean
   web_search_configured: boolean
+  search_hosts: string[]
 }
 
 export type WebSearchResponse = {

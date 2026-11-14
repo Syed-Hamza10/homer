@@ -72,6 +72,18 @@ export function PrivacyPage() {
             <span className="text-xs text-muted-foreground">
               Right now: {hosts?.web_search ? "on" : "off"}
             </span>
+            {hosts && hosts.search_hosts.length > 0 && (
+              <p
+                className="w-full text-xs text-muted-foreground"
+                data-testid="search-hosts"
+              >
+                Searches go to{" "}
+                <span className="font-mono">
+                  {hosts.search_hosts.join(", ")}
+                </span>
+                . Change this under Web search in Settings.
+              </p>
+            )}
             {setWebSearch.data?.restart_required && (
               <p className="w-full text-xs text-muted-foreground">
                 Restart Homer to apply this change.
