@@ -161,7 +161,7 @@ Issues are welcome. Bug reports, install problems on your hardware and transcrip
 
 ## License
 
-Homer is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, study and modify it for personal, research and other noncommercial purposes. Commercial use needs permission from the authors; open an issue to get in touch.
+Homer is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, study and modify it for personal, research and other noncommercial purposes. Commercial use needs permission from the authors: email [syed.hamza.ds@gmail.com](mailto:syed.hamza.ds@gmail.com).
 
 ## Credits
 
