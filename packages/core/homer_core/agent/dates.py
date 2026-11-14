@@ -60,6 +60,28 @@ NUMERIC = re.compile(
     re.IGNORECASE,
 )
 DAY_AFTER = re.compile(r"\b(?:the )?(?:day|one) after\b(?!\s+tomorrow)|\bthe next day\b", re.I)
+MONTH_WORDS = r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
+CLOCK_TIME = re.compile(
+    r"(?<![\d/.:])(?P<h12>\d{1,2})(?:[:.](?P<m12>\d{2}))?\s*(?P<half>[ap])\.?m\b\.?"
+    r"|(?<![\d/.:])(?P<h24>\d{1,2}):(?P<m24>\d{2})(?![\d/:])"
+    r"|\b(?:at|to|till|until|by)\s+(?P<bare>\d{1,2})(?![\d:/.]|\s*(?:st|nd|rd|th|%|"
+    + MONTH_WORDS
+    + r"|min|mins|minutes?|h|hrs?|hours?|days?|weeks?|people|percent)\b)",
+    re.IGNORECASE,
+)
+AFTERNOON_HOURS = 7
+AMOUNT = r"(?P<amount>\d+(?:\.\d+)?|an?|one|two|three|half an?|a half)"
+UNIT = r"(?P<unit>hours?|hrs?|h|minutes?|mins?|m)"
+RELATIVE = (
+    re.compile(
+        rf"\b(?:in|after)\s+(?:about\s+)?{AMOUNT}\s*{UNIT}\b(?!\s+(?:long|meeting|call|slot))",
+        re.IGNORECASE,
+    ),
+    re.compile(rf"\b{AMOUNT}\s*{UNIT}\s+from now\b", re.IGNORECASE),
+)
+WORD_AMOUNTS = {"a": 1.0, "an": 1.0, "one": 1.0, "two": 2.0, "three": 3.0}
+WEEKEND = 5
+ROUND_MINUTES = 5
 
 
 def default_format(timezone: str) -> DateFormat:
@@ -73,6 +95,15 @@ def describe(day: date) -> str:
 
 def monday_of(day: date) -> date:
     return day - timedelta(days=day.weekday())
+
+
+def this_week(today: date) -> tuple[date, date]:
+    """Monday to Sunday of the week holding today; on a Saturday or Sunday the rest of the
+    weekend and the coming week, which is what "this week" means then."""
+    monday = monday_of(today)
+    if today.weekday() >= WEEKEND:
+        return today, monday + timedelta(days=13)
+    return monday, monday + timedelta(days=6)
 
 
 def date_table(now: datetime) -> str:
@@ -129,3 +160,45 @@ def numeric_hint(message: str, today: date, form: DateFormat) -> str:
         return ""
     raw = NUMERIC.search(message)
     return f"\nIn this message {raw.group(0) if raw else ''} means {describe(found)}."
+
+
+def stated_times(message: str) -> list[str]:
+    """The clock times the message names, as HH:MM: '2pm', '14:30', 'at 11', 'to 3'. A bare
+    hour from 1 to 7 is afternoon; the day of a date ('16 nov') is never a time."""
+    found = []
+    for match in CLOCK_TIME.finditer(message):
+        if match["bare"]:
+            hour, minute = int(match["bare"]), 0
+            hour += 12 if 1 <= hour <= AFTERNOON_HOURS else 0
+        elif match["h24"]:
+            hour, minute = int(match["h24"]), int(match["m24"])
+        else:
+            hour, minute = int(match["h12"]) % 12, int(match["m12"] or 0)
+            hour += 12 if match["half"].lower() == "p" else 0
+        if hour <= 23 and minute <= 59:
+            found.append(f"{hour:02d}:{minute:02d}")
+    return list(dict.fromkeys(found))
+
+
+def relative_minutes(message: str) -> int | None:
+    """Minutes from now the message names: "in 1 hour" 60, "20 minutes from now" 20, "in half
+    an hour" 30; None when it names none."""
+    found = next((m for pattern in RELATIVE if (m := pattern.search(message))), None)
+    if found is None:
+        return None
+    amount = found["amount"].lower()
+    value = 0.5 if amount.startswith(("half", "a half")) else WORD_AMOUNTS.get(amount)
+    value = float(amount) if value is None else value
+    hours = found["unit"].lower().startswith("h")
+    return round(value * (60 if hours else 1))
+
+
+def now_line(now: datetime) -> str:
+    """ "Now: Saturday 14 Nov 2026, 16:23 PKT", the one clock every prompt states."""
+    return f"Now: {now:%A %d %b %Y, %H:%M} {now:%Z}".rstrip()
+
+
+def from_now(now: datetime, minutes: int) -> datetime:
+    """Now plus the minutes, rounded up to the next five minutes."""
+    moment = (now + timedelta(minutes=minutes)).replace(second=0, microsecond=0)
+    return moment + timedelta(minutes=-moment.minute % ROUND_MINUTES)

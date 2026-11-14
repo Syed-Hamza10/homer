@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from homer_core.agent.dates import now_line
+
 TEMPLATE = (Path(__file__).parent / "prompts" / "system.md").read_text()
 PLACEHOLDER_NAMES = frozenset({"", "there"})
 
@@ -32,7 +34,7 @@ def render_prompt(
         facts=remembered(facts or []),
         who=f" The user's name is {name}." if name else "",
         timezone=timezone,
-        now=now.strftime("%A %d %B %Y, %H:%M"),
+        now=now_line(now),
         today=describe(now),
         tomorrow=describe(now + timedelta(days=1)),
     )

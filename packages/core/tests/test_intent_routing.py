@@ -38,6 +38,7 @@ RUNNER = {
     "draft_question": draft_question.question,
     "send_status": mail_status.status,
     "discard_draft": draft_question.discard,
+    "fix_last_action": dispatch.fix_last,
     "create_event": create_event.run,
     "update_event": update,
     "cancel_event": cancel,
@@ -75,8 +76,8 @@ async def routed(message: str, answer: list[dict[str, Any]]) -> list[Any]:
     return [dispatch.RUNNERS[intent.kind] for intent in refined(found, message, [])]
 
 
-def test_there_are_about_twenty_examples() -> None:
-    assert 18 <= len(examples()) <= 26
+def test_there_are_about_forty_examples() -> None:
+    assert 30 <= len(examples()) <= 45
 
 
 @pytest.mark.parametrize(("message", "answer"), examples())

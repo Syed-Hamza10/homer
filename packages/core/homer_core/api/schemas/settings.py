@@ -9,6 +9,7 @@ from homer_core.services.search_settings import KeyedProvider, Provider
 
 class UserSettings(ClientRules):
     timezone: str
+    name: str | None = None
 
     @field_validator("timezone")
     @classmethod
@@ -19,7 +20,7 @@ class UserSettings(ClientRules):
 
     @property
     def rules(self) -> ClientRules:
-        return ClientRules.model_validate(self.model_dump(exclude={"timezone"}))
+        return ClientRules.model_validate(self.model_dump(exclude={"timezone", "name"}))
 
 
 class SearchIn(BaseModel):

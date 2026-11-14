@@ -127,8 +127,16 @@ def tomorrow_titles() -> list[str]:
     return [e["summary"] for e in seeded_events() if e["weekday"] == tomorrow_offset()]
 
 
-def write_seed(home: Path, extra: tuple[dict[str, Any], ...] = ()) -> Path:
+def write_seed(
+    home: Path,
+    extra: tuple[dict[str, Any], ...] = (),
+    contacts: tuple[dict[str, Any], ...] = (),
+    owner_name: str | None = None,
+) -> Path:
     seed = {**json.loads(DEFAULT_SEED.read_text()), "events": seeded_events(extra)}
+    seed["contacts"] = [*seed["contacts"], *contacts]
+    if owner_name is not None:
+        seed["owner"] = {**seed["owner"], "name": owner_name}
     path = home / "seed.json"
     path.write_text(json.dumps(seed))
     return path
@@ -171,10 +179,14 @@ def running_simulator(seed: Path) -> tuple[subprocess.Popen[bytes], str]:
 
 @contextmanager
 def real_stack(
-    home: Path, web_search: bool = False, extra_events: tuple[dict[str, Any], ...] = ()
+    home: Path,
+    web_search: bool = False,
+    extra_events: tuple[dict[str, Any], ...] = (),
+    contacts: tuple[dict[str, Any], ...] = (),
+    owner_name: str | None = None,
 ) -> Iterator[Stack]:
     write_google_token(home)
-    simulator, sim_url = running_simulator(write_seed(home, extra_events))
+    simulator, sim_url = running_simulator(write_seed(home, extra_events, contacts, owner_name))
     env = process_env(
         home,
         free_port(),

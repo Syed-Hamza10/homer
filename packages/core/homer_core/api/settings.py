@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from homer_core.agent.prompt import known_name
 from homer_core.api.deps import (
     CurrentUser,
     HttpClientDep,
@@ -18,20 +19,23 @@ from homer_core.services.search_settings import (
     load_search,
     save_search,
 )
-from homer_core.services.users import set_timezone
+from homer_core.services.users import set_name, set_timezone
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.get("")
 def read(user: CurrentUser, session: SessionDep) -> UserSettings:
-    return UserSettings(**get_rules(session, user.id).model_dump(), timezone=user.timezone)
+    rules = get_rules(session, user.id).model_dump()
+    return UserSettings(**rules, timezone=user.timezone, name=known_name(user.name) or "")
 
 
 @router.put("")
 def update(body: UserSettings, user: CurrentUser, session: SessionDep) -> UserSettings:
     save_rules(session, user.id, body.rules)
     set_timezone(session, user, body.timezone)
+    if body.name is not None:
+        set_name(session, user, body.name)
     return body
 
 

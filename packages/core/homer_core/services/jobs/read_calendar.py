@@ -2,14 +2,16 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from homer_core.agent.dates import monday_of
+from homer_core.agent.dates import monday_of, this_week
 from homer_core.agent.intents import NEXT_EVENT, ReadCalendar
 from homer_core.services.jobs.recipients import listed
 from homer_core.services.jobs.turn import Turn
 
 LONG_LIST = 25
 DEFAULT_DAYS = 7
+NEXT_DAYS = 30
 INSTANT_MINUTES = 30
+ONE_DAY = timedelta(days=1)
 PHRASE_PROMPT = """Answer the person's question about their calendar, talking to them as "you",
 from this list of events only. Never mention an event that is not in the list, "the list" or
 "the user". Be brief.
@@ -33,7 +35,11 @@ def days_of(intent: ReadCalendar, today: date) -> tuple[date, date, str]:
             first = today + timedelta(days=1)
             return first, first + timedelta(days=1), f"Tomorrow, {day_name(first)}"
         case "this_week":
-            return monday, monday + timedelta(days=7), f"This week, from {day_name(monday)}"
+            first, last = this_week(today)
+            return first, last + timedelta(days=1), f"This week, {span_name(first, last)}"
+        case "next":
+            last = today + timedelta(days=NEXT_DAYS - 1)
+            return today, last + timedelta(days=1), f"the next {NEXT_DAYS} days"
         case "next_week":
             first, last = monday + timedelta(days=7), monday + timedelta(days=13)
             return first, last + timedelta(days=1), f"Next week, {span_name(first, last)}"
@@ -125,6 +131,18 @@ def availability(intent: ReadCalendar, busy: bool) -> str:
     return f"{'Yes' if yes else 'No'}, you are {'busy' if busy else 'free'}."
 
 
+def slot_answer(
+    intent: ReadCalendar, day: date, events: list[dict[str, Any]], zone: ZoneInfo
+) -> str:
+    """Yes or no for the one time asked about, then what is on then."""
+    when = f"at {intent.start} on {day_name(day)}"
+    lead = availability(intent, bool(events)).removesuffix(".")
+    if not events:
+        return f"{lead} {when}."
+    lines = "\n".join(line(event, zone, False) for event in events)
+    return f"{lead} {when}:\n{lines}"
+
+
 def next_one(turn: Turn, events: list[dict[str, Any]], period: str, zone: ZoneInfo) -> str:
     """Only the next event that has not started yet."""
     ahead = [event for event in events if bounds(event, zone)[0] >= turn.now]
@@ -151,8 +169,11 @@ async def run(turn: Turn, intent: ReadCalendar) -> None:
     window = hours(intent)
     if window is not None:
         events = [event for event in events if in_hours(event, zone, window)]
-    if NEXT_EVENT.search(turn.message):
+    if intent.range == "next" or NEXT_EVENT.search(turn.message):
         turn.say(next_one(turn, events, period, zone))
+        return
+    if intent.asks_if and intent.start and intent.end is None and after - first == ONE_DAY:
+        turn.say(slot_answer(intent, first, events, zone))
         return
     title = heading(intent, period, window)
     lead = f"{availability(intent, bool(events))} " if intent.asks_if else ""

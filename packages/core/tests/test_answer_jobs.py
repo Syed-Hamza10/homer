@@ -554,3 +554,78 @@ class TestRoundThree:
     def test_an_empty_chat_answer_is_tried_again(self, post_chat: PostChat) -> None:
         frames = post_chat({"message": "any tips for staying focused in the afternoon?"})
         assert of(frames, "replace")[-1]["text"] == "Short bursts help."
+
+
+WEATHER_RESULTS = [
+    {"title": "Islamabad Weather", "url": "https://wx.example.test/i", "snippet": "Visit us."},
+    {
+        "title": "Islamabad hourly",
+        "url": "https://wx2.example.test/i",
+        "snippet": "Now 24 °C, clear skies, light wind.",
+    },
+]
+
+
+class TestRoundSixSearch:
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("dollar to rupee rate today"), ["1 USD is 281 PKR today."])],
+    )
+    def test_a_bare_rupee_is_the_users_own(
+        self, post_chat: PostChat, fake_search: ModuleType, instructions: list[str]
+    ) -> None:
+        post_chat({"message": "what's the dollar to rupee rate today"})
+        assert "Pakistani rupee (PKR)" in fake_search.queries[0]
+        assert "US dollar (USD)" in fake_search.queries[0]
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [
+            (
+                search("weather in Islamabad now"),
+                ["Please visit a dedicated weather website for Islamabad."],
+            )
+        ],
+    )
+    def test_weather_is_never_refused(
+        self, post_chat: PostChat, fake_search: ModuleType, instructions: list[str]
+    ) -> None:
+        fake_search.RESULTS[:] = WEATHER_RESULTS
+        frames = post_chat({"message": "what is the weather in islamabad now"})
+        assert fake_search.queries[0].startswith("Islamabad weather today")
+        assert "visit" not in said(frames).lower()
+        assert said(frames).startswith("About 24°C in Islamabad, according to Islamabad hourly.")
+        assert "temperature and conditions" in instructions[0]
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("petrol price in pakistan this week"), ["Rs 265 per litre from 14 Nov."])],
+    )
+    def test_figures_carry_their_dates_and_the_newest_wins(
+        self, post_chat: PostChat, fake_search: ModuleType, instructions: list[str]
+    ) -> None:
+        fake_search.RESULTS[:] = [
+            {"title": "Fuel Nov 2, 2026", "url": "https://f.example.test/a", "snippet": "Rs 260"},
+            {"title": "Fuel Nov 13, 2026", "url": "https://f.example.test/b", "snippet": "Rs 265"},
+        ]
+        post_chat({"message": "petrol price in pakistan this week"})
+        assert "(dated " in instructions[0]
+        assert "most recent dated result" in instructions[0]
+
+
+def test_regional_currency_and_official_sites() -> None:
+    assert web_search.regional("dollar to rupee", "Asia/Kolkata") == (
+        "US dollar (USD) to Indian rupee (INR)"
+    )
+    assert web_search.regional("usd to inr", "Asia/Karachi") == "usd to inr"
+    found = web_search.official_first(
+        [{"url": "https://versionlog.example.test/nodejs/"}, {"url": "https://nodejs.org/en"}],
+        "latest stable version of node.js",
+    )
+    assert found[0]["url"] == "https://nodejs.org/en"
+
+
+def test_answers_stay_under_eighty_words() -> None:
+    text = " ".join(["This sentence has exactly seven words here."] * 20)
+    assert len(web_search.within(text, 80).split()) <= 80
+    assert web_search.within("One. Two.", 80) == "One. Two."
