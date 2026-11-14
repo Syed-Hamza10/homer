@@ -92,7 +92,7 @@ def test_is_conversational(message: str, expected: bool) -> None:
     assert is_conversational(message) is expected
 
 
-@pytest.mark.parametrize(("message", "needle"), [("/brief", "Good morning"), ("/inbox", "cache")])
+@pytest.mark.parametrize(("message", "needle"), [("/brief", "Today is"), ("/inbox", "cache")])
 def test_skill_commands(post_chat: PostChat, message: str, needle: str) -> None:
     frames = post_chat({"message": message})
     assert [name for name, _ in frames] == ["meta", "token", "done"]
