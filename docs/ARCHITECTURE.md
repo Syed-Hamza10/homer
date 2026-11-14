@@ -109,15 +109,20 @@ and search server defaults.
    everything else goes on. Nothing else is decided before the model.
 4. One structured call (`agent/intents.py`, Pydantic AI `ToolOutput` named `record_intents`, a
    discriminated union) turns the message into a list of intents: `send_email`, `edit_draft`,
-   `draft_question`, `send_status`, `discard_draft`, `create_event`, `update_event`,
+   `draft_question`, `send_status`, `discard_draft`, `fix_last_action`, `create_event`, `update_event`,
    `cancel_event`, `read_calendar`, `free_time`, `read_email`, `remember`, `correct_memory`,
    `forget`, `recall`, `calculate`, `web_search`, `remind`, `day_summary`, `chat`. The
    instructions and the few-shot examples (`agent/prompts/intent_examples.md`) are static, so
-   Ollama keeps their prefix cached; the user prompt then carries the timezone, the latest 20
+   Ollama keeps their prefix cached; the user prompt then carries "Now: <local day, date, time,
+   zone>", the timezone, the latest 20
    saved facts, a 14-day date table, the cards pending in this chat, the previous turn's
    resolved intents, the last 6 stored messages as quoted lines, and the message. The model
    copies dates and times; validators normalise `3pm` to `15:00` and reject anything that is not
-   `YYYY-MM-DD`, which makes Pydantic AI retry. A failed call falls back to `chat`.
+   `YYYY-MM-DD`, which makes Pydantic AI retry. A failed call falls back to `chat`. Code then
+   overrides what it can read from the message itself: the one clock time it names, "in an
+   hour" (`relative_minutes`, computed from now), "with <Name>", a title after "for", "next
+   meeting" (range `next`). A `recall` no fact matches that talks about mail or the calendar is
+   run as that read instead (`dispatch.run`).
    `agent/routing.refined` then turns a `web_search` without `needs_live_data` (and not asked
    for) into `chat`, and drops a calendar listing nobody asked for next to another request.
 5. `services/jobs/dispatch.py` runs each intent in order through its executor in
@@ -157,9 +162,16 @@ and search server defaults.
 - `create_event`: attendees resolved like recipients (an unknown one is left off and asked
   about); an explicit start is used as given (end = end or start + duration, default 30 min); a
   window (default business hours) goes to `cal_find_free_slots` with the user's `timezone` and the
-  first slot wins; `cal_create` with `timezone`; a `cal_create` approval; one fixed sentence.
-- `read_calendar`: `cal_list` over the local day bounds; up to 8 events are rendered as a list in
-  the user's timezone with no model call, more go to one phrasing call over that list only.
+  first slot wins; `relative_minutes` is now plus the minutes rounded up to five and
+  `after_next_event` the end of the next event; `cal_create` with `timezone` and the topic as
+  `description`; a `cal_create` approval; one fixed sentence.
+- `fix_last_action`: with an event from the previous turn, the original request is read again
+  and the event moved (or its card replaced); with a draft, the complaint is the edit. A chat
+  answer telling the user to edit or delete it themselves runs the same fix.
+- `read_calendar`: `cal_list` over the local day bounds ("this week" is Monday to Sunday, or
+  today to next Sunday on a weekend); up to 25 events are rendered as a list in the user's
+  timezone with no model call, more go to one phrasing call over that list only; `next` says
+  only the next event; a yes/no question at one time answers for that slot.
 - `read_email`: `mail_search` (`from:<first name>` and/or the topic, one retry with the longest
   word), bodies in `<untrusted>`, one answer call citing sender and date.
 - `web_search`: `web_search`, `fetch_page` on the top 2 results (2,500 chars each, the snippet
