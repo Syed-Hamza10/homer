@@ -50,6 +50,24 @@ def create_app(seed_path: Path = DEFAULT_SEED) -> FastAPI:
     def people_queries(sim: Sim) -> list[str]:
         return sim.people_queries
 
+    @app.post("/_sim/fail-once")
+    def fail_once(sim: Sim, body: dict[str, list[str]]) -> dict[str, int]:
+        """The next fetch of each listed message id answers 500, once."""
+        sim.failing_once.update(body["message_ids"])
+        return sim.counts()
+
+    @app.post("/_sim/unknown-calendars")
+    def unknown_calendars(sim: Sim, body: dict[str, list[str]]) -> dict[str, int]:
+        """freeBusy reports these addresses as notFound, as Google does for calendars it
+        cannot see."""
+        sim.unknown_calendars.update(body["emails"])
+        return sim.counts()
+
+    @app.post("/_sim/events-page-size")
+    def events_page_size(sim: Sim, body: dict[str, int]) -> dict[str, int]:
+        sim.events_page_size = body["size"]
+        return sim.counts()
+
     @app.get("/_sim/state")
     def state(sim: Sim) -> dict[str, int]:
         return sim.counts()

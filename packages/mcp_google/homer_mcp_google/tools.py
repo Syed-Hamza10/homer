@@ -355,18 +355,29 @@ class GoogleTools:
         if not cursor:
             return await self._fresh_cursor(stale=False)
         try:
-            history = await self.client.get(f"{GMAIL}/history", startHistoryId=cursor)
+            pages = await self._history_pages(cursor)
         except GoogleError as error:
             if error.status != 404:
                 raise
             return await self._fresh_cursor(stale=True)
         changed: list[str] = []
-        for record in history.get("history", []):
-            for key in ("messagesAdded", "labelsAdded", "labelsRemoved"):
-                for item in record.get(key, []):
-                    if item["message"]["id"] not in changed:
-                        changed.append(item["message"]["id"])
-        return {"cursor": history["historyId"], "changed_ids": changed, "stale": False}
+        for page in pages:
+            for record in page.get("history", []):
+                for key in ("messagesAdded", "labelsAdded", "labelsRemoved"):
+                    for item in record.get(key, []):
+                        if item["message"]["id"] not in changed:
+                            changed.append(item["message"]["id"])
+        return {"cursor": pages[0]["historyId"], "changed_ids": changed, "stale": False}
+
+    async def _history_pages(self, cursor: str) -> list[dict[str, Any]]:
+        """Every page of history after the cursor; the first page's historyId is the new cursor,
+        so a change landing while paging is seen again next time rather than skipped."""
+        pages = [await self.client.get(f"{GMAIL}/history", startHistoryId=cursor)]
+        while token := pages[-1].get("nextPageToken"):
+            pages.append(
+                await self.client.get(f"{GMAIL}/history", startHistoryId=cursor, pageToken=token)
+            )
+        return pages
 
     async def _draft_message(
         self, to: str, subject: str, body: str, thread_id: str | None
@@ -504,14 +515,18 @@ class GoogleTools:
         return await self._modify_labels(message_id, None, ["INBOX"])
 
     async def _events(self, start: str, end: str) -> list[dict[str, Any]]:
-        listing = await self.client.get(
-            CALENDAR,
-            timeMin=parse_time(start).isoformat(),
-            timeMax=parse_time(end).isoformat(),
-            singleEvents="true",
-            orderBy="startTime",
-        )
-        return listing.get("items", [])
+        query = {
+            "timeMin": parse_time(start).isoformat(),
+            "timeMax": parse_time(end).isoformat(),
+            "singleEvents": "true",
+            "orderBy": "startTime",
+        }
+        listing = await self.client.get(CALENDAR, **query)
+        events = listing.get("items", [])
+        while token := listing.get("nextPageToken"):
+            listing = await self.client.get(CALENDAR, **query, pageToken=token)
+            events.extend(listing.get("items", []))
+        return events
 
     @guarded
     async def cal_list(self, start: str, end: str) -> dict[str, Any]:
@@ -544,6 +559,13 @@ class GoogleTools:
             FREE_BUSY,
             {"timeMin": opens.isoformat(), "timeMax": closes.isoformat(), "items": calendars},
         )
+        unknown = [name for name, calendar in result["calendars"].items() if calendar.get("errors")]
+        if unknown:
+            return {
+                "slots": [],
+                "unknown": unknown,
+                "message": f"Availability unknown for {', '.join(unknown)}.",
+            }
         busy = [
             (parse_time(b["start"]), parse_time(b["end"]))
             for calendar in result["calendars"].values()

@@ -5,6 +5,8 @@ from fastapi import APIRouter, Query
 from homer_sim.deps import Authed, Sim
 from homer_sim.errors import ApiError
 
+HISTORY_PAGE_SIZE = 25
+
 router = APIRouter(prefix="/gmail/v1/users/me", dependencies=[Authed])
 
 
@@ -97,6 +99,9 @@ def insert_message(
 
 @router.get("/messages/{message_id}")
 def get_message(sim: Sim, message_id: str, format: str = "full") -> dict[str, Any]:
+    if message_id in sim.failing_once:
+        sim.failing_once.discard(message_id)
+        raise ApiError(500, "Backend Error")
     return sim.mailbox.render(sim.mailbox.get(message_id), format)
 
 
@@ -192,9 +197,14 @@ def send_draft(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/history")
-def list_history(sim: Sim, startHistoryId: str, maxResults: int = 100) -> dict[str, Any]:
-    records = sim.mailbox.history_since(startHistoryId)[:maxResults]
+def list_history(
+    sim: Sim, startHistoryId: str, maxResults: int = 100, pageToken: str = "0"
+) -> dict[str, Any]:
+    records = sim.mailbox.history_since(startHistoryId)
+    page = paged(records, pageToken, min(maxResults, HISTORY_PAGE_SIZE), "history")
     response: dict[str, Any] = {"historyId": str(sim.mailbox.history_id)}
-    if records:
-        response["history"] = records
+    if page["history"]:
+        response["history"] = page["history"]
+    if "nextPageToken" in page:
+        response["nextPageToken"] = page["nextPageToken"]
     return response

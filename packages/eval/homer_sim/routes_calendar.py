@@ -16,9 +16,19 @@ def list_events(
     maxResults: int = 250,
     singleEvents: bool = False,
     orderBy: str | None = None,
+    pageToken: str = "0",
 ) -> dict[str, Any]:
-    events = sim.calendar.between(timeMin, timeMax)[:maxResults]
-    return {"kind": "calendar#events", "timeZone": TIMEZONE, "items": events}
+    events = sim.calendar.between(timeMin, timeMax)
+    size = min(maxResults, sim.events_page_size)
+    offset = int(pageToken)
+    response = {
+        "kind": "calendar#events",
+        "timeZone": TIMEZONE,
+        "items": events[offset : offset + size],
+    }
+    if offset + size < len(events):
+        response["nextPageToken"] = str(offset + size)
+    return response
 
 
 @router.post("/calendars/primary/events", status_code=200)
@@ -52,7 +62,11 @@ def delete_event(sim: Sim, event_id: str, sendUpdates: str | None = None) -> Res
 @router.post("/freeBusy")
 def free_busy(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
     calendars = {
-        item["id"]: {"busy": sim.calendar.busy(body["timeMin"], body["timeMax"], item["id"])}
+        item["id"]: (
+            {"errors": [{"domain": "global", "reason": "notFound"}], "busy": []}
+            if item["id"] in sim.unknown_calendars
+            else {"busy": sim.calendar.busy(body["timeMin"], body["timeMax"], item["id"])}
+        )
         for item in body.get("items", [{"id": "primary"}])
     }
     return {

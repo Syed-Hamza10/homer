@@ -9,6 +9,7 @@ from homer_sim.mailbox import Mailbox
 
 DEFAULT_SEED = Path(__file__).with_name("seed.json")
 KNOWN_TOKEN = "sim-access-token"
+EVENTS_PAGE_SIZE = 250
 
 
 class State:
@@ -27,6 +28,9 @@ class State:
         self.calendar_writes: list[dict[str, Any]] = []
         self.people_cold = 0
         self.people_queries: list[str] = []
+        self.failing_once: set[str] = set()
+        self.unknown_calendars: set[str] = set()
+        self.events_page_size = EVENTS_PAGE_SIZE
 
     def record_write(
         self, method: str, event_id: str, send_updates: str | None, body: dict[str, Any]

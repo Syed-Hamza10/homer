@@ -585,3 +585,47 @@ async def test_event_detail_and_slots_with_attendees(mcp: Client, sim: httpx.Cli
         )
     )["slots"]
     assert [s["start"][11:16] for s in slots] == ["13:00", "15:00"]
+
+
+def insert_mail(sim: httpx.Client, count: int) -> list[str]:
+    return [
+        sim.post(
+            f"{GMAIL_SIM}/messages",
+            json={"raw": build_raw("me@example.test", f"Note {n}", "Hi.", None), "labelIds": []},
+            headers=AUTH,
+        ).json()["id"]
+        for n in range(count)
+    ]
+
+
+async def test_changes_follow_every_history_page(mcp: Client, sim: httpx.Client) -> None:
+    cursor = (await call(mcp, "mail_changes_since"))["cursor"]
+    inserted = insert_mail(sim, 60)
+    changes = await call(mcp, "mail_changes_since", cursor=cursor)
+    assert changes["changed_ids"] == inserted
+    assert int(changes["cursor"]) == int(cursor) + 60
+
+
+async def test_calendar_list_follows_every_page(mcp: Client, sim: httpx.Client) -> None:
+    monday, sunday = this_week()
+    span = {"start": monday.isoformat(), "end": (sunday + timedelta(days=7)).isoformat()}
+    whole = (await call(mcp, "cal_list", **span))["events"]
+    sim.post("/_sim/events-page-size", json={"size": 2}).raise_for_status()
+    paged = (await call(mcp, "cal_list", **span))["events"]
+    assert len(whole) > 2
+    assert [e["id"] for e in paged] == [e["id"] for e in whole]
+
+
+async def test_unknown_attendee_is_not_treated_as_free(mcp: Client, sim: httpx.Client) -> None:
+    sim.post("/_sim/unknown-calendars", json={"emails": ["ghost@example.test"]})
+    monday, _ = this_week()
+    result = await call(
+        mcp,
+        "cal_find_free_slots",
+        start=(monday + timedelta(days=2)).isoformat(),
+        end=(monday + timedelta(days=3)).isoformat(),
+        attendees=["ghost@example.test"],
+    )
+    assert result["slots"] == []
+    assert result["unknown"] == ["ghost@example.test"]
+    assert "Availability unknown for ghost@example.test" in result["message"]
