@@ -10,6 +10,10 @@ import psutil
 
 Tier = Literal["supported", "degraded"]
 HOME_DIRS = ("data", "credentials", "documents", "logs", "backups")
+SERVER_LABEL = "dev.homer.server"
+OLLAMA_LABEL = "dev.homer.ollama"
+SYSTEMD_UNIT = "homer.service"
+OLLAMA_DROPIN = Path("/etc/systemd/system/ollama.service.d/homer.conf")
 
 
 def total_ram_gb() -> float:
@@ -86,15 +90,37 @@ def tail_file(path: Path, lines: int, follow: bool) -> None:
     subprocess.run(["tail", "-n", str(lines), *(["-f"] if follow else []), str(path)], check=True)
 
 
+def launch_agent(label: str) -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+
+
+def server_service_file() -> Path:
+    if platform.system() == "Darwin":
+        return launch_agent(SERVER_LABEL)
+    return Path.home() / ".config" / "systemd" / "user" / SYSTEMD_UNIT
+
+
+def ollama_service_file() -> Path | None:
+    """The Ollama launch agent the installer adds on macOS; Linux uses a root-owned drop-in."""
+    return launch_agent(OLLAMA_LABEL) if platform.system() == "Darwin" else None
+
+
 def restart_service() -> None:
-    system = platform.system()
-    if system == "Darwin":
-        subprocess.run(
-            ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/dev.homer.server"],
-            check=True,
-        )
-        return
-    if system == "Linux":
-        subprocess.run(["systemctl", "--user", "restart", "homer"], check=True)
-        return
-    raise RuntimeError(f"unsupported platform: {system}")
+    path = server_service_file()
+    if not path.exists():
+        raise FileNotFoundError(f"no Homer service at {path}; start Homer with homer serve")
+    if platform.system() == "Darwin":
+        command = ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{SERVER_LABEL}"]
+    else:
+        command = ["systemctl", "--user", "restart", SYSTEMD_UNIT]
+    subprocess.run(command, check=True)
+
+
+def remove_service(path: Path) -> None:
+    """Unloads a launch agent or systemd user unit and deletes its file."""
+    if platform.system() == "Darwin":
+        command = ["launchctl", "bootout", f"gui/{os.getuid()}", str(path)]
+    else:
+        command = ["systemctl", "--user", "disable", "--now", path.name]
+    subprocess.run(command, capture_output=True, check=False)
+    path.unlink()
