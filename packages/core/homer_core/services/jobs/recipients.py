@@ -1,3 +1,4 @@
+import json
 import re
 import time
 from dataclasses import dataclass, replace
@@ -5,6 +6,7 @@ from datetime import UTC, datetime
 from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 from typing import Any
 
+from homer_core.services.approvals import SEND_ACTION, newest
 from homer_core.services.jobs.choice import Choice, Option, option_id
 from homer_core.services.jobs.turn import JobError, ReconnectRequired, Turn
 
@@ -176,6 +178,20 @@ async def candidates(turn: Turn, who: str) -> list[Candidate]:
     return matching([person for person in everyone if is_person(person)], who)[:CANDIDATES]
 
 
+def written_here(turn: Turn, who: str) -> Person | None:
+    """Someone an email in this chat already went to, when their name or address holds every
+    word asked for, so a second email to them needs no lookup."""
+    if turn.conversation_id is None:
+        return None
+    words = who.lower().split()
+    for approval in newest(turn.session, turn.user, SEND_ACTION, turn.conversation_id):
+        payload = json.loads(approval.payload_json)
+        name, email = str(payload.get("to_name", "")), str(payload.get("to", ""))
+        if email and words and all(word in f"{name} {email}".lower() for word in words):
+            return Person(name, email.lower())
+    return None
+
+
 def slot(who: str) -> str:
     return "person:" + " ".join(who.lower().split())
 
@@ -236,6 +252,9 @@ async def resolve(turn: Turn, who: str, from_header: bool = False) -> Person:
     chosen = turn.picked.get(slot(who))
     if chosen is not None:
         return Person(chosen["name"], chosen["email"])
+    known = written_here(turn, who)
+    if known is not None:
+        return known
     people = await candidates(turn, who)
     if len(people) == 1:
         return Person(people[0].name, people[0].email)

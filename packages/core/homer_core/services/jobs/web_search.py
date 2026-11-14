@@ -1,25 +1,30 @@
 import asyncio
 import re
+import time
 from contextlib import suppress
 from datetime import date, datetime, timedelta
 from itertools import chain
 from typing import Any
 from urllib.parse import urlsplit
 
+import structlog
 from pydantic_ai import Agent
 
 from homer_core.agent.claims import review
 from homer_core.agent.intents import WebSearch
 from homer_core.agent.voice import SENTENCE, capitalised, drop_sentences, non_answer
 from homer_core.services.jobs.recipients import listed
-from homer_core.services.jobs.turn import JobError, Turn
+from homer_core.services.jobs.turn import JobError, Stopwatch, Turn
 from homer_core.services.mail import unwrap
+
+log = structlog.get_logger(__name__)
 
 RESULTS = 8
 SNIPPETS = 6
 PAGES = 2
 PAGE_CHARS = 2500
 PAGE_TIMEOUT_SECONDS = 5.0
+BUDGET_SECONDS = 15.0
 SOURCES = 3
 NEED_PAGES = "NEED_PAGES"
 ANSWER_PROMPT = """Answer the user's question directly in 1-3 sentences, using the search
@@ -355,10 +360,54 @@ async def more_results(turn: Turn, query: str, seen: list[dict[str, Any]]) -> li
     return [result for result in found if result["url"] not in urls]
 
 
+async def deeper(
+    turn: Turn,
+    question: str,
+    first: str,
+    found: list[dict[str, Any]],
+    latest: bool,
+    clock: Stopwatch,
+) -> tuple[str, list[dict[str, Any]]]:
+    """The snippet answer (skipped for weather, whose snippets lack a temperature), else an
+    answer from two pages fetched meanwhile. The pages get what is left of the search budget;
+    when they are late the answer comes from the snippets alone."""
+    budget = time.monotonic() + BUDGET_SECONDS - sum(clock.laps.values())
+    snippets = found[:SNIPPETS]
+    pages = asyncio.create_task(read_pages(turn, found[:PAGES]))
+    if not WEATHER.search(question):
+        block = snippet_block(snippets, turn.now)
+        text = await ask(turn, question, block, SNIPPET_FALLBACK, latest)
+        clock.lap("snippet_answer")
+        if answers(text):
+            pages.cancel()
+            with suppress(asyncio.CancelledError):
+                await pages
+            return text, snippets[:SOURCES]
+    turn.emit("status", {"text": f"Reading {len(found[:PAGES])} pages…"})
+    extra: list[dict[str, Any]] = []
+    try:
+        async with asyncio.timeout(max(budget - time.monotonic(), 0.0)):
+            if VALUE.search(question):
+                read, extra = await asyncio.gather(pages, more_results(turn, first, found))
+            else:
+                read = await pages
+    except TimeoutError:
+        log.warning("search_budget_spent", question=question)
+        read = ""
+    clock.lap("pages")
+    block = snippet_block([*extra[:SNIPPETS], *snippets], turn.now)
+    turn.emit("status", {"text": "Writing the answer…"})
+    text = await ask(turn, question, f"{read}\n\n{block}" if read else block, "", latest)
+    clock.lap("page_answer")
+    used = [*extra[:1], *found[:PAGES]] if read or extra else snippets[:SOURCES]
+    return text, used
+
+
 async def answer(turn: Turn, query: str, question: str) -> None:
-    """Answers from the result snippets when they hold the answer, else from at most two pages
-    fetched in the background meanwhile (plus a dated search for a figure); code adds the
-    sources."""
+    """Answers from the result snippets when they hold the answer (a weather snippet with a
+    temperature always does), else from at most two pages fetched in the background meanwhile
+    (plus a dated search for a figure), within the search budget; code adds the sources."""
+    clock = Stopwatch()
     today = turn.now.date()
     latest = bool(LATEST.search(question) or VALUE.search(question))
     weather = WEATHER.search(question) is not None
@@ -374,26 +423,16 @@ async def answer(turn: Turn, query: str, question: str) -> None:
     if not found:
         turn.say(f"The web search found nothing for {query}.")
         return
+    clock.lap("search")
     snippets = found[:SNIPPETS]
-    pages = asyncio.create_task(read_pages(turn, found[:PAGES]))
     turn.emit("status", {"text": "Writing the answer…"})
-    text = await ask(turn, question, snippet_block(snippets, turn.now), SNIPPET_FALLBACK, latest)
-    used = snippets[:SOURCES]
-    if answers(text):
-        pages.cancel()
-        with suppress(asyncio.CancelledError):
-            await pages
+    if weather and temperature(snippets, ""):
+        text = await ask(turn, question, snippet_block(snippets, turn.now), "", latest)
+        used = snippets[:SOURCES]
+        clock.lap("snippet_answer")
     else:
-        turn.emit("status", {"text": f"Reading {len(found[:PAGES])} pages…"})
-        extra: list[dict[str, Any]] = []
-        if VALUE.search(question):
-            read, extra = await asyncio.gather(pages, more_results(turn, first, found))
-        else:
-            read = await pages
-        block = snippet_block([*extra[:SNIPPETS], *snippets], turn.now)
-        turn.emit("status", {"text": "Writing the answer…"})
-        text = await ask(turn, question, f"{read}\n\n{block}", "", latest)
-        used = [*extra[:1], *found[:PAGES]] if read or extra else used
+        text, used = await deeper(turn, question, first, found, latest, clock)
+    log.info("search_timing", **clock.laps)
     closest = unwrap(found[0].get("title"))
     text = cleaned(text)
     if WEATHER.search(question) and (not text or REFUSAL.search(text)):

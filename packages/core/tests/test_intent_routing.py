@@ -76,8 +76,8 @@ async def routed(message: str, answer: list[dict[str, Any]]) -> list[Any]:
     return [dispatch.RUNNERS[intent.kind] for intent in refined(found, message, [])]
 
 
-def test_there_are_about_forty_examples() -> None:
-    assert 30 <= len(examples()) <= 45
+def test_there_are_about_fifty_examples() -> None:
+    assert 40 <= len(examples()) <= 50
 
 
 @pytest.mark.parametrize(("message", "answer"), examples())

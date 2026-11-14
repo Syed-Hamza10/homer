@@ -589,3 +589,83 @@ def test_what_someone_asked_reads_their_mail_when_nothing_is_saved(post_chat: Po
     frames = post_chat({"message": "Thanks. What did Samuel Okafor ask me about?"})
     assert "mail_search" in calls(frames) and "nothing saved" not in said(frames)
     assert of(frames, "tool_call")[0]["args"]["query"].startswith("from:Samuel")
+
+
+def dinner(on: date) -> dict[str, Any]:
+    return {"kind": "create_event", "title": "Dinner with Faisal", "date": on.isoformat()} | {
+        "start": "19:00"
+    }
+
+
+WHY = {"kind": "fix_last_action", "what_is_wrong": "why that time?"}
+
+
+class TestRoundSeven:
+    @pytest.mark.parametrize("intents", [[[dinner(day(5))], [WHY], [dinner(day(5))]]])
+    def test_why_that_time_on_a_right_event_explains_and_makes_no_card(
+        self, post_chat: PostChat, logged_in: TestClient
+    ) -> None:
+        first = post_chat({"message": "dinner with Faisal at 7"})
+        chat = first[0][1]["conversation_id"]
+        why = post_chat({"message": "why that time?", "conversation_id": chat})
+        assert said(why) == (
+            f'You asked for "dinner with Faisal at 7", so I set {short(5)} 19:00-19:30. '
+            "Want a different time?"
+        )
+        assert of(why, "approval_required") == [] and "cal_create" not in calls(why)
+        assert len(logged_in.get("/api/approvals").json()) == 1
+
+    @pytest.mark.parametrize(
+        "intents",
+        [
+            [
+                [dinner(day(5))],
+                [{"kind": "recall", "about": "8pm"}],
+                [dinner(day(5)) | {"start": "20:00"}],
+            ]
+        ],
+    )
+    def test_a_correction_after_a_booking_is_a_fix_not_a_recall(self, post_chat: PostChat) -> None:
+        first = post_chat({"message": "dinner with Faisal at 7"})
+        chat = first[0][1]["conversation_id"]
+        fixed = post_chat({"message": "no wait, i mean 8pm", "conversation_id": chat})
+        assert said(fixed).startswith("You're right")
+        card = of(fixed, "approval_required")[0]["payload"]
+        assert card["start"].startswith(f"{day(5).isoformat()}T20:00")
+
+    @pytest.mark.parametrize(
+        "intents",
+        [[[read(range="date", date=day(3).isoformat())], [{"kind": "recall", "about": "wed"}]]],
+    )
+    def test_a_day_correction_after_a_calendar_read_reads_that_day(
+        self, post_chat: PostChat
+    ) -> None:
+        first = post_chat({"message": f"what is on {day(3):%A}?"})
+        chat = first[0][1]["conversation_id"]
+        wanted = day(4)
+        fixed = post_chat({"message": f"no wait, i mean {wanted:%A}", "conversation_id": chat})
+        assert calls(fixed) == ["cal_list"]
+        assert of(fixed, "tool_call")[0]["args"]["start"].startswith(wanted.isoformat())
+        assert "saved" not in said(fixed)
+
+    @pytest.mark.parametrize(
+        "intents",
+        [[[{"kind": "remind", "text": "Tea with the neighbour", "date": today().isoformat()}]]],
+    )
+    def test_a_reminder_on_my_calendar_is_an_event(self, post_chat: PostChat) -> None:
+        before = from_now(datetime.now(ZONE), 30)
+        asked = "put a reminder on my calendar in 30 minutes, call it Tea with the neighbour"
+        frames = post_chat({"message": asked})
+        after = from_now(datetime.now(ZONE), 30)
+        card = of(frames, "approval_required")[0]["payload"]
+        assert card["title"] == "Tea with the neighbour"
+        start = datetime.fromisoformat(card["start"]).replace(tzinfo=ZONE)
+        assert start in (before, after)
+
+
+@pytest.mark.parametrize("intents", [[[{"kind": "recall", "about": "Ada"}]]])
+def test_what_does_someone_want_reads_their_mail(post_chat: PostChat) -> None:
+    frames = post_chat({"message": "what does Ada want from me, dear?"})
+    queries = [call["args"]["query"] for event, call in frames if event == "tool_call"]
+    assert queries and queries[0].startswith("from:Ada")
+    assert "nothing saved" not in said(frames)

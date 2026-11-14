@@ -4,6 +4,7 @@ import structlog
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ToolOutput
 from pydantic_ai.exceptions import UnexpectedModelBehavior
+from sqlmodel import col, select
 
 from homer_core.agent.intents import (
     CorrectMemory,
@@ -16,7 +17,7 @@ from homer_core.agent.intents import (
 )
 from homer_core.agent.routing import CALENDAR_ASKED, first_to_second_person
 from homer_core.agent.voice import capitalised, second_person
-from homer_core.db.models import Fact
+from homer_core.db.models import EmailCache, Fact
 from homer_core.services.facts import (
     add_fact,
     closest,
@@ -43,11 +44,15 @@ Facts:
 
 
 MAIL_ASKED = re.compile(
-    r"\b(?:e-?mails?|mail|inbox|unread|messages?|repl(?:y|ies)|sent|drafts?)\b"
-    r"|\bwhat did \w+(?: \w+)? (?:ask|say|write|send|want|need)\b",
+    r"\b(?:e-?mails?|mail|inbox|unread|messages?|repl(?:y|ies)|sent|drafts?)\b",
     re.IGNORECASE,
 )
-SENDER = re.compile(r"\bwhat did (?P<who>[A-Z][\w'-]+)", re.IGNORECASE)
+ASKS = re.compile(
+    r"\bwhat (?:did|does|do) (?P<who>[A-Za-z][\w'-]+)(?: [A-Z][\w'-]+)? (?:ask|say|write|send"
+    r"|want|need|expect)",
+    re.IGNORECASE,
+)
+NOT_SENDERS = frozenset({"i", "you", "we", "they", "he", "she", "it", "that", "this"})
 
 
 class RecallAnswer(BaseModel):
@@ -181,18 +186,35 @@ async def recall(turn: Turn, intent: Recall) -> None:
     turn.say(capitalised(second_person(found.answer.strip())))
 
 
+def sender(message: str) -> str | None:
+    """Who "what does Owen want" or "what did Rosa ask" asks about."""
+    found = ASKS.search(message)
+    return found["who"] if found and found["who"].lower() not in NOT_SENDERS else None
+
+
+def has_mail(turn: Turn, who: str) -> bool:
+    """Mail from someone of that name is in the cached inbox."""
+    rows = select(EmailCache.id).where(
+        EmailCache.user_id == turn.user.id, col(EmailCache.sender).icontains(who)
+    )
+    return turn.session.exec(rows.limit(1)).first() is not None
+
+
 def rerouted(turn: Turn, intent: Recall) -> Intent:
     """A recall about mail or the calendar that no saved fact answers is a mail or calendar
-    read: "when is my next meeting" is never a memory question."""
-    if matching(turn.session, turn.user, intent.about):
+    read: "when is my next meeting" is never a memory question. "What does Owen want from me"
+    reads Owen's mail unless only a saved fact knows Owen."""
+    who = sender(turn.message)
+    known = matching(turn.session, turn.user, intent.about)
+    if who and (not known or has_mail(turn, who)):
+        log.info("recall_rerouted", to="read_email", message=turn.message)
+        return ReadEmail(kind="read_email", question=turn.message, sender=who)
+    if known:
         return intent
     asked = f"{intent.about or ''} {turn.message}"
     if MAIL_ASKED.search(asked):
         log.info("recall_rerouted", to="read_email", message=turn.message)
-        who = SENDER.search(turn.message)
-        sender = who["who"] if who and who["who"].lower() not in ("i", "you", "we") else None
-        question = turn.message if sender else intent.about or turn.message
-        return ReadEmail(kind="read_email", question=question, sender=sender)
+        return ReadEmail(kind="read_email", question=intent.about or turn.message)
     if CALENDAR_ASKED.search(asked):
         log.info("recall_rerouted", to="read_calendar", message=turn.message)
         return calendar_read(turn.message, turn.now.date())

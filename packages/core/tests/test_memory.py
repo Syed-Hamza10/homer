@@ -94,3 +94,21 @@ class TestRecall:
         asked = post_chat({"message": "so what date is Tariq's wedding"})
         assert said(asked) == "Tariq's wedding is on 19 December."
         assert texts(logged_in) == ["Your nephew Tariq has his wedding on 19 December."]
+
+
+class TestRoundSeven:
+    @pytest.fixture
+    def model(self, jobs: JobModel) -> Model:
+        turns = [
+            remember("Your pharmacist is Mr Idris and he shuts at 7pm.", "Idris"),
+            [{"kind": "send_status", "about": "pharmacist closing time"}],
+        ]
+        return jobs(turns, recalled={"answer": "He shuts at 7pm."}, text="Chat answer.")
+
+    def test_a_terse_fact_question_sent_to_mail_status_recalls_the_fact(
+        self, post_chat: PostChat
+    ) -> None:
+        post_chat({"message": "keep in mind my pharmacist is Mr Idris and he shuts at 7pm"})
+        assert said(post_chat({"message": "pharmacist closing time, one line"})) == (
+            "He shuts at 7pm."
+        )

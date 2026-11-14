@@ -599,6 +599,45 @@ class TestRoundSixSearch:
 
     @pytest.mark.parametrize(
         ("intents", "replies"),
+        [(search("rain in Islamabad now"), ["Dry, about 24°C."])],
+    )
+    def test_a_weather_snippet_with_a_temperature_needs_no_pages(
+        self, post_chat: PostChat, fake_search: ModuleType, instructions: list[str]
+    ) -> None:
+        fake_search.RESULTS[:] = WEATHER_RESULTS
+        frames = post_chat({"message": "is it raining in islamabad at the moment?"})
+        assert fake_search.fetched == [] and len(instructions) == 1
+        assert web_search.NEED_PAGES not in instructions[0]
+        assert said(frames).startswith("Dry, about 24°C.\n\n**Sources**")
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"), [(search("rain in Lahore now"), ["Light rain, 18 degrees."])]
+    )
+    def test_weather_without_a_temperature_reads_pages_with_one_answer(
+        self, post_chat: PostChat, fake_search: ModuleType, instructions: list[str]
+    ) -> None:
+        frames = post_chat({"message": "is it raining in lahore right now?"})
+        assert len(instructions) == 1 and "Page A text" in instructions[0]
+        assert said(frames).startswith("Light rain, 18 degrees.")
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("launch news"), ["NEED_PAGES", "It launched on Monday."])],
+    )
+    def test_pages_past_the_budget_fall_back_to_the_snippets(
+        self,
+        post_chat: PostChat,
+        instructions: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(web_search, "BUDGET_SECONDS", 0.0)
+        frames = post_chat({"message": "what's the latest launch news?"})
+        assert said(frames).startswith("It launched on Monday.\n\n**Sources**\n- [Launch news](")
+        assert "Page A text" not in instructions[1] and "Snippet A" in instructions[1]
+        assert web_search.NEED_PAGES not in instructions[1]
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
         [(search("petrol price in pakistan this week"), ["Rs 265 per litre from 14 Nov."])],
     )
     def test_figures_carry_their_dates_and_the_newest_wins(
