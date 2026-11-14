@@ -44,7 +44,7 @@ own account is set up the same way. Everything below is done once; it takes abou
 
 ## 6. Run the one-time consent flow
 
-1. From the repo: `uv run homer-mcp-google-setup`.
+1. On an installed machine, press **Connect** in Settings, or run `~/.homer/venv/bin/homer setup google`. From the repo: `uv run homer-mcp-google-setup`.
 2. A browser tab opens. Sign in with the throwaway account.
 3. Google warns that the app is unverified: click **Continue**. Tick all three permissions, click **Continue**.
 4. The terminal prints `Google connected. Token written to ~/.homer/credentials/google_token.json`. The file is mode 0600; the server reads it and refreshes the access token on its own.
