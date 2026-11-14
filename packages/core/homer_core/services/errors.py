@@ -8,3 +8,7 @@ class DomainError(Exception):
 
 class NotFound(DomainError):
     status_code = 404
+
+
+class GoogleFailed(DomainError):
+    status_code = 502
