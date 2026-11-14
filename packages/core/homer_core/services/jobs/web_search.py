@@ -238,6 +238,7 @@ async def answer(turn: Turn, query: str, question: str) -> None:
     today = turn.now.date()
     latest = bool(LATEST.search(question))
     first = dated_query(query, question, today)
+    turn.emit("status", {"text": "Searching the web…"})
     found = ranked(await search(turn, first), turn.now, latest)
     second = dated_query(question, question, today)
     if not found and second.lower() != first.lower():
@@ -247,6 +248,7 @@ async def answer(turn: Turn, query: str, question: str) -> None:
         return
     snippets = found[:SNIPPETS]
     pages = asyncio.create_task(read_pages(turn, found[:PAGES]))
+    turn.emit("status", {"text": "Writing the answer…"})
     text = await ask(turn, question, snippet_block(snippets), SNIPPET_FALLBACK, latest)
     used = snippets[:SOURCES]
     if answers(text):
@@ -254,12 +256,14 @@ async def answer(turn: Turn, query: str, question: str) -> None:
         with suppress(asyncio.CancelledError):
             await pages
     else:
+        turn.emit("status", {"text": f"Reading {len(found[:PAGES])} pages…"})
         extra: list[dict[str, Any]] = []
         if VALUE.search(question):
             read, extra = await asyncio.gather(pages, more_results(turn, first, found))
         else:
             read = await pages
         block = snippet_block([*extra[:SNIPPETS], *snippets])
+        turn.emit("status", {"text": "Writing the answer…"})
         text = await ask(turn, question, f"{read}\n\n{block}", "", latest)
         used = [*extra[:1], *found[:PAGES]] if read or extra else used
     closest = unwrap(found[0].get("title"))

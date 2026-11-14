@@ -1,22 +1,70 @@
-import { Link } from "react-router"
-import { Button } from "@/components/ui/button"
-import type { ActivityItem } from "./types"
+import { ChevronRight, LoaderCircle } from "lucide-react"
+import { useStoredFlag } from "@/lib/useStoredFlag"
+import { cn } from "@/lib/utils"
+import { headline, stepRow, type ToolStep } from "./activity"
 
-type Props = { item: Exclude<ActivityItem, { kind: "approval" }> }
+export const ACTIVITY_OPEN_KEY = "homer.chat.activity.open"
 
-export function ActivityLine({ item }: Props) {
-  if (item.kind === "reconnect") {
-    return (
-      <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to={item.url}>Reconnect Google</Link>
-      </Button>
-    )
-  }
-  const detail =
-    item.kind === "tool_call" ? JSON.stringify(item.args) : item.summary
+type Props = {
+  steps: ToolStep[]
+  running: boolean
+  status: string | null
+  sources: number
+}
+
+export function ActivityLine({ steps, running, status, sources }: Props) {
+  const [open, setOpen] = useStoredFlag(ACTIVITY_OPEN_KEY)
+  const expandable = steps.length > 0
   return (
-    <p className="truncate font-mono text-[11px] text-muted-foreground/70">
-      {item.kind === "tool_call" ? "→" : "←"} {item.name} {detail}
-    </p>
+    <div className="text-xs text-muted-foreground" data-testid="activity">
+      <button
+        type="button"
+        aria-expanded={expandable ? open : undefined}
+        disabled={!expandable}
+        onClick={() => setOpen(!open)}
+        className="flex max-w-full items-center gap-1.5 text-left transition-colors enabled:hover:text-foreground"
+      >
+        {running ? (
+          <LoaderCircle aria-hidden className="size-3 shrink-0 animate-spin" />
+        ) : (
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 transition-transform",
+              open && "rotate-90",
+            )}
+          />
+        )}
+        <span aria-live="polite" className="truncate">
+          {headline(steps, { running, status, sources })}
+        </span>
+      </button>
+      {open && expandable && (
+        <ul
+          aria-label="Tool activity"
+          className="mt-1.5 ml-1.5 flex flex-col gap-1 border-l border-border pl-3"
+        >
+          {steps.map((step, index) => {
+            const row = stepRow(step, running)
+            return (
+              <li
+                key={index}
+                className={cn(
+                  "flex min-w-0 gap-1.5",
+                  row.failed && "text-destructive/80",
+                )}
+              >
+                <span className="shrink-0">{row.text}</span>
+                {row.detail && (
+                  <span className="truncate text-muted-foreground/70">
+                    {row.detail}
+                  </span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }

@@ -107,4 +107,58 @@ describe("MessageList", () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     )
   })
+
+  it("shows one activity line above the reply instead of raw tool events", () => {
+    const search: ActivityItem[] = [
+      {
+        kind: "tool_call",
+        name: "web_search",
+        args: { query: "who won", max_results: 8 },
+      },
+    ]
+    const props = {
+      messages: messages.slice(0, 1),
+      approvals: [],
+      onRegenerate: vi.fn(),
+    }
+    const { rerender } = wrap(
+      <MessageList
+        {...props}
+        draft={{ user: "email sam", assistant: "" }}
+        activity={search}
+        status="Searching the web…"
+      />,
+    )
+    expect(screen.getByTestId("activity").textContent).toBe(
+      "Searching the web…",
+    )
+    expect(screen.queryByText("Thinking…")).toBeNull()
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <MessageList
+            {...props}
+            draft={{
+              user: "email sam",
+              assistant: "Yes.\n\nSources:\n- [A](https://a.test/x)",
+            }}
+            activity={[
+              ...search,
+              {
+                kind: "tool_result",
+                name: "web_search",
+                summary: '{"results": []}',
+              },
+            ]}
+            status={null}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(screen.getAllByTestId("activity")).toHaveLength(1)
+    expect(screen.getByTestId("activity").textContent).toBe(
+      "Searched the web · 1 source",
+    )
+    expect(document.body.textContent).not.toContain("max_results")
+  })
 })

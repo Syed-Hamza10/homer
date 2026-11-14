@@ -1,6 +1,4 @@
-type Props = { text: string | null }
-
-export function LiveStatus({ text }: Props) {
+export function LiveStatus() {
   return (
     <div className="flex items-center gap-2 text-muted-foreground">
       <span
@@ -13,7 +11,7 @@ export function LiveStatus({ text }: Props) {
         <span />
       </span>
       <p role="status" className="text-xs tracking-[0.02em]">
-        {text ?? "Thinking…"}
+        Thinking…
       </p>
     </div>
   )

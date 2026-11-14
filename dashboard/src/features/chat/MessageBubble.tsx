@@ -6,6 +6,7 @@ import { LiveStatus } from "./LiveStatus"
 import { Markdown } from "./Markdown"
 import { SourceChips } from "./SourceChips"
 import { splitSources } from "./sources"
+import { stripUntrusted } from "./untrusted"
 
 type Props = {
   role: "user" | "assistant"
@@ -13,7 +14,7 @@ type Props = {
   createdAt?: string
   stopped?: boolean
   pending?: boolean
-  status?: string | null
+  quiet?: boolean
   onRegenerate?: () => void
 }
 
@@ -30,13 +31,13 @@ export function MessageBubble({
   createdAt,
   stopped,
   pending,
-  status = null,
+  quiet = false,
   onRegenerate,
 }: Props) {
   const own = role === "user"
   const { body, sources } = own
     ? { body: content, sources: [] }
-    : splitSources(content)
+    : splitSources(stripUntrusted(content))
   const showActions = !own && !pending && content !== ""
 
   return (
@@ -58,11 +59,7 @@ export function MessageBubble({
       >
         {own ? content : body && <Markdown text={body} streaming={pending} />}
         {sources.length > 0 && <SourceChips sources={sources} />}
-        {pending && (!content || status) && (
-          <div className={cn(content && "mt-2")}>
-            <LiveStatus text={status} />
-          </div>
-        )}
+        {pending && !content && !quiet && <LiveStatus />}
         {!pending && !own && !content && (
           <span className="text-muted-foreground">
             {stopped ? "Stopped before any reply." : "No reply."}

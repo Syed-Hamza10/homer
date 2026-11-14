@@ -259,9 +259,11 @@ SSE events on `/api/chat`, in order:
 - `tool_call` `{name, args}` and `tool_result` `{name, summary}` (summary cut at 200 chars),
   interleaved with `token`s as the run proceeds
 - `approval_required` `{approval_id, action, preview}` right before the matching `tool_result`
-- `status` `{text}` any time before or between tokens: a short progress line ("Checking your
-  calendar…"). The chat shows "Thinking…" until the first `status` or `token`, then the latest
-  status text until the next `token`
+- `status` `{text}` any time before or between tokens: a short progress line ("Searching the
+  web…"; the web search job sends them). The chat folds `status`, `tool_call` and `tool_result`
+  into one activity line above the reply that updates in place and ends as a summary ("Searched
+  the web · 2 sources"); clicking it lists one plain row per tool call, never raw JSON or page
+  text. "Thinking…" shows until the first `status` or `tool_call`
 - `token` `{text}` repeated
 - `replace` `{text}` replaces the text shown so far (claim guard)
 - `done` `{input_tokens, output_tokens}`
