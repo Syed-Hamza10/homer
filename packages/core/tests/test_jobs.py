@@ -165,10 +165,9 @@ class TestSendEmail:
         self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
     ) -> None:
         frames = post_chat({"message": "Email Sara that the invoice is paid"})
-        assert said(frames) == (
-            "Which Sara do you mean: Sara Whitfield (sara.whitfield@example.test) or "
-            "Sara Mbeki (sara.mbeki@example.test)?"
-        )
+        assert said(frames) == "Which Sara do you mean?"
+        options = of(frames, "choice")[0]["options"]
+        assert [option["label"] for option in options] == ["Sara Whitfield", "Sara Mbeki"]
         assert of(frames, "approval_required") == [] and fake_google.drafted == []
 
     @pytest.mark.parametrize("intents", [[[email("Sara Mbeki")]]])
@@ -183,7 +182,7 @@ class TestSendEmail:
         self, logged_in: TestClient, post_chat: PostChat
     ) -> None:
         frames = post_chat({"message": "Email Zed"})
-        assert calls(frames) == ["contacts_search", "mail_search"]
+        assert calls(frames) == ["contacts_search", "mail_search", "mail_search"]
         assert said(frames) == "I could not find an email address for Zed. What is their address?"
 
     @pytest.mark.parametrize("intents", [[[email("Bob", reply_to_latest_from="Bob")]]])

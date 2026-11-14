@@ -29,7 +29,8 @@ async def post_chat(
 ) -> StreamingResponse:
     if body.conversation_id is not None:
         get_conversation(session, user, body.conversation_id)
-    events = chat.stream(session, user, runtime, body.conversation_id, body.message)
+    picked = (body.choice.question_id, body.choice.option_id) if body.choice else None
+    events = chat.stream(session, user, runtime, body.conversation_id, body.message, picked)
     return StreamingResponse(
         frames(events), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
     )

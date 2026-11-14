@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -8,13 +8,14 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
+from pydantic import TypeAdapter
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.usage import RunUsage
 from sqlmodel import Session, col, select
 
 from homer_core.agent import routing
-from homer_core.agent.intents import Background, extract
+from homer_core.agent.intents import Background, Intent, extract
 from homer_core.agent.router import (
     Command,
     Decision,
@@ -33,7 +34,7 @@ from homer_core.services.conversations import (
 )
 from homer_core.services.errors import DomainError
 from homer_core.services.facts import prompt_facts
-from homer_core.services.jobs import dispatch, draft_question
+from homer_core.services.jobs import choice, dispatch, draft_question
 from homer_core.services.jobs.turn import ChatEvent, JobError, ReconnectRequired, Turn
 from homer_core.services.rules import get_rules
 
@@ -48,6 +49,7 @@ SKILL_COMMANDS = frozenset({"brief", "inbox", "digest", "slot", "draft", "follow
 SLOT_LIMIT = 3
 ALREADY_DONE = "I already drafted that one — it's above."
 REPEAT_SECONDS = 120
+INTENT: TypeAdapter[Intent] = TypeAdapter(Intent)
 
 
 @dataclass
@@ -58,6 +60,7 @@ class Outcome:
     created_approval: bool = False
     context: list[dict[str, Any]] = field(default_factory=list)
     approval_ids: list[int] = field(default_factory=list)
+    question: dict[str, Any] | None = None
 
     def track(self, event: ChatEvent) -> None:
         if event.name == "token":
@@ -73,7 +76,7 @@ def to_history(messages: list[Message]) -> list[ModelMessage]:
     return [
         ModelRequest(parts=[UserPromptPart(content=message.content)])
         if message.role == "user"
-        else ModelResponse(parts=[TextPart(content=message.content)])
+        else ModelResponse(parts=[TextPart(content=choice.shown(message))])
         for message in messages
         if message.content
     ]
@@ -129,6 +132,7 @@ def save_message(
     stopped: bool = False,
     created_approval: bool = False,
     context: list[dict[str, Any]] | None = None,
+    question: dict[str, Any] | None = None,
 ) -> Message:
     message = Message(
         conversation_id=conversation.id,
@@ -137,6 +141,7 @@ def save_message(
         stopped=stopped,
         created_approval=created_approval,
         context_json=json.dumps(context) if context else None,
+        choice_json=json.dumps(question) if question else None,
     )
     conversation.updated_at = utcnow()
     session.add(message)
@@ -259,9 +264,12 @@ async def run_skill(session: Session, user: User, runtime: Runtime, command: Com
     return "Unknown command."
 
 
-async def run_jobs(turn: Turn) -> None:
+Work = Callable[[Turn], Awaitable[None]]
+
+
+async def run_jobs(turn: Turn, work: Work) -> None:
     try:
-        await jobs(turn)
+        await work(turn)
     except ReconnectRequired:
         turn.ask_to_reconnect()
     finally:
@@ -284,16 +292,31 @@ async def jobs(turn: Turn) -> None:
     intents = routing.refined(found, turn.message, turn.previous, turn.facts)
     log.info("intents", kinds=[intent.kind for intent in intents])
     for intent in intents:
-        try:
-            await dispatch.run(turn, intent)
-        except ReconnectRequired:
-            raise
-        except (JobError, DomainError) as error:
-            turn.say(str(error))
+        await attempt(turn, intent)
 
 
-async def run_turn(turn: Turn, outcome: Outcome) -> AsyncIterator[ChatEvent]:
-    task = asyncio.create_task(run_jobs(turn))
+async def attempt(turn: Turn, intent: Intent) -> None:
+    try:
+        await dispatch.run(turn, intent)
+    except ReconnectRequired:
+        raise
+    except choice.Choice as question:
+        choice.ask(turn, question)
+    except (JobError, DomainError) as error:
+        turn.say(str(error))
+
+
+def resume(intent: dict[str, Any]) -> Work:
+    """Runs the job a pick-one question paused, with no intent call."""
+
+    async def work(turn: Turn) -> None:
+        await attempt(turn, INTENT.validate_python(intent))
+
+    return work
+
+
+async def run_turn(turn: Turn, outcome: Outcome, work: Work = jobs) -> AsyncIterator[ChatEvent]:
+    task = asyncio.create_task(run_jobs(turn, work))
     try:
         while (event := await turn.events.get()) is not None:
             yield event
@@ -303,6 +326,32 @@ async def run_turn(turn: Turn, outcome: Outcome) -> AsyncIterator[ChatEvent]:
     outcome.answer = turn.answer
     outcome.usage.incr(turn.usage)
     outcome.context = turn.resolved
+    outcome.question = turn.question
+
+
+def make_turn(
+    session: Session,
+    user: User,
+    runtime: Runtime,
+    conversation_id: int,
+    history: list[ModelMessage],
+    message: str,
+    previous: list[dict[str, Any]] | None,
+    earlier: list[dict[str, Any]] | None,
+) -> Turn:
+    return Turn(
+        session=session,
+        user=user,
+        message=message,
+        runtime=runtime,
+        rules=get_rules(session, user.id),
+        history=history,
+        now=datetime.now(ZoneInfo(user.timezone)),
+        conversation_id=conversation_id,
+        previous=previous or [],
+        earlier=earlier or [],
+        facts=prompt_facts(session, user),
+    )
 
 
 async def respond(
@@ -315,7 +364,16 @@ async def respond(
     outcome: Outcome,
     previous: list[dict[str, Any]] | None = None,
     earlier: list[dict[str, Any]] | None = None,
+    answer: choice.Answer | None = None,
 ) -> AsyncIterator[ChatEvent]:
+    if answer is not None:
+        args = (session, user, runtime, conversation_id, history)
+        turn = make_turn(*args, answer.message, previous, earlier)
+        turn.picked = answer.picked
+        async with aclosing(run_turn(turn, outcome, resume(answer.intent))) as events:
+            async for event in events:
+                yield event
+        return
     command = parse_command(message)
     if command is not None and command.name in SKILL_COMMANDS:
         yield text_event(outcome, await run_skill(session, user, runtime, command))
@@ -329,19 +387,7 @@ async def respond(
     if settled is not None:
         yield text_event(outcome, settled)
         return
-    turn = Turn(
-        session=session,
-        user=user,
-        message=message,
-        runtime=runtime,
-        rules=get_rules(session, user.id),
-        history=history,
-        now=datetime.now(ZoneInfo(user.timezone)),
-        conversation_id=conversation_id,
-        previous=previous or [],
-        earlier=earlier or [],
-        facts=prompt_facts(session, user),
-    )
+    turn = make_turn(session, user, runtime, conversation_id, history, message, previous, earlier)
     async with aclosing(run_turn(turn, outcome)) as events:
         async for event in events:
             yield event
@@ -365,7 +411,10 @@ async def stream(
     runtime: Runtime,
     conversation_id: int | None,
     message: str,
+    picked: tuple[str, str] | None = None,
 ) -> AsyncIterator[ChatEvent]:
+    """Streams one turn. `picked` is a (question id, option id) click on a pick-one card; it
+    continues the paused job, and falls back to the typed label when the question is gone."""
     if conversation_id is None:
         conversation = start_conversation(session, user, message)
     else:
@@ -374,9 +423,10 @@ async def stream(
     history = to_history(stored)
     previous = last_context(stored)
     earlier = recent_context(stored)
+    answer = choice.take(session, stored, *picked) if picked else None
     user_message = save_message(session, conversation, "user", message)
     yield ChatEvent("meta", {"conversation_id": conversation.id, "message_id": user_message.id})
-    if repeated(session, stored, message):
+    if answer is None and repeated(session, stored, message):
         save_message(session, conversation, "assistant", ALREADY_DONE)
         yield ChatEvent("token", {"text": ALREADY_DONE})
         yield ChatEvent("done", {"input_tokens": 0, "output_tokens": 0})
@@ -395,6 +445,7 @@ async def stream(
                 outcome,
                 previous,
                 earlier,
+                answer,
             )
         ) as events:
             async for event in events:
@@ -420,6 +471,7 @@ async def stream(
         outcome.answer,
         created_approval=outcome.created_approval,
         context=outcome.context,
+        question=outcome.question,
     )
     approvals.attach(session, outcome.approval_ids, reply.id)
     if not stored:

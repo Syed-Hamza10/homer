@@ -38,7 +38,9 @@ def test_conversations_and_messages_are_listed(logged_in: TestClient, post_chat:
         "stopped",
         "created_approval",
         "created_at",
+        "choice",
     }
+    assert messages[1]["choice"] is None
 
 
 def test_unknown_conversation_messages_are_404(logged_in: TestClient) -> None:

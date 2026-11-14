@@ -11,6 +11,20 @@ class ConversationOut(BaseModel):
     updated_at: datetime
 
 
+class ChoiceOption(BaseModel):
+    id: str
+    label: str
+    detail: str
+
+
+class ChoiceCard(BaseModel):
+    question_id: str
+    prompt: str
+    options: list[ChoiceOption]
+    allow_other: bool
+    answered: str | None = None
+
+
 class MessageOut(BaseModel):
     id: int
     conversation_id: int
@@ -19,6 +33,7 @@ class MessageOut(BaseModel):
     stopped: bool
     created_approval: bool
     created_at: datetime
+    choice: ChoiceCard | None = None
 
 
 class RenameIn(BaseModel):
