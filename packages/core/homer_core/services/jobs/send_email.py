@@ -167,6 +167,32 @@ ABOUT_IT = re.compile(r"\babout (?:it|that|this)\s*[.!?]?\s*$", re.IGNORECASE)
 RELAYED = re.compile(r"\b(?:tell|let|inform|remind) (?:him|her|them)\b", re.IGNORECASE)
 
 
+CLOCK = re.compile(
+    r"\b(?P<hour>\d{1,2})(?:[:.](?P<minute>\d{2}))?\s*(?P<half>[ap])\.?m\b\.?"
+    r"|\b(?P<hour24>\d{1,2}):(?P<minute24>\d{2})\b",
+    re.IGNORECASE,
+)
+NUMBER = re.compile(r"\d+(?:[.,/]\d+)*")
+DAY_NAMES = re.compile(
+    r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march"
+    r"|april|june|july|august|september|october|november|december)\b",
+    re.IGNORECASE,
+)
+EVENT_NAME = re.compile(
+    r"\b(?P<name>[A-Za-z][\w'-]*)\s+(?:meeting|call|review|launch|workshop|conference"
+    r"|presentation|interview|appointment|deadline|dinner|lunch|session|summit|offsite|party)\b",
+    re.IGNORECASE,
+)
+PLAIN_EVENT = frozenset(
+    {"quick", "short", "brief", "next", "upcoming", "phone", "video", "online", "follow-up"}
+    | {"first", "last", "same", "new", "our", "before", "after", "during", "until", "about"}
+)
+INVENTED_HINT = (
+    "\nUse no date, time, amount or event name that the points or the email above do not give."
+    " Leave out: {facts}."
+)
+
+
 class EmailText(BaseModel):
     subject: str
     body: str
@@ -352,6 +378,82 @@ async def checked(
     return EmailText(subject=unbracketed(text.subject), body=body)
 
 
+def facts_in(text: str) -> dict[str, str]:
+    """The dates, times, amounts and event names a text states, keyed for comparison: times as
+    "t:15:00", numbers as "n:28" (an ordinal too), day and month names as "d:wednesday" and an
+    event's own name as "e:board"; each with the words as written."""
+    found: dict[str, str] = {}
+    for match in CLOCK.finditer(text):
+        hour = int(match["hour"] or match["hour24"])
+        minute = int(match["minute"] or match["minute24"] or 0)
+        if match["half"]:
+            hour = hour % 12 + (12 if match["half"].lower() == "p" else 0)
+        found[f"t:{hour:02d}:{minute:02d}"] = match.group(0).strip()
+    for number in NUMBER.findall(CLOCK.sub(" ", text)):
+        found[f"n:{number.replace(',', '')}"] = number
+    for name in DAY_NAMES.findall(text):
+        found[f"d:{name.lower()}"] = name
+    for match in EVENT_NAME.finditer(text):
+        name = match["name"].lower()
+        if name not in STOPWORDS and name not in PLAIN_EVENT:
+            found[f"e:{name}"] = match.group(0)
+    return found
+
+
+def stated(key: str, known: str, given: dict[str, str]) -> bool:
+    """The fact appears in the known text: a time also as its bare hour ("at 3"), a day name
+    also abbreviated ("Wed")."""
+    kind, value = key.split(":", 1)
+    if key in given:
+        return True
+    if kind == "t":
+        hour, minute = (int(part) for part in value.split(":"))
+        hours = {str(hour), str(hour % 12 or 12)}
+        return minute == 0 and any(f"n:{each}" in given for each in hours)
+    if kind == "d":
+        return re.search(rf"\b{value[:3]}(?:{value[3:]}|\b)", known, re.IGNORECASE) is not None
+    if kind == "e":
+        return re.search(rf"\b{re.escape(value)}", known, re.IGNORECASE) is not None
+    return False
+
+
+def invented(text: str, known: str) -> list[str]:
+    """The dates, times, amounts and event names in the text that the known text never gives."""
+    given = facts_in(known)
+    return [words for key, words in facts_in(text).items() if not stated(key, known, given)]
+
+
+def unfounded(message: str, known: str) -> str:
+    """Drops each clause that states a fact the known text never gives, keeping the rest of
+    its sentence."""
+    kept = []
+    for sentence in SENTENCE.split(message):
+        parts = [part for part in CLAUSE.split(sentence) if not invented(part, known)]
+        if parts:
+            end = sentence.strip()[-1:]
+            text = ", ".join(part.strip().rstrip(".!?") for part in parts)
+            kept.append(capitalised(text) + (end if end in ".!?" else "."))
+    return " ".join(kept)
+
+
+async def grounded(
+    turn: Turn, text: EmailText, prompt: str, instructions: str, known: str
+) -> EmailText:
+    """A draft whose dates, times, amounts and event names all come from the request, the email
+    it answers or the earlier topic: written once more when it adds one, then that clause is
+    dropped."""
+    made_up = invented(text.body, known)
+    if not made_up:
+        return text
+    log.warning("email_invented_facts", facts=made_up, body=text.body)
+    hint = INVENTED_HINT.format(facts=", ".join(made_up))
+    text = await checked(turn, prompt + hint, instructions, MIN_WORDS)
+    if not invented(text.body, known):
+        return text
+    log.warning("email_invented_facts_dropped", body=text.body)
+    return EmailText(subject=text.subject, body=unfounded(text.body, known) or text.body)
+
+
 def call_name(name: str) -> str:
     """The name someone goes by: an ID prefix ("BSDSF21A019-") and a leading honorific or
     common first name ("Syed", "Dr", "Muhammad") are skipped when another name follows."""
@@ -478,6 +580,8 @@ async def write(
     elif topic and copied(text.body, answer_details(turn)):
         log.warning("email_copied_answer", body=text.body)
         text = await checked(turn, prompt + COPY_RETRY, intent.body_instructions, MIN_WORDS)
+    known = " ".join([turn.message, intent.body_instructions, reply, topic])
+    text = await grounded(turn, text, prompt, intent.body_instructions, known)
     body = assemble(greeting(first), text.body, await sign_off(turn))
     return EmailText(subject=text.subject, body=body)
 

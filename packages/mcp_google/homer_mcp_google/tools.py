@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from importlib.metadata import version
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastmcp import FastMCP
 
@@ -159,7 +160,12 @@ def span_text(opens: datetime, closes: datetime) -> str:
 
 
 def check_span(start: str, end: str, timezone: str | None = None) -> tuple[datetime, datetime]:
+    """Both ends in `timezone` when one is given: a time with another offset is converted, so
+    previews and payloads never show UTC for a user elsewhere."""
     opens, closes = parse_time(start, timezone), parse_time(end, timezone)
+    if timezone:
+        zone = ZoneInfo(timezone)
+        opens, closes = opens.astimezone(zone), closes.astimezone(zone)
     if closes <= opens:
         raise ValueError("end must be after start")
     return opens, closes
@@ -579,7 +585,13 @@ class GoogleTools:
             parse_working_hours(working_hours),
             min(max(limit, 1), MAX_SLOTS),
         )
-        return {"slots": [{"start": s.isoformat(), "end": e.isoformat()} for s, e in slots]}
+        zone = opens.tzinfo
+        return {
+            "slots": [
+                {"start": s.astimezone(zone).isoformat(), "end": e.astimezone(zone).isoformat()}
+                for s, e in slots
+            ]
+        }
 
     @guarded
     async def cal_create(

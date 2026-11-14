@@ -7,6 +7,7 @@ from homer_core.agent.claims import review
 from homer_core.agent.intents import ChatIntent, FixLastAction
 from homer_core.agent.prompt import render_prompt
 from homer_core.agent.routing import is_small_talk, personal
+from homer_core.agent.voice import UNKNOWN
 from homer_core.services.facts import matching
 from homer_core.services.jobs import fix_action, mail_status, memory, web_search
 from homer_core.services.jobs.turn import Turn
@@ -14,12 +15,6 @@ from homer_core.services.jobs.turn import Turn
 HISTORY_MESSAGES = 8
 EMPTY = "Sorry, I lost my answer there. Could you ask that once more?"
 SEARCH_SERVER = "search"
-UNKNOWN = re.compile(
-    r"\bI (?:don't|do not) know\b|\bI'm not sure\b|\bI am not sure\b"
-    r"|\b(?:real-time|up-to-date|current) (?:information|data|news)\b"
-    r"|\bmy (?:knowledge|training)(?: data)? (?:cutoff|cut-off)\b",
-    re.IGNORECASE,
-)
 PERSONAL = re.compile(
     r"\b(?:my|mine|me|calendar|schedule|meetings?|inbox|e-?mails?|mail|remember|forget)\b",
     re.IGNORECASE,

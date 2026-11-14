@@ -12,7 +12,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCall
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from homer_core.agent.intents import OUTPUT_TOOL
+from homer_core.agent.intents import EXAMPLES, OUTPUT_TOOL
 from homer_core.config import Settings
 from homer_core.mcp.manager import McpManager
 from homer_core.services.jobs import read_email, web_search
@@ -668,3 +668,51 @@ def test_answers_stay_under_eighty_words() -> None:
     text = " ".join(["This sentence has exactly seven words here."] * 20)
     assert len(web_search.within(text, 80).split()) <= 80
     assert web_search.within("One. Two.", 80) == "One. Two."
+
+
+class TestBlockedSearch:
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("tallest mountain in africa blocked"), ["Mount Kilimanjaro, at 5,895 metres."])],
+    )
+    def test_a_stable_question_is_answered_from_knowledge_with_a_caveat(
+        self, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "what is the tallest mountain in africa, dear?"})
+        assert calls(frames) == ["web_search"]
+        assert said(frames) == (
+            "I couldn't check the web just now; from what I know: "
+            "Mount Kilimanjaro, at 5,895 metres."
+        )
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("gold price pakistan blocked"), ["About 300,000 rupees a tola."])],
+    )
+    def test_a_live_question_keeps_the_honest_answer(self, post_chat: PostChat) -> None:
+        text = said(post_chat({"message": "price of gold in pakistan today"}))
+        assert text.startswith("The search engine is limiting searches from this computer")
+        assert "from what I know" not in text
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"), [(search("first emperor of rome blocked"), ["I don't know."])]
+    )
+    def test_no_knowledge_either_keeps_the_honest_answer(self, post_chat: PostChat) -> None:
+        text = said(post_chat({"message": "who was the first emperor of rome"}))
+        assert text.startswith("The search engine is limiting searches from this computer")
+
+    @pytest.mark.parametrize(
+        ("intents", "replies"),
+        [(search("tallest mountain in africa", False), ["Mount Kilimanjaro."])],
+    )
+    def test_stable_knowledge_never_reaches_the_blocked_search(
+        self, post_chat: PostChat, fake_search: ModuleType
+    ) -> None:
+        frames = post_chat({"message": "what is the tallest mountain in africa, dear?"})
+        assert calls(frames) == [] and fake_search.queries == []
+        assert said(frames) == "Mount Kilimanjaro."
+
+
+def test_the_examples_send_stable_knowledge_to_chat() -> None:
+    examples = EXAMPLES.read_text()
+    assert '"what is the tallest mountain in africa, dear?" -> [{"kind": "chat"}]' in examples

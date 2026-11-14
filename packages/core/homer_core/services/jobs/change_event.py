@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from homer_core.agent.dates import WEEKDAY_WORDS, from_now
+from homer_core.agent.dates import WEEKDAY_WORDS, from_now, span_label
 from homer_core.agent.intents import CancelEvent, UpdateEvent
 from homer_core.db.models import Approval
 from homer_core.services.approvals import (
@@ -68,8 +68,7 @@ def score(event: dict[str, Any], wanted: list[str]) -> int:
 
 
 def span(event: dict[str, Any], zone: ZoneInfo) -> str:
-    opens, closes = bounds(event, zone)
-    return f"{opens:%a %d %b} {opens:%H:%M}-{closes:%H:%M}"
+    return span_label(*bounds(event, zone))
 
 
 def refers(match: str, event: dict[str, Any]) -> bool:
@@ -252,10 +251,7 @@ async def repropose(turn: Turn, card: Approval, intent: UpdateEvent) -> None:
     supersede(turn, card)
     turn.requested(fresh)
     turn.note(approval_id=fresh.id)
-    turn.say(
-        f"Moved it: '{title}' on {start:%a %d %b} {start:%H:%M}-{end:%H:%M} is ready. "
-        "Edit it or press Create."
-    )
+    turn.say(f"Moved it: '{title}' on {span_label(start, end)} is ready. Edit it or press Create.")
 
 
 async def update(turn: Turn, intent: UpdateEvent) -> None:
@@ -278,7 +274,7 @@ async def update(turn: Turn, intent: UpdateEvent) -> None:
     start, end = moved(event, intent, zone, turn.now)
     args: dict[str, Any] = {"event_id": event["id"], "timezone": turn.user.timezone}
 
-    after = f"{start:%a %d %b} {start:%H:%M}-{end:%H:%M}"
+    after = span_label(start, end)
     if (start, end) != bounds(event, zone):
         args |= {"start": start.isoformat(), "end": end.isoformat()}
     if intent.new_title and intent.new_title != title:

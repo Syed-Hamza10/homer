@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -22,6 +23,7 @@ from homer_mcp_google.messages import build_raw
 from homer_sim.state import DEFAULT_SEED, KNOWN_TOKEN
 
 from .conftest import (
+    FAKE_SERVERS,
     OLLAMA_URL,
     STARTUP_TIMEOUT,
     VENV_BIN,
@@ -177,6 +179,20 @@ def running_simulator(seed: Path) -> tuple[subprocess.Popen[bytes], str]:
     return process, url
 
 
+def failing_search(home: Path, error: str) -> Path:
+    """A bin dir whose homer-mcp-search is the stand-in answering every search with `error`."""
+    bin_dir = home / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "homer-mcp-search"
+    source = FAKE_SERVERS / "search.py"
+    script.write_text(
+        f"#!{sys.executable}\nimport os, runpy\nos.environ['FAKE_SEARCH_ERROR'] = {error!r}\n"
+        f"runpy.run_path({str(source)!r}, run_name='__main__')\n"
+    )
+    script.chmod(0o755)
+    return bin_dir
+
+
 @contextmanager
 def real_stack(
     home: Path,
@@ -184,12 +200,14 @@ def real_stack(
     extra_events: tuple[dict[str, Any], ...] = (),
     contacts: tuple[dict[str, Any], ...] = (),
     owner_name: str | None = None,
+    search_error: str | None = None,
 ) -> Iterator[Stack]:
     write_google_token(home)
     simulator, sim_url = running_simulator(write_seed(home, extra_events, contacts, owner_name))
     env = process_env(
         home,
         free_port(),
+        failing_search(home, search_error) if search_error else None,
         GOOGLE_API_BASE=sim_url,
         GOOGLE_TOKEN_URL=f"{sim_url}/token",
         WEB_SEARCH=str(web_search).lower(),

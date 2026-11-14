@@ -1,5 +1,8 @@
-"""Stand-in for homer-mcp-search: canned results; `off` in the query acts like WEB_SEARCH=false."""
+"""Stand-in for homer-mcp-search: canned results; `off` in the query acts like WEB_SEARCH=false,
+`blocked` like DuckDuckGo's bot check, and FAKE_SEARCH_ERROR answers every search with that
+error."""
 
+import os
 from typing import Any
 
 from fastmcp import FastMCP
@@ -25,6 +28,8 @@ def health() -> dict[str, Any]:
 def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
     """Searches the web."""
     queries.append(query)
+    if os.environ.get("FAKE_SEARCH_ERROR"):
+        return {"error": os.environ["FAKE_SEARCH_ERROR"]}
     if "off" in query.split():
         return {"error": "web_search_off"}
     if "blocked" in query.split():

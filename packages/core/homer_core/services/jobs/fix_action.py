@@ -2,10 +2,11 @@ import json
 import re
 from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 
-from homer_core.agent.dates import stated_times, weekday_date
+from homer_core.agent.dates import in_zone, span_label, stated_times, weekday_date
 from homer_core.agent.intents import (
     Background,
     CreateEvent,
@@ -104,7 +105,8 @@ async def as_move(turn: Turn, intent: CreateEvent | UpdateEvent) -> UpdateEvent:
 
 
 def made(turn: Turn, last: dict[str, Any]) -> tuple[datetime, datetime] | None:
-    """When the event the last action proposed starts and ends, from its card."""
+    """When the event the last action proposed starts and ends, from its card, in the user's
+    zone."""
     approval = turn.session.get(Approval, last.get("approval_id") or 0)
     if approval is None or approval.user_id != turn.user.id:
         return None
@@ -112,7 +114,8 @@ def made(turn: Turn, last: dict[str, Any]) -> tuple[datetime, datetime] | None:
     start, end = payload.get("start"), payload.get("end")
     if not isinstance(start, str) or not isinstance(end, str):
         return None
-    return datetime.fromisoformat(start), datetime.fromisoformat(end)
+    zone = ZoneInfo(turn.user.timezone)
+    return in_zone(start, zone), in_zone(end, zone)
 
 
 def unchanged(move: UpdateEvent, start: datetime, end: datetime) -> bool:
@@ -128,10 +131,7 @@ def unchanged(move: UpdateEvent, start: datetime, end: datetime) -> bool:
 
 def explained(original: str, start: datetime, end: datetime) -> str:
     asked = " ".join(original.split()).rstrip(".?!")
-    return (
-        f'You asked for "{asked}", so I set {start:%a %d %b} {start:%H:%M}-{end:%H:%M}. '
-        "Want a different time?"
-    )
+    return f'You asked for "{asked}", so I set {span_label(start, end)}. Want a different time?'
 
 
 async def fix(turn: Turn, intent: FixLastAction) -> None:

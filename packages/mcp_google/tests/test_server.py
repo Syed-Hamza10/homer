@@ -243,6 +243,42 @@ async def test_calendar_list_and_free_slots(mcp: Client, sim: httpx.Client) -> N
     assert none["slots"] == []
 
 
+async def test_utc_times_come_back_in_the_users_timezone(mcp: Client, sim: httpx.Client) -> None:
+    """A slot after a busy event Google reports in UTC, and a create sent with UTC times, are
+    shown in the user's zone: the QA "10:00-12:00 (UTC)" card for a 15:00-17:00 PKT block."""
+    monday, _ = this_week()
+    day = f"{monday + timedelta(days=14 + 3):%Y-%m-%d}"
+    busy = {
+        "title": "Client call",
+        "start": f"{day}T08:00:00+00:00",
+        "end": f"{day}T10:00:00+00:00",
+        "attendees": [],
+        "send_updates": "none",
+    }
+    await call(mcp, "execute", action="cal_create", payload=busy)
+    found = await call(
+        mcp,
+        "cal_find_free_slots",
+        start=f"{day}T13:00:00",
+        end=f"{day}T17:00:00",
+        duration_minutes=120,
+        working_hours="13:00-17:00",
+        timezone="Asia/Karachi",
+    )
+    assert found["slots"][0] == {"start": f"{day}T15:00:00+05:00", "end": f"{day}T17:00:00+05:00"}
+    pending = await call(
+        mcp,
+        "cal_create",
+        title="Drafting the Orion memo",
+        start=f"{day}T10:00:00+00:00",
+        end=f"{day}T12:00:00+00:00",
+        timezone="Asia/Karachi",
+    )
+    assert pending["payload"]["start"] == f"{day}T15:00:00+05:00"
+    assert pending["payload"]["timezone"] == "Asia/Karachi"
+    assert "15:00-17:00 (PKT)" in pending["preview"] and "UTC" not in pending["preview"]
+
+
 async def test_slots_and_event_in_the_users_timezone(mcp: Client, sim: httpx.Client) -> None:
     """09:00-11:00 Asia/Karachi on this week's Tuesday: the seeded 10:00 UTC event is 15:00 there,
     so the window is free and the slot comes back with the +05:00 offset the request used."""

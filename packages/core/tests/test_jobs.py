@@ -214,7 +214,7 @@ class TestSendEmail:
         frames = post_chat({"message": "Email Zed and meet Ada at 3pm"})
         assert [a["action"] for a in of(frames, "approval_required")] == ["cal_create"]
         assert said(frames).startswith("I could not find an email address for Zed.")
-        assert "Event 'Planning' on Tue 10 Nov 15:00-15:30 is ready." in said(frames)
+        assert "Event 'Planning' on Tue 10 Nov 15:00-15:30 PKT is ready." in said(frames)
 
 
 class TestCreateEvent:
@@ -231,7 +231,7 @@ class TestCreateEvent:
         call = next(c for c in of(frames, "tool_call") if c["name"] == "cal_create")
         assert call["args"]["timezone"] == KARACHI
         assert said(frames) == (
-            "Event 'Planning' on Tue 10 Nov 15:00-16:00 is ready. Edit it or press Create.\n\n"
+            "Event 'Planning' on Tue 10 Nov 15:00-16:00 PKT is ready. Edit it or press Create.\n\n"
             "I left Zed off the invite. I could not find an email address for Zed. "
             "What is their address?"
         )
@@ -534,6 +534,57 @@ class TestDraftQuality:
         logged_in.put("/api/settings", json={**settings, "signature": "Cheers, Jo"}, headers=ORIGIN)
         post_chat({"message": "email bob paid"})
         assert fake_google.drafted[0]["body"] == "Hi,\n\nPaid, see.\n\nCheers, Jo"
+
+
+PROPOSAL = "I will send the revised proposal out this Wednesday."
+INVENTED = f"{PROPOSAL} This gives you time before your board meeting on the 28th."
+
+
+def proposal(to: str) -> dict[str, Any]:
+    return email(to, body_instructions="the revised proposal goes out on wednesday")
+
+
+class TestInventedFacts:
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[proposal("bob@example.test")]],
+                [
+                    {"subject": "Proposal", "body": INVENTED},
+                    {"subject": "Proposal", "body": PROPOSAL},
+                ],
+            )
+        ],
+    )
+    def test_a_draft_with_a_date_nobody_gave_is_written_again(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email bob@example.test the revised proposal goes out on wednesday"})
+        assert fake_google.drafted[0]["body"] == f"Hi,\n\n{PROPOSAL}\n\nBest,\nTester"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [([[proposal("bob@example.test")]], [{"subject": "Proposal", "body": INVENTED}])],
+    )
+    def test_a_second_draft_that_still_invents_loses_that_sentence(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email bob@example.test the revised proposal goes out on wednesday"})
+        assert fake_google.drafted[0]["body"] == f"Hi,\n\n{PROPOSAL}\n\nBest,\nTester"
+
+
+def test_facts_from_the_request_or_the_thread_are_not_invented() -> None:
+    asked = "tell Rosa the revised proposal goes out on wednesday at 3pm"
+    thread = "Our board meets on the 28th and the fee is $4,500."
+    assert send_email.invented("It goes out Wed at 15:00.", asked) == []
+    assert send_email.invented(INVENTED, f"{asked} {thread}") == []
+    assert send_email.invented(INVENTED, asked) == ["28", "board meeting"]
+    assert send_email.invented("The fee is $4,800, due 2 December.", thread) == [
+        "4,800",
+        "2",
+        "December",
+    ]
 
 
 PADDED = f"{PAID} You can proceed with confidence knowing the task is complete."
