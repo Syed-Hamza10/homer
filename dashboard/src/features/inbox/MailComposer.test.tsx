@@ -27,6 +27,7 @@ function renderComposer() {
     <QueryClientProvider client={client}>
       <MailComposer
         title="Reply"
+        slot="t1"
         initial={{
           to: "maya@example.test",
           subject: "Re: Kickoff",
@@ -60,8 +61,11 @@ describe("MailComposer", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Draft with Homer" }))
     expect(await screen.findByDisplayValue("Thursday works.")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(localStorage.getItem("homer.draft.t1")).toContain("Thursday works.")
+    fireEvent.click(screen.getByRole("button", { name: "Review email" }))
     expect(await screen.findByTestId("approval-7")).toBeTruthy()
     expect(screen.getByText("Email to maya@example.test")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy()
+    expect(localStorage.getItem("homer.draft.t1")).toBeNull()
   })
 })

@@ -3,6 +3,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useShortcuts } from "@/lib/shortcuts"
 import { errorText } from "@/lib/errorText"
+import { loadDraft } from "./drafts"
 import { MailComposer } from "./MailComposer"
 import { MessageView } from "./MessageView"
 import { ThreadActions } from "./ThreadActions"
@@ -39,7 +40,11 @@ export function ReadingPane({
   const [composer, setComposer] = useState<{
     draft: ComposeDraft
     title: string
-  } | null>(null)
+    restored?: boolean
+  } | null>(() => {
+    const saved = loadDraft(threadId)
+    return saved && { draft: saved, title: saved.title, restored: true }
+  })
   const thread = useThread(threadId, showImages)
   const change = useLabelChange()
   const reply = useReplyDraft(threadId)
@@ -175,6 +180,8 @@ export function ReadingPane({
             key={composer.title}
             initial={composer.draft}
             title={composer.title}
+            slot={threadId}
+            restored={composer.restored}
             onClose={() => setComposer(null)}
           />
         )}

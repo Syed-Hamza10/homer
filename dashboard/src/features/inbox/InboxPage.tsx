@@ -7,6 +7,7 @@ import { useTimezone } from "@/features/settings/useTimezone"
 import { stepId, useShortcuts } from "@/lib/shortcuts"
 import { useUrlParams } from "@/lib/useUrlParams"
 import { cn } from "@/lib/utils"
+import { loadDraft, NEW_MESSAGE } from "./drafts"
 import { FolderList } from "./FolderList"
 import { MailComposer } from "./MailComposer"
 import { ReadingPane } from "./ReadingPane"
@@ -26,6 +27,19 @@ const fallbackFolders = [
   { id: "inbox", name: "Inbox", kind: "folder" as const, unread: 0, total: 0 },
 ]
 
+function NewMessage({ onClose }: { onClose: () => void }) {
+  const [saved] = useState(() => loadDraft(NEW_MESSAGE))
+  return (
+    <MailComposer
+      initial={saved ?? blankDraft}
+      title="New message"
+      slot={NEW_MESSAGE}
+      restored={saved !== null}
+      onClose={onClose}
+    />
+  )
+}
+
 export function InboxPage() {
   const timeZone = useTimezone()
   const folders = useFolders()
@@ -35,7 +49,9 @@ export function InboxPage() {
   const folder = params.get("folder") ?? "inbox"
   const query = params.get("q") ?? ""
   const selected = params.get("thread")
-  const [composing, setComposing] = useState(false)
+  const [composing, setComposing] = useState(
+    () => !selected && loadDraft(NEW_MESSAGE) !== null,
+  )
   const [cursor, setCursor] = useState<string | null>(null)
   const [help, setHelp] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -174,11 +190,7 @@ export function InboxPage() {
         >
           {composing ? (
             <div className="overflow-y-auto p-4">
-              <MailComposer
-                initial={blankDraft}
-                title="New message"
-                onClose={() => setComposing(false)}
-              />
+              <NewMessage onClose={() => setComposing(false)} />
             </div>
           ) : selected ? (
             <ReadingPane
