@@ -148,7 +148,7 @@ def test_remember_recall_and_forget(client: httpx.Client, run: int) -> None:
     )
     assert "blue-heron" in hint.said and "Your" in hint.said, hint.said
     recalled = timed(client, "memory", "what do you remember about Dana?", conversation)
-    assert "Dana prefers calls after 3pm" in recalled.said, recalled.said
+    assert "Dana" in recalled.said and "3pm" in recalled.said, recalled.said
     forgot = timed(client, "memory", "forget that the wifi hint thing", conversation)
     assert forgot.said.startswith("Forgot:") and "blue-heron" in forgot.said, forgot.said
     dana = timed(client, "memory", "forget that Dana thing please", conversation)

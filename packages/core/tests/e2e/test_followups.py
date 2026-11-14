@@ -125,7 +125,10 @@ def test_cancel_needs_approval(stack: Stack, client: httpx.Client, talk: Talk, r
     events = stack.counts()["events"]
     reply = talk("cancel the lunch with Sam")
     assert reply.actions == ["cal_delete"], (reply.tools, reply.said)
-    assert reply.of("approval_required")[0]["payload"] == {"event_id": "evt_r3"}
+    assert reply.of("approval_required")[0]["payload"] == {
+        "event_id": "evt_r3",
+        "send_updates": "all",
+    }
     assert "cancelled" not in reply.said.lower() and stack.counts()["events"] == events
     if run == RUNS[-1]:
         approval = reply.of("approval_required")[0]["approval_id"]
@@ -211,7 +214,7 @@ def test_searches_are_dated_and_fast(web_stack: Stack) -> None:
             record("test_searches_are_dated_and_fast", reply)
             reply.finished()
             assert reply.tools[0] == "web_search", (reply.tools, reply.said)
-            assert "Sources:" in reply.said, reply.said
+            assert "**Sources**" in reply.said and "](http" in reply.said, reply.said
             seconds.append(reply.seconds)
             if "yesterday" in question:
                 query = reply.of("tool_call")[0]["args"]["query"]
