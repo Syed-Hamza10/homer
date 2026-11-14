@@ -121,8 +121,13 @@ and search server defaults.
    `YYYY-MM-DD`, which makes Pydantic AI retry. A failed call falls back to `chat`. Code then
    overrides what it can read from the message itself: the one clock time it names, "in an
    hour" (`relative_minutes`, computed from now), "with <Name>", a title after "for", "next
-   meeting" (range `next`). A `recall` no fact matches that talks about mail or the calendar is
-   run as that read instead (`dispatch.run`).
+   meeting" (range `next`), a reminder "on my calendar" (`create_event`), and a correction ("no
+   wait, I mean Wednesday") right after a calendar read, booking or draft that the model read
+   as memory, chat or mail status (the read again, or `fix_last_action`). A `recall` no fact
+   matches that talks about mail or the calendar, or asks what a person wants or asked, is run
+   as that read instead, and a `send_status` whose message has no send word is a `recall` (a
+   saved fact matches) or `chat` (`dispatch.run`). `send_status` answers from this chat's
+   approvals and checks the Sent folder before it ever says "not sent".
    `agent/routing.refined` then turns a `web_search` without `needs_live_data` (and not asked
    for) into `chat`, and drops a calendar listing nobody asked for next to another request.
 5. `services/jobs/dispatch.py` runs each intent in order through its executor in

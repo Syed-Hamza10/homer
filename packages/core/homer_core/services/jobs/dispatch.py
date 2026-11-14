@@ -1,7 +1,15 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from homer_core.agent.intents import ChatIntent, FixLastAction, FreeTime, Intent, Recall, as_free
+from homer_core.agent.intents import (
+    ChatIntent,
+    FixLastAction,
+    FreeTime,
+    Intent,
+    Recall,
+    SendStatus,
+    as_free,
+)
 from homer_core.services.jobs import (
     calculate,
     change_event,
@@ -59,6 +67,8 @@ RUNNERS: dict[str, Callable[[Turn, Any], Awaitable[None]]] = {
 
 
 async def run(turn: Turn, intent: Intent) -> None:
+    if isinstance(intent, SendStatus):
+        intent = mail_status.rerouted(turn, intent)
     if isinstance(intent, Recall):
         intent = memory.rerouted(turn, intent)
     turn.resolved.append(intent.model_dump(exclude_none=True))

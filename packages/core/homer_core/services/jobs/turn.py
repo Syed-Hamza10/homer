@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -37,6 +38,19 @@ ERRORS = {
     "search_limited": "The search service has used up its free searches or is asking me to "
     "slow down, so I can't look that up right now. Try again later.",
 }
+
+
+class Stopwatch:
+    """Seconds per step of a job, for the timing logs."""
+
+    def __init__(self) -> None:
+        self.started = time.monotonic()
+        self.laps: dict[str, float] = {}
+
+    def lap(self, step: str) -> None:
+        now = time.monotonic()
+        self.laps[step] = round(now - self.started, 2)
+        self.started = now
 
 
 @dataclass(frozen=True)

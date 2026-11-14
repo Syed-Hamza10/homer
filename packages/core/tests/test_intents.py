@@ -32,6 +32,7 @@ from homer_core.agent.intents import (
     CancelEvent,
     ChatIntent,
     CreateEvent,
+    FixLastAction,
     ReadCalendar,
     Remember,
     SendEmail,
@@ -547,3 +548,83 @@ async def test_in_an_hour_is_counted_by_code_and_keeps_the_length() -> None:
         None,
         60,
     )
+
+
+async def after(previous: list[dict[str, Any]], given: list[dict[str, Any]], message: str) -> Any:
+    agent = build_intent_agent(answering(given))
+    known = Background(previous=previous, timezone="Asia/Karachi")
+    intents, _ = await extract(agent, message, [], SATURDAY, known)
+    return intents[0]
+
+
+TUESDAY_READ = {"kind": "read_calendar", "range": "date", "date": "2026-11-17"}
+BOOKED = {"kind": "create_event", "title": "Dinner", "date": "2026-11-19", "approval_id": 7}
+DRAFTED = {"kind": "send_email", "to": "Omar", "approval_id": 3}
+
+
+@pytest.mark.parametrize(
+    "misread",
+    [
+        {"kind": "recall", "about": "wednesday"},
+        {"kind": "chat"},
+        {"kind": "send_status"},
+    ],
+)
+async def test_a_day_correction_after_a_calendar_read_reads_that_day(
+    misread: dict[str, Any],
+) -> None:
+    intent = await after([TUESDAY_READ], [misread], "no wait, i mean wednesday")
+    assert intent == ReadCalendar(kind="read_calendar", range="date", date="2026-11-18")
+
+
+@pytest.mark.parametrize(
+    ("previous", "message"),
+    [
+        ([BOOKED], "no wait, i mean friday"),
+        ([BOOKED], "actually 8pm"),
+        ([DRAFTED], "no, make it Friday"),
+    ],
+)
+async def test_a_correction_after_a_card_fixes_the_card(
+    previous: list[dict[str, Any]], message: str
+) -> None:
+    intent = await after(previous, [{"kind": "recall", "about": "friday"}], message)
+    assert intent == FixLastAction(kind="fix_last_action", what_is_wrong=message)
+
+
+RECALL = {"kind": "recall", "about": "x"}
+FACT_FIX = {"kind": "correct_memory", "about": "birthday", "new_fact": "His birthday is Wed."}
+
+
+@pytest.mark.parametrize(
+    ("previous", "message", "given"),
+    [
+        ([], "no wait, i mean wednesday", RECALL),
+        ([BOOKED], "no thanks, that's all", RECALL),
+        ([TUESDAY_READ], "what do you know about wednesday's guest?", RECALL),
+        ([TUESDAY_READ], "sorry, his birthday is on wednesday", FACT_FIX),
+    ],
+)
+async def test_other_messages_keep_the_models_reading(
+    previous: list[dict[str, Any]], message: str, given: dict[str, Any]
+) -> None:
+    intent = await after(previous, [given], message)
+    assert intent.kind == given["kind"]
+
+
+async def test_a_reminder_on_my_calendar_is_a_calendar_event() -> None:
+    given = [{"kind": "remind", "text": "Tea with the neighbour", "date": "2026-11-14"}]
+    message = "put a reminder on my calendar in 30 minutes, call it Tea with the neighbour"
+    intent = (await at_saturday(given, message))[0]
+    assert isinstance(intent, CreateEvent)
+    assert (intent.title, intent.date, intent.relative_minutes) == (
+        "Tea with the neighbour",
+        "2026-11-14",
+        30,
+    )
+
+
+async def test_a_plain_reminder_stays_a_reminder() -> None:
+    given = [{"kind": "remind", "text": "call mum", "date": "2026-11-14", "time": "18:00"}]
+    intent = (await at_saturday(given, "remind me to call mum at 6pm"))[0]
+    assert intent.kind == "remind"

@@ -4,7 +4,7 @@ from typing import Any
 import structlog
 from pydantic import BaseModel
 from pydantic_ai import Agent, ToolOutput
-from pydantic_ai.messages import ModelRequest
+from pydantic_ai.messages import ModelMessage, ModelRequest
 from sqlmodel import Session
 
 from homer_core.agent.intents import SendEmail
@@ -16,7 +16,7 @@ from homer_core.services.approvals import create
 from homer_core.services.followups import clean_subject
 from homer_core.services.inbox import clean
 from homer_core.services.jobs.recipients import Person, listed, resolve, typed
-from homer_core.services.jobs.turn import JobError, Turn
+from homer_core.services.jobs.turn import JobError, Stopwatch, Turn
 
 log = structlog.get_logger(__name__)
 
@@ -29,7 +29,8 @@ WRITE_PROMPT = """Write an email{sender} to {recipient}. Points to make: {instru
 Write it as the sender, in the first person: "I" is the sender and {first} is "you". Turn each
 point into what the sender says to {first} directly. Never call {first} "she", "he", "her",
 "him" or "them". Make only the points above, and end on the last point, with no filler such
-as "let me know if that works for you".
+as "let me know if that works for you". Add no claim, reassurance or remark the points do not
+make ("rest assured", "you can proceed with confidence", "the task is complete").
 Write 2 to 4 sentences in your own words, in a {tone} tone, that make every point.
 Do not copy the points word for word. No greeting, no sign-off, no placeholders like [Name].
 Do not invent facts, dates or promises. The subject is 3 to 7 words naming the topic.
@@ -37,8 +38,21 @@ Do not invent facts, dates or promises. The subject is 3 to 7 words naming the t
 TOPIC_PART = """
 "This", "that" or "it" in the points means what the conversation just before was about:
 {topic}
-Name that topic in the subject and in the email; never write "this matter" or "the topic"."""
-TOPIC_CHARS = 300
+Name that topic in the subject and refer to it in one sentence of the email, without its
+details; never write "this matter" or "the topic"."""
+TOPIC_WORDS = 25
+COPIED_WORDS = 10
+COPY_RETRY = (
+    "\nDo not repeat the earlier answer. Mention its topic in one sentence and make the points."
+)
+PUFFERY = re.compile(
+    r"\bproceed with confidence\b|\brest assured\b|\b(?:the|this|your) task is (?:now )?"
+    r"(?:complete|done|finished)\b|\byou can (?:now )?proceed\b|\bpeace of mind\b"
+    r"|\bno further action is (?:needed|required)\b|\bhope this (?:email|message|note) finds"
+    r" you\b|\bdon'?t hesitate\b",
+    re.IGNORECASE,
+)
+PADDING_HINT = "\nSay only the points. Add no reassurance or remark of your own."
 TOPIC_RETRY = '\nSay what the topic is in words; do not call it "this matter" or "the topic".'
 REFERS = re.compile(
     r"\b(?:this|that|it)\b(?!\s+(?:is|was|week|morning|afternoon|evening|month|time)\b)"
@@ -210,9 +224,28 @@ def third_person(message: str, instructions: str) -> bool:
     return bool(said & {word.lower() for word in PRONOUN.findall(message)})
 
 
+def padded(message: str, instructions: str) -> bool:
+    """The email adds a stock claim such as "rest assured" that the user did not ask for."""
+    asked = instructions.lower()
+    return any(found.group(0).lower() not in asked for found in PUFFERY.finditer(message))
+
+
+def unpadded(message: str, instructions: str) -> str:
+    """Drops each clause with a stock claim, keeping the rest of its sentence."""
+    kept = []
+    for sentence in SENTENCE.split(message):
+        parts = [part for part in CLAUSE.split(sentence) if not padded(part, instructions)]
+        if parts:
+            end = sentence.strip()[-1:]
+            text = ", ".join(part.strip().rstrip(".!?") for part in parts)
+            kept.append(capitalised(text) + (end if end in ".!?" else "."))
+    return " ".join(kept)
+
+
 def flawed(message: str, subject: str, instructions: str, min_words: int) -> bool:
     return (
         "[" in message
+        or padded(message, instructions)
         or plain(message) == plain(subject)
         or plain(message) == plain(instructions)
         or len(message.split()) < min_words
@@ -306,11 +339,15 @@ async def checked(
     text = await turn.extract(agent, prompt)
     message = split(text.body)[1]
     if flawed(message, text.subject, instructions, min_words) or echoed(message, rules, prompt):
-        text = await turn.extract(agent, prompt + RETRY_HINT)
+        hint = PADDING_HINT if padded(message, instructions) else RETRY_HINT
+        text = await turn.extract(agent, prompt + hint)
         message = split(text.body)[1]
     if echoed(message, rules, prompt):
         log.warning("rules_echoed", body=message)
         message = unechoed(message, rules, prompt) or message
+    if padded(message, instructions):
+        log.warning("email_padded", body=message)
+        message = unpadded(message, instructions) or message
     body = without_filler(addressed(unbracketed(undangled(message))))
     return EmailText(subject=unbracketed(text.subject), body=body)
 
@@ -341,18 +378,38 @@ def greeting(first: str) -> str:
     return f"Hi {first}," if first else "Hi,"
 
 
+def said_in(message: ModelMessage) -> str:
+    text = " ".join(str(getattr(part, "content", "")) for part in message.parts)
+    return " ".join(text.split("**Sources**")[0].split())
+
+
+def answer_details(turn: Turn) -> str:
+    """Homer's earlier answer past its first sentence, which the topic gist already holds."""
+    answers = (said_in(m) for m in reversed(turn.history) if not isinstance(m, ModelRequest))
+    return " ".join(SENTENCE.split(next(answers, ""))[1:])
+
+
 def topic_of(turn: Turn) -> str:
-    """What the conversation just before was about: the user's last question and the start
-    of Homer's answer, without its source list."""
-    lines = []
+    """What the conversation just before was about, in at most 25 words: the user's last
+    question and the first sentence of Homer's answer, so the email names the topic without
+    pasting the answer."""
+    asked = answered = ""
     for message in turn.history[-2:]:
-        speaker = "User" if isinstance(message, ModelRequest) else "Homer"
-        for part in message.parts:
-            text = str(getattr(part, "content", "")).split("**Sources**")[0]
-            text = " ".join(text.split())[:TOPIC_CHARS]
-            if text:
-                lines.append(f"{speaker}: {text}")
-    return "\n".join(lines)
+        text = said_in(message)
+        if isinstance(message, ModelRequest):
+            asked = text.rstrip("?.! ")
+        elif text:
+            answered = SENTENCE.split(text)[0]
+    gist = f"{asked}: {answered}" if asked and answered else asked or answered
+    return " ".join(gist.split()[:TOPIC_WORDS])
+
+
+def copied(body: str, earlier: str) -> bool:
+    """The email repeats ten or more words in a row of Homer's earlier answer."""
+    said = plain(earlier).split()
+    text = f" {plain(body)} "
+    runs = (said[i : i + COPIED_WORDS] for i in range(len(said) - COPIED_WORDS + 1))
+    return any(f" {' '.join(run)} " in text for run in runs)
 
 
 async def profile_name(turn: Turn) -> str:
@@ -418,6 +475,9 @@ async def write(
     text = await checked(turn, prompt, intent.body_instructions, MIN_WORDS)
     if topic and VAGUE_TOPIC.search(f"{text.subject} {text.body}"):
         text = await checked(turn, prompt + TOPIC_RETRY, intent.body_instructions, MIN_WORDS)
+    elif topic and copied(text.body, answer_details(turn)):
+        log.warning("email_copied_answer", body=text.body)
+        text = await checked(turn, prompt + COPY_RETRY, intent.body_instructions, MIN_WORDS)
     body = assemble(greeting(first), text.body, await sign_off(turn))
     return EmailText(subject=text.subject, body=body)
 
@@ -487,6 +547,7 @@ def ready(turn: Turn, intent: SendEmail, person: Person, subject: str) -> str:
 async def run(turn: Turn, intent: SendEmail) -> None:
     if vague(turn, intent):
         raise JobError(ASK_WHO)
+    clock = Stopwatch()
     original = None
     if intent.reply_to_latest_from:
         topic = f"{turn.message} {intent.body_instructions}"
@@ -494,7 +555,9 @@ async def run(turn: Turn, intent: SendEmail) -> None:
         person = await resolve(turn, original.get("from", ""), from_header=True)
     else:
         person = await resolve(turn, intent.to)
+    clock.lap("lookup")
     text = await write(turn, intent, person, original)
+    clock.lap("compose")
     subject = intent.subject or text.subject
     if original is not None:
         subject = f"Re: {clean_subject(original.get('subject', ''))}"
@@ -503,6 +566,7 @@ async def run(turn: Turn, intent: SendEmail) -> None:
     draft = await turn.call("google", "mail_draft", args)
     if not isinstance(draft, dict) or not draft.get("draft_id"):
         raise JobError(f"I could not create the draft: {draft}")
+    clock.lap("draft")
     approval = request_send(
         turn.session,
         turn.user.id,
@@ -514,4 +578,6 @@ async def run(turn: Turn, intent: SendEmail) -> None:
         person.name,
     )
     turn.requested(approval)
+    clock.lap("approval")
+    log.info("email_timing", **clock.laps)
     turn.say(ready(turn, intent, person, subject))

@@ -21,7 +21,7 @@ from homer_core.config import Settings
 from homer_core.db.models import Approval
 from homer_core.mcp.manager import McpManager
 from homer_core.services.approvals import create
-from homer_core.services.jobs import chat, send_email
+from homer_core.services.jobs import chat, mail_status, send_email
 from homer_core.services.jobs.send_email import request_send
 from homer_core.services.jobs.turn import RECONNECT
 
@@ -161,6 +161,17 @@ class TestSendEmail:
         assert calls(frames) == ["contacts_search", "mail_draft"]
         assert of(frames, "approval_required")[0]["payload"]["to_name"] == "Ada Example"
         assert of(frames, "approval_required")[0]["payload"]["to"] == "ada@example.test"
+
+    @pytest.mark.parametrize("intents", [[[email("Bob")], [email("Bob")]]])
+    def test_a_name_already_written_to_in_this_chat_needs_no_lookup(
+        self, post_chat: PostChat
+    ) -> None:
+        first = post_chat({"message": "Email Bob that the invoice is paid"})
+        assert calls(first) == ["contacts_search", "mail_search", "mail_search", "mail_draft"]
+        chat = first[0][1]["conversation_id"]
+        again = post_chat({"message": "and email Bob it was late", "conversation_id": chat})
+        assert calls(again) == ["mail_draft"]
+        assert of(again, "approval_required")[0]["payload"]["to"] == "bob@example.test"
 
     @pytest.mark.parametrize("intents", [[[email("Sara")]]])
     def test_ambiguous_name_asks_which_one(
@@ -525,6 +536,36 @@ class TestDraftQuality:
         assert fake_google.drafted[0]["body"] == "Hi,\n\nPaid, see.\n\nCheers, Jo"
 
 
+PADDED = f"{PAID} You can proceed with confidence knowing the task is complete."
+
+
+class TestPadding:
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [([[email("bob@example.test")]], [{"subject": "Paid", "body": PADDED}])],
+    )
+    def test_a_stock_claim_is_rewritten_once_then_dropped(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email bob@example.test the invoice is paid"})
+        assert fake_google.drafted[0]["body"] == f"Hi,\n\n{PAID}\n\nBest,\nTester"
+
+    @pytest.mark.parametrize(
+        ("intents", "written"),
+        [
+            (
+                [[email("bob@example.test")]],
+                [{"subject": "Paid", "body": PADDED}, {"subject": "Paid", "body": PAID}],
+            )
+        ],
+    )
+    def test_the_rewrite_without_the_claim_is_kept(
+        self, logged_in: TestClient, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        post_chat({"message": "email bob@example.test the invoice is paid"})
+        assert fake_google.drafted[0]["body"] == PAID_BODY
+
+
 class TestChatEdit:
     @pytest.mark.parametrize(
         ("intents", "written"),
@@ -583,7 +624,7 @@ def status(about: str | None = None) -> list[dict[str, Any]]:
 class TestSendStatus:
     @pytest.mark.parametrize(
         "intents",
-        [[[email("bob@example.test")], status(), status("Bob"), status(), status("Zed")]],
+        [[[email("bob@example.test")], status(), status("it"), status(), status("Zed")]],
     )
     def test_answers_from_the_approvals(
         self, logged_in: TestClient, post_chat: PostChat, origin: dict[str, str]
@@ -604,6 +645,40 @@ class TestSendStatus:
         assert said(post_chat({"message": "did you send it to Zed?"})) == (
             "No. I have not sent anything to Zed."
         )
+
+    @pytest.mark.parametrize("intents", [[[email("bob@example.test")], status("it")]])
+    def test_are_you_sure_after_a_typed_send_says_yes(self, post_chat: PostChat) -> None:
+        chat = post_chat({"message": "email bob"})[0][1]["conversation_id"]
+        assert said(post_chat({"message": "send it", "conversation_id": chat})).endswith("done.")
+        sure = post_chat({"message": "are you sure that went out?", "conversation_id": chat})
+        assert said(sure).startswith("Yes, sent to bob@example.test at ")
+
+    @pytest.mark.parametrize("intents", [[status("Ada")]])
+    def test_a_send_in_the_sent_folder_is_never_called_not_sent(
+        self, post_chat: PostChat, fake_google: ModuleType
+    ) -> None:
+        fake_google.MESSAGES["m8"] = {
+            "id": "m8",
+            "thread_id": "t8",
+            "from": "Tester <tester@example.test>",
+            "to": "Ada Example <ada@example.test>",
+            "subject": "Contract draft",
+            "labels": ["SENT"],
+        }
+        frames = post_chat({"message": "did my email to Ada go out?"})
+        assert said(frames) == 'Yes, an email to Ada Example went out: "Contract draft".'
+        assert of(frames, "tool_call")[0]["args"]["query"].lower().startswith("in:sent to:ada ")
+
+    @pytest.mark.parametrize(
+        ("intents", "text"),
+        [([status("pharmacist closing time")], "Which pharmacist do you mean?")],
+    )
+    def test_a_message_without_a_send_word_is_not_a_status_question(
+        self, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "pharmacist closing time, one line"})
+        assert said(frames) == "Which pharmacist do you mean?"
+        assert calls(frames) == []
 
     @pytest.mark.parametrize(
         ("intents", "text"), [([[email("bob@example.test")]], "Sending it now. Done.")]
@@ -975,7 +1050,49 @@ def test_the_topic_of_the_last_turns_is_named_for_this() -> None:
     ]
     turn = SimpleNamespace(history=history)
     topic = send_email.topic_of(turn)  # type: ignore[arg-type]
-    assert topic == "User: is the new bridge open yet?\nHomer: It opens on 3 March."
+    assert topic == "is the new bridge open yet: It opens on 3 March."
+
+
+CRICKET = (
+    "Today, November 14, 2026, Pakistan U-19 is playing India U-19 in the final of the ACC Men's "
+    "Under-19 Asia Cup in Al Amerat. Additionally, Pakistan's blind cricket team is competing in "
+    "the Blind T20 Asia Cup in Dhaka today as part of a tournament running until November 20."
+)
+
+
+def test_the_topic_is_a_short_gist_not_the_whole_answer() -> None:
+    history: list[ModelMessage] = [
+        ModelRequest(
+            parts=[UserPromptPart(content="any news today on the pakistan cricket team?")]
+        ),
+        ModelResponse(parts=[TextPart(content=f"{CRICKET}\n\n**Sources**\n- [a](https://a.test)")]),
+    ]
+    topic = send_email.topic_of(SimpleNamespace(history=history))  # type: ignore[arg-type]
+    assert topic.startswith("any news today on the pakistan cricket team: Today,")
+    assert len(topic.split()) <= 25 and "Dhaka" not in topic
+
+
+def test_a_body_that_pastes_the_earlier_answer_is_caught() -> None:
+    pasted = "Hi Tomas,\n\n" + CRICKET + "\n\nBest,\nJordan"
+    assert send_email.copied(pasted, CRICKET)
+    own = "Hi Tomas,\n\nCan we talk about Pakistan's run in the U-19 Asia Cup final this week?"
+    assert not send_email.copied(own, CRICKET)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "The backup has finished and all is okay. You can proceed with confidence knowing the "
+        "task is complete.",
+        "The backup has finished. Rest assured, everything is in order.",
+    ],
+)
+def test_stock_claims_the_user_did_not_make_are_padding(body: str) -> None:
+    assert send_email.padded(body, "the backup finished and all is okay")
+
+
+def test_a_claim_the_user_made_is_not_padding() -> None:
+    assert not send_email.padded("Rest assured, the backup ran.", "rest assured, the backup ran")
 
 
 def test_echo_check_catches_a_paraphrased_rule() -> None:
@@ -991,3 +1108,45 @@ def test_a_chat_answer_tells_the_time_it_was_given() -> None:
     now = datetime(2026, 11, 14, 16, 23)
     assert chat.on_time("It's 17:24 on Saturday here.", now) == "It's 16:23 on Saturday here."
     assert chat.on_time("Your call is at 15:00.", now) == "Your call is at 15:00."
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("You're welcome! Have a great Sunday.", "You're welcome! Have a great day."),
+        ("Enjoy the rest of your Friday!", "Enjoy the rest of your day!"),
+        ("Have a lovely Saturday.", "Have a lovely Saturday."),
+        ("Your call is on Monday.", "Your call is on Monday."),
+    ],
+)
+def test_a_closing_wish_names_only_today(text: str, expected: str) -> None:
+    assert chat.on_today(text, datetime(2026, 11, 14, 17, 30)) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "about_sending"),
+    [
+        ("are you sure that went out? dont just say yes", True),
+        ("did you send it?", True),
+        ("has the reply to Sarah gone out?", True),
+        ("was it delivered?", True),
+        ("pharmacist closing time, one line", False),
+        ("euro rate, briefly", False),
+    ],
+)
+def test_a_status_question_needs_a_send_word(message: str, about_sending: bool) -> None:
+    assert bool(mail_status.SEND_WORD.search(message)) is about_sending
+
+
+@pytest.mark.parametrize(
+    ("message", "who"),
+    [
+        ("did you send my email to Priya?", "Priya"),
+        ("has the Rosa reply gone out, are you sure?", "Rosa"),
+        ("has the final reply gone out?", ""),
+        ("are you sure that went out? dont just say yes", ""),
+        ("did it go out to rosa@example.test", "rosa@example.test"),
+    ],
+)
+def test_a_status_question_names_who_it_is_about(message: str, who: str) -> None:
+    assert mail_status.named_in(message) == who

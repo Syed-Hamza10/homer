@@ -38,7 +38,7 @@ TIME = re.compile(r"^\s*(\d{1,2})(?:[:.](\d{2}))?\s*([ap]\.?m\.?)?\s*$", re.IGNO
 OUTPUT_TOOL = "record_intents"
 CONTEXT_CHARS = 300
 CORRECTION = re.compile(
-    r"^\s*(?:no|nope|sorry|actually|oops|wait)\b|\bI meant\b|\bmake it\b|\bchange it\b"
+    r"^\s*(?:no|nope|sorry|actually|oops|wait)\b|\bI meant?\b|\bmake it\b|\bchange it\b"
     r"|\binstead\b|\bstill says\b",
     re.IGNORECASE,
 )
@@ -78,6 +78,15 @@ TITLE_FOR = re.compile(
 )
 NOT_TITLES = frozenset({"us", "me", "them", "it", "that", "this", "time", "a slot", "slot"})
 GENERIC_TITLES = frozenset({"meeting", "event", "call", "appointment", "new event", "booking"})
+ON_CALENDAR = re.compile(
+    r"\b(?:on|in|to|into)\s+(?:my\s+|the\s+)?(?:calendar|diary)\b"
+    r"|\bcalendar\s+(?:reminder|entry|event)\b",
+    re.IGNORECASE,
+)
+MEANT = re.compile(r"\bI meant?\b|\binstead\b|\bmake it\b|\bchange it\b", re.IGNORECASE)
+CALENDAR_KINDS = frozenset({"read_calendar", "create_event", "update_event"})
+ACTION_KINDS = frozenset({"send_email", "edit_draft"})
+MISREAD_CORRECTIONS = frozenset({"recall", "chat", "send_status"})
 WHATS_ON = re.compile(
     r"^\W*(?:\w+[,!.]?\s+){0,4}?(?:what(?:'s|s| is)|anything)\s+(?:on|planned|happening|the plan)"
     r"\b(?:\s+(?:for|on))?\s+(?:today|tonight|tomorrow|this \w+|next \w+|"
@@ -93,13 +102,15 @@ Intents:
 - send_email: write, send or reply to someone. `to` is the name or address as written;
   `body_instructions` is what it should say; `reply_to_latest_from` only when answering
   their email. When the message says "this", "that" or "it" about something in the earlier
-  turns (a web answer, an email, an event), `body_instructions` names that thing in full.
+  turns (a web answer, an email, an event), `body_instructions` names that thing in a few
+  words; never copy the earlier answer into it.
 - edit_draft: change the email draft pending in this chat ("make it shorter", "add that I'm
   late", "change the subject to X", "add the event link"). `instruction` is the change.
 - draft_question: a question about the pending draft ("where's the link?", "does it mention
   Friday?", "show me the draft"). `question` is the question.
 - send_status: whether an email went out ("did you send it?", "has the reply to Sarah gone
-  out?"). `about` is the person's name or address, empty for "it".
+  out?"); only when the message says sent, send, went out or delivered. `about` is the
+  person's name or address, empty for "it".
 - discard_draft: drop the pending draft or card ("cancel it", "never mind", "scrap that").
 - fix_last_action: the user says Homer's last action (an event booked or moved, a draft
   written) is wrong or asks why it came out that way ("why 15:00?", "that's wrong", "that's
@@ -126,8 +137,9 @@ Intents:
 - free_time: whether the user is free or busy, or has a gap. `date` (and `end_date`),
   start/end for the part of the day; `start` alone for one time ("at 2pm" is 14:00). The day
   of a date ("16 nov") is never a time.
-- read_email: questions about email received or sent. `sender`, `query` for a topic,
-  `latest` for the newest; `question` is what they want to know.
+- read_email: questions about email received or sent, and what a person wants, asked or
+  said ("what does Owen want from me"). `sender`, `query` for a topic, `latest` for the
+  newest; `question` is what they want to know.
 - remember: a new fact to keep. `fact` is one full sentence with every name and detail,
   saying "your" for the user; `about_person` is who it is about, if anyone.
 - correct_memory: the user corrects a saved fact ("actually", "no, it's", "I made a
@@ -141,7 +153,8 @@ Intents:
   as written ("15% of 240", "3400 USD to EUR").
 - web_search: needs the internet. `query`; `needs_live_data` is true for things that change
   (news, weather, prices, scores, who holds an office) or when the user asks to search.
-- remind: remind the user of something. `text`, `date`, `time`.
+- remind: Homer reminds the user of something. `text`, `date`, `time`. A reminder "on my
+  calendar" is create_event.
 - day_summary: what the user got done today, or what is still open or waiting on them.
 - chat: anything else: greetings, thanks, goodbyes, general knowledge, questions about
   Homer, and requests too vague to act on (Homer then asks what they mean).
@@ -157,6 +170,8 @@ Rules:
   date. A correction ("actually I meant Friday", "make it 4pm") repeats the previous request
   with that field changed. A correction of a saved fact is correct_memory.
 - Questions about the user or a person in the saved facts are recall, never web_search.
+- A short follow-up ("X, one line", "briefly") asks about X: recall when X is in the saved
+  facts, else the same kind as the previous request; never send_status.
 - Questions about meetings, the calendar, email or the inbox are read_calendar, free_time or
   read_email even when nothing is saved about them.
 - Earlier turns only say who or what the message refers to; never repeat an earlier request
@@ -688,8 +703,37 @@ def widened(intent: Intent, message: str) -> Intent:
     return intent
 
 
+def as_event(intent: Intent, message: str) -> Intent:
+    """ "Put a reminder on my calendar" asks for a calendar event, not a Homer reminder."""
+    if not isinstance(intent, Remind) or not ON_CALENDAR.search(message):
+        return intent
+    return CreateEvent(
+        kind="create_event",
+        title=named_title(message) or capitalised(intent.text.strip().rstrip(".")),
+        date=intent.date,
+        start=intent.time,
+    )
+
+
+def corrected(intent: Intent, message: str, today: date, previous: list[dict[str, Any]]) -> Intent:
+    """ "No wait, I mean Wednesday" right after a calendar read, a booking or a draft corrects
+    that turn; it is never a memory or mail-status question."""
+    if intent.kind not in MISREAD_CORRECTIONS or not CORRECTION.search(message):
+        return intent
+    kinds = {item.get("kind") for item in previous}
+    names_day = bool(WEEKDAY.search(message) or DATED.search(message))
+    if "read_calendar" in kinds and names_day:
+        return calendar_read(message, today)
+    acted = any(item.get("approval_id") for item in previous if item.get("kind") in CALENDAR_KINDS)
+    changes = names_day or bool(stated_times(message)) or bool(MEANT.search(message))
+    if changes and (acted or kinds & ACTION_KINDS):
+        return FixLastAction(kind="fix_last_action", what_is_wrong=message)
+    return intent
+
+
 def repaired(intent: Intent, message: str, today: date) -> Intent:
     """Code's corrections of what the model tends to misread, in order."""
+    intent = as_event(intent, message)
     intent = as_reply(as_move(as_free(intent), message), message)
     intent = named(as_calendar(as_slot(intent, message, today), message, today), message)
     intent = widened(with_person(intent, message), message)
@@ -699,6 +743,7 @@ def repaired(intent: Intent, message: str, today: date) -> Intent:
 
 def checked(intents: list[Intent], message: str, now: datetime, known: Background) -> list[Intent]:
     today = now.date()
+    intents = [corrected(intent, message, today, known.previous) for intent in intents]
     intents = unique([repaired(intent, message, today) for intent in intents])
     exact = numeric_date(message, today, known.date_format)
     if exact is None and (after := previous_day(known.previous)) and DAY_AFTER.search(message):

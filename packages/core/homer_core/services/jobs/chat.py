@@ -33,9 +33,27 @@ CLAIMED_NOW = re.compile(
 )
 
 
+DAY_WISH = re.compile(
+    r"\b(?:have|enjoy)\s+(?:a|an|your|the rest of your)\s+(?:\w+\s+){0,2}?"
+    r"(?P<day>monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    re.IGNORECASE,
+)
+
+
 def on_time(text: str, now: datetime) -> str:
     """A reply that tells the time tells the prompt's time, never one the model made up."""
     return CLAIMED_NOW.sub(lambda m: m.group(0).replace(m["clock"], f"{now:%H:%M}"), text)
+
+
+def on_today(text: str, now: datetime) -> str:
+    """ "Have a great Sunday" on a Saturday becomes "Have a great day"."""
+
+    def fixed(match: re.Match[str]) -> str:
+        if match["day"].lower() == f"{now:%A}".lower():
+            return match.group(0)
+        return match.group(0)[: match.start("day") - match.start()] + "day"
+
+    return DAY_WISH.sub(fixed, text)
 
 
 def may_search(turn: Turn) -> bool:
@@ -62,7 +80,7 @@ async def run(turn: Turn, intent: ChatIntent) -> None:
     if not text:
         turn.replace(index, await second_try(turn, instructions))
         return
-    if (timed := on_time(text, turn.now)) != text:
+    if (timed := on_today(on_time(text, turn.now), turn.now)) != text:
         turn.replace(index, timed)
         text = timed
     reviewed = review(text, acted=False)
