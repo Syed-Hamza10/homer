@@ -1,5 +1,7 @@
 import asyncio
 import functools
+import logging
+import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from importlib.metadata import version
@@ -26,6 +28,9 @@ GMAIL = "/gmail/v1/users/me"
 CALENDAR = "/calendar/v3/calendars/primary/events"
 FREE_BUSY = "/calendar/v3/freeBusy"
 PEOPLE = "/v1/people:searchContacts"
+WARM_EVERY_SECONDS = 600.0
+COLD_RETRY_SECONDS = 5.0
+COLD_MARKERS = ("FAILED_PRECONDITION", "cold cache")
 MAX_RESULTS = 25
 PREVIEW_BODY_CHARS = 300
 RECENT_DRAFTS = 5
@@ -59,7 +64,17 @@ TOOL_NAMES = [
     "execute",
 ]
 
+log = logging.getLogger(__name__)
+
 Tool = Callable[..., Awaitable[dict[str, Any]]]
+
+
+class ContactsWarming(Exception):
+    pass
+
+
+def is_cold(error: GoogleError) -> bool:
+    return error.status == 400 and any(marker in error.message for marker in COLD_MARKERS)
 
 
 def guarded(fn: Tool) -> Tool:
@@ -193,10 +208,37 @@ class GoogleTools:
     def __init__(self, client: GoogleClient) -> None:
         self.client = client
         self.account: str | None = None
+        self.warmed_at: float | None = None
 
     async def health(self) -> dict[str, Any]:
         """Reports whether the server is up and which version it runs."""
         return {"ok": True, "version": version("homer-mcp-google")}
+
+    async def warm_up(self) -> None:
+        """People's searchContacts needs one empty-query request before real searches."""
+        try:
+            await self.client.get(PEOPLE, query="", readMask="names")
+        except Exception as error:
+            log.warning("people_warm_up_failed: %s", error)
+            return
+        self.warmed_at = time.monotonic()
+
+    async def _warmed(self) -> None:
+        if self.warmed_at is None or time.monotonic() - self.warmed_at >= WARM_EVERY_SECONDS:
+            await self.warm_up()
+
+    async def _search_people(self, query: str) -> dict[str, Any]:
+        await self._warmed()
+        for attempt in range(2):
+            try:
+                return await self.client.get(PEOPLE, query=query, readMask="names,emailAddresses")
+            except GoogleError as error:
+                if not is_cold(error):
+                    raise
+            self.warmed_at = None
+            if attempt == 0:
+                await asyncio.sleep(COLD_RETRY_SECONDS)
+        raise ContactsWarming
 
     async def _send_updates(self, *groups: list[str]) -> str:
         """Google's sendUpdates: all when anyone besides the account is invited, so they get
@@ -601,7 +643,10 @@ class GoogleTools:
     @guarded
     async def contacts_search(self, query: str) -> dict[str, Any]:
         """Finds contacts whose name or email matches the query."""
-        found = await self.client.get(PEOPLE, query=query, readMask="names,emailAddresses")
+        try:
+            found = await self._search_people(query)
+        except ContactsWarming:
+            return {"error": "google_contacts_warming"}
         contacts = [
             {
                 "name": (person.get("names") or [{}])[0].get("displayName", ""),

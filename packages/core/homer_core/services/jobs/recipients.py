@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from email.utils import parseaddr
 from typing import Any
 
-from homer_core.services.jobs.turn import JobError, Turn
+from homer_core.services.jobs.turn import JobError, ReconnectRequired, Turn
 
 CONTACTS_TTL_SECONDS = 300.0
 RECENT_SENDERS = 10
@@ -73,10 +73,15 @@ def as_words(email: str) -> str:
 
 async def name_for(turn: Turn, email: str) -> str:
     """The person's name from contacts or from the headers of mail they sent, else ''."""
-    for source in (contacts, recent_senders):
-        for person in await source(turn, email):
-            if person.email == email and person.name:
-                return person.name
+    try:
+        for source in (contacts, recent_senders):
+            for person in await source(turn, email):
+                if person.email == email and person.name:
+                    return person.name
+    except ReconnectRequired:
+        raise
+    except JobError:
+        return ""
     return ""
 
 

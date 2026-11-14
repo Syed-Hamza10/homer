@@ -25,6 +25,8 @@ class State:
         self.tokens: set[str] = {KNOWN_TOKEN}
         self.token_requests = 0
         self.calendar_writes: list[dict[str, Any]] = []
+        self.people_cold = 0
+        self.people_queries: list[str] = []
 
     def record_write(
         self, method: str, event_id: str, send_updates: str | None, body: dict[str, Any]

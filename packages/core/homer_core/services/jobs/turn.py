@@ -30,6 +30,8 @@ ERRORS = {
     "You can turn it on in Settings.",
     BLOCKED: "The search engine is limiting searches from this computer for a few "
     "minutes, so I can't look that up right now. Try again shortly.",
+    "google_contacts_warming": "Google's contacts service is waking up; please try again in "
+    "a few seconds.",
     "search_invalid_key": "The search service did not accept the API key, so I can't look "
     "that up. Check the key under Web search in Settings.",
     "search_limited": "The search service has used up its free searches or is asking me to "
