@@ -4,6 +4,10 @@
 
 Everything merged after the first public release: security review fixes, protected drafts and chat state, Today page live data, the clickable recipient choice, passphrase help and reset, the Connect Google panel, one intent call instead of regex routing, memory corrections, relative times, self-correction, faster cards, optional Brave/Tavily search keys, and the round 6–7 QA fixes.
 
+## 0.1.2 (2026-11-14)
+
+Round 8 fixes: general knowledge is answered from the model when the search engine is blocked; event cards, previews and explanations show the user's timezone; an ambiguous invitee on a calendar request shows the choice card; drafts cannot add dates, amounts or event names that have no source.
+
 ## Unreleased
 
 - QA round 8: a blocked or failed web search no longer blocks knowledge (stable questions go to chat, and a failed search on a non-live question answers from the model with a one-line caveat); event cards, replies and explanations show the user's zone ("15:00-17:00 PKT") instead of UTC; an ambiguous invitee on a calendar request gets the pick-one card; drafts drop dates, times, amounts and event names that neither the request nor the replied email gave; the e2e stack can run a stand-in search that fails every search.
