@@ -8,6 +8,7 @@ OLLAMA_RELEASE="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VER
 OLLAMA_INSTALLER="https://ollama.com/install.sh"
 
 REPO="Syed-Hamza10/homer"
+RELEASES="${HOMER_RELEASE_URL:-https://github.com/$REPO/releases}"
 VERSION="${HOMER_VERSION:-latest}"
 HOMER_HOME="${HOMER_HOME:-$HOME/.homer}"
 WHEELS_DIR=""
@@ -16,6 +17,7 @@ PASSPHRASE="${HOMER_PASSPHRASE:-}"
 PASSPHRASE_FLAG=0
 NO_SERVICE=0
 SKIP_OLLAMA=0
+SKIP_MODELS=0
 DRY_RUN=0
 FORCE=0
 RENDER=""
@@ -34,8 +36,9 @@ Usage: scripts/install.sh [options] (published as install.sh on each release)
   --token TOKEN     GitHub token for the private release
   --passphrase P    Initial passphrase (discouraged: lands in shell history; prefer
                     HOMER_PASSPHRASE in the environment or the interactive prompt)
-  --no-service      Do not register a launchd/systemd service
+  --no-service      Do not register the Homer or Ollama launchd/systemd services
   --skip-ollama     Do not install or configure Ollama
+  --skip-models     Do not pull the models (Ollama must already have them)
   --dry-run         Check the machine and print the plan; change nothing
   --force           Continue when RAM or disk is below the recommendation
   --render NAME     Print a service definition and exit
@@ -56,6 +59,7 @@ while [ $# -gt 0 ]; do
     --passphrase) PASSPHRASE="$2"; PASSPHRASE_FLAG=1; shift 2 ;;
     --no-service) NO_SERVICE=1; shift ;;
     --skip-ollama) SKIP_OLLAMA=1; shift ;;
+    --skip-models) SKIP_MODELS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --force) FORCE=1; shift ;;
     --render) RENDER="$2"; shift 2 ;;
@@ -68,7 +72,12 @@ export HOMER_HOME
 
 VENV="$HOMER_HOME/venv"
 LABEL="dev.homer.server"
+OLLAMA_LABEL="dev.homer.ollama"
 OLLAMA_BIN="${OLLAMA_BIN:-ollama}"
+DEFAULT_OLLAMA_URL="http://127.0.0.1:11434"
+OLLAMA_URL="${OLLAMA_URL:-$DEFAULT_OLLAMA_URL}"
+PORT="${PORT:-8000}"
+DASHBOARD="http://127.0.0.1:$PORT"
 
 render_ollama_plist() {
   cat <<EOF
@@ -76,7 +85,7 @@ render_ollama_plist() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>dev.homer.ollama</string>
+  <key>Label</key><string>$OLLAMA_LABEL</string>
   <key>ProgramArguments</key>
   <array><string>$OLLAMA_BIN</string><string>serve</string></array>
   <key>EnvironmentVariables</key>
@@ -211,18 +220,39 @@ if [ "$FREE_GB" -lt 30 ]; then
   fi
 fi
 
+port_used_by_another_program() {
+  local code=0
+  curl -s -o /dev/null -m 2 "$DASHBOARD/" || code=$?
+  [ "$code" -ne 7 ] || return 1
+  ! curl -fsS -m 2 "$DASHBOARD/api/health" 2>/dev/null | grep -q '"model_status"'
+}
+if port_used_by_another_program; then
+  die "port $PORT is used by another program; run the installer again with PORT=8100 in front of the command"
+fi
+
 if [ "$DRY_RUN" = "1" ]; then
+  if [ -n "$WHEELS_DIR" ]; then SOURCE="the wheels in $WHEELS_DIR"; else SOURCE="release $VERSION from $RELEASES"; fi
+  if command -v uv >/dev/null 2>&1; then UV_STEP="use uv at $(command -v uv)"
+  else UV_STEP="install uv $UV_VERSION (from $UV_INSTALLER)"; fi
+  if [ "$SKIP_OLLAMA" = "1" ]; then OLLAMA_STEP="skip Ollama (--skip-ollama)"
+  elif command -v ollama >/dev/null 2>&1; then OLLAMA_STEP="use Ollama at $(command -v ollama) and wait for it at $OLLAMA_URL"
+  else OLLAMA_STEP="install Ollama $OLLAMA_VERSION, verified against its sha256sum.txt, and wait for it at $OLLAMA_URL"; fi
+  if [ "$SKIP_MODELS" = "1" ] || [ "$SKIP_OLLAMA" = "1" ]; then MODELS_STEP="skip the model downloads"
+  else MODELS_STEP="pull the manifest models (about 7 GB the first time)"; fi
+  if [ "$NO_SERVICE" = "1" ]; then SERVICE_STEP="register no services (--no-service); you start it with homer serve"
+  else SERVICE_STEP="register and start the Ollama and Homer services, then open $DASHBOARD"; fi
   cat <<EOF
 
 Dry run only. The installer would:
-  1. install uv $UV_VERSION if missing (from $UV_INSTALLER)
-  2. install Ollama $OLLAMA_VERSION if missing, verified against its sha256sum.txt, and configure it with a 16k context
+  1. $UV_STEP
+  2. $OLLAMA_STEP
   3. create $HOMER_HOME/{credentials,data,documents,logs,backups,venv} with mode 0700
-  4. download the release wheels, SHA256SUMS and requirements.lock, and verify every wheel against SHA256SUMS
-  5. install the verified wheels into $HOMER_HOME/venv with requirements.lock as constraints
-  6. write $HOMER_HOME/.env with TIMEZONE=$TIMEZONE and pull the manifest models
-  7. register and start the Homer service (unless --no-service)
-  8. run homer doctor and print http://127.0.0.1:8000
+  4. ask for a dashboard passphrase and write $HOMER_HOME/.env with TIMEZONE=$TIMEZONE
+  5. fetch $SOURCE, SHA256SUMS and requirements.lock, and verify every wheel against SHA256SUMS
+  6. install the verified wheels into $HOMER_HOME/venv with requirements.lock as constraints
+  7. $MODELS_STEP
+  8. $SERVICE_STEP
+  9. run homer doctor
 EOF
   exit 0
 fi
@@ -255,15 +285,24 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 command -v uv >/dev/null 2>&1 || die "uv is not on PATH after installation"
 
+prompt_passphrase() {
+  (: </dev/tty) 2>/dev/null \
+    || die "set HOMER_PASSPHRASE in the environment, or run the installer in a terminal to be prompted"
+  printf 'Choose a passphrase. You type it to open the Homer dashboard; keep it in your password manager.\n'
+  local tries=0 confirm
+  while [ "$tries" -lt 3 ]; do
+    read -rsp "Passphrase: " PASSPHRASE </dev/tty; echo
+    read -rsp "Repeat it: " confirm </dev/tty; echo
+    if [ -n "$PASSPHRASE" ] && [ "$PASSPHRASE" = "$confirm" ]; then return 0; fi
+    warn "the passphrases were empty or did not match; try again"
+    tries=$((tries + 1))
+  done
+  die "no passphrase set"
+}
+
 ENV_FILE="$HOMER_HOME/.env"
 if [ ! -f "$ENV_FILE" ]; then
-  if [ -z "$PASSPHRASE" ]; then
-    [ -t 0 ] || die "set HOMER_PASSPHRASE in the environment, or run interactively to be prompted"
-    read -rsp "Choose a passphrase: " PASSPHRASE; echo
-    read -rsp "Repeat the passphrase: " CONFIRM; echo
-    [ "$PASSPHRASE" = "$CONFIRM" ] || die "passphrases do not match"
-  fi
-  [ -n "$PASSPHRASE" ] || die "passphrase cannot be empty"
+  [ -n "$PASSPHRASE" ] || prompt_passphrase
   ESCAPED="$(printf '%s' "$PASSPHRASE" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
   cat >"$ENV_FILE" <<EOF
 HOMER_HOME="$HOMER_HOME"
@@ -272,6 +311,8 @@ WEB_SEARCH=true
 SCHEDULER_ENABLED=true
 TIMEZONE=$TIMEZONE
 EOF
+  [ "$OLLAMA_URL" = "$DEFAULT_OLLAMA_URL" ] || printf 'OLLAMA_URL=%s\n' "$OLLAMA_URL" >>"$ENV_FILE"
+  [ "$PORT" = "8000" ] || printf 'PORT=%s\n' "$PORT" >>"$ENV_FILE"
   chmod 600 "$ENV_FILE"
   log "Wrote $ENV_FILE"
 elif grep -q '^TIMEZONE=' "$ENV_FILE"; then
@@ -299,8 +340,37 @@ install_ollama_darwin() {
   export PATH="$HOMER_HOME/bin:$PATH"
 }
 
+ollama_up() { curl -fsS -m 2 "$OLLAMA_URL/api/tags" >/dev/null 2>&1; }
+
+register_ollama_darwin() {
+  local plist="$HOME/Library/LaunchAgents/$OLLAMA_LABEL.plist"
+  if [ ! -f "$plist" ] && ollama_up; then
+    warn "Ollama is already running (probably the Ollama app), so Homer uses it as it is."
+    warn "Set its context length to 16k in the Ollama app settings, or quit the app and re-run this installer."
+    return 0
+  fi
+  mkdir -p "$HOME/Library/LaunchAgents"
+  render_ollama_plist >"$plist"
+  launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$plist"
+}
+
+register_ollama_linux() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "systemctl not found; start Ollama yourself with the documented environment"
+    return 0
+  fi
+  sudo mkdir -p /etc/systemd/system/ollama.service.d
+  render_ollama_dropin | sudo tee /etc/systemd/system/ollama.service.d/homer.conf >/dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now ollama
+  sudo systemctl restart ollama
+}
+
 if [ "$SKIP_OLLAMA" = "0" ]; then
-  if ! command -v ollama >/dev/null 2>&1; then
+  if command -v ollama >/dev/null 2>&1; then
+    log "Found Ollama at $(command -v ollama)"
+  else
     log "Installing Ollama $OLLAMA_VERSION"
     if [ "$OS" = "Darwin" ]; then
       install_ollama_darwin
@@ -311,31 +381,21 @@ if [ "$SKIP_OLLAMA" = "0" ]; then
   OLLAMA_BIN="$(command -v ollama || true)"
   [ -n "$OLLAMA_BIN" ] || die "ollama is not on PATH after installation"
 
-  if [ "$OS" = "Darwin" ]; then
-    PLIST="$HOME/Library/LaunchAgents/dev.homer.ollama.plist"
-    mkdir -p "$HOME/Library/LaunchAgents"
-    render_ollama_plist >"$PLIST"
-    launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
-    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  if [ "$NO_SERVICE" = "1" ]; then
+    log "Not registering the Ollama service (--no-service)"
+  elif [ "$OS" = "Darwin" ]; then
+    register_ollama_darwin
   else
-    if command -v systemctl >/dev/null 2>&1; then
-      sudo mkdir -p /etc/systemd/system/ollama.service.d
-      render_ollama_dropin | sudo tee /etc/systemd/system/ollama.service.d/homer.conf >/dev/null
-      sudo systemctl daemon-reload
-      sudo systemctl enable --now ollama
-      sudo systemctl restart ollama
-    else
-      warn "systemctl not found; start Ollama yourself with the documented environment"
-    fi
+    register_ollama_linux
   fi
 
   attempts=0
-  while [ "$attempts" -lt 30 ]; do
-    curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
+  until ollama_up || [ "$attempts" -ge 30 ]; do
     attempts=$((attempts + 1))
     sleep 1
   done
-  curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 || die "Ollama did not start"
+  ollama_up || die "Ollama is not answering at $OLLAMA_URL; start it with: ollama serve"
+  log "Ollama is answering at $OLLAMA_URL"
 fi
 
 TMP_WHEELS=""
@@ -348,6 +408,7 @@ trap cleanup EXIT
 
 wanted_release_file() {
   case "$1" in
+    */*|.*) return 1 ;;
     *.whl|SHA256SUMS|requirements.lock) return 0 ;;
     *) return 1 ;;
   esac
@@ -371,13 +432,27 @@ download_release_with_token() {
   done
 }
 
+download_public_release() {
+  local base name
+  if [ "$VERSION" = "latest" ]; then base="$RELEASES/latest/download"; else base="$RELEASES/download/$VERSION"; fi
+  curl -fsSL -o "$WHEELS/SHA256SUMS" "$base/SHA256SUMS" \
+    || die "could not download release $VERSION from $RELEASES. While the repo is private, install gh and run gh auth login, or pass --token"
+  for name in $(awk '{ sub(/^\*/, "", $2); print $2 }' "$WHEELS/SHA256SUMS"); do
+    wanted_release_file "$name" || die "unexpected file in SHA256SUMS: $name"
+    curl -fsSL -o "$WHEELS/$name" "$base/$name" || die "could not download $name"
+  done
+}
+
 if [ -n "$WHEELS_DIR" ]; then
   WHEELS="$WHEELS_DIR"
   log "Using local wheels from $WHEELS"
 else
   TMP_WHEELS="$(mktemp -d)"
   WHEELS="$TMP_WHEELS"
-  if command -v gh >/dev/null 2>&1; then
+  if [ -n "$TOKEN" ]; then
+    log "Downloading release $VERSION with a token"
+    download_release_with_token
+  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     log "Downloading release $VERSION with gh"
     set -- -R "$REPO" -D "$WHEELS" -p '*.whl' -p SHA256SUMS -p requirements.lock
     if [ "$VERSION" = "latest" ]; then
@@ -385,11 +460,9 @@ else
     else
       gh release download "$VERSION" "$@"
     fi
-  elif [ -n "$TOKEN" ]; then
-    log "Downloading release $VERSION with a token"
-    download_release_with_token
   else
-    die "this is a private repo: install gh, or pass --token / set GITHUB_TOKEN"
+    log "Downloading release $VERSION"
+    download_public_release
   fi
 fi
 
@@ -413,19 +486,19 @@ fi
 
 if [ ! -x "$VENV/bin/python" ]; then
   log "Creating the Python environment"
-  uv venv --python 3.12 "$VENV"
+  uv venv --relocatable --python 3.12 "$VENV"
 fi
 log "Installing Homer"
-uv pip install --python "$VENV/bin/python" --upgrade --find-links "$WHEELS" \
-  ${CONSTRAINTS[@]+"${CONSTRAINTS[@]}"} \
-  homer-core homer-mcp-google homer-mcp-search homer-mcp-system
+uv pip install --python "$VENV/bin/python" \
+  ${CONSTRAINTS[@]+"${CONSTRAINTS[@]}"} "$WHEELS"/*.whl
+"$VENV/bin/homer" db upgrade
 
-if [ "$SKIP_OLLAMA" = "0" ]; then
+if [ "$SKIP_OLLAMA" = "0" ] && [ "$SKIP_MODELS" = "0" ]; then
   CHAT_TAG="$("$VENV/bin/python" -c 'from homer_core.llm import chat_model_tag; from homer_core.platform import hardware_tier; print(chat_model_tag(hardware_tier()))')"
   EMBED_TAG="$("$VENV/bin/python" -c 'from homer_core.llm import load_manifest; from homer_core.platform import hardware_tier; print(load_manifest()[hardware_tier()]["embed"])')"
   log "Pulling $CHAT_TAG and $EMBED_TAG"
-  "$OLLAMA_BIN" pull "$CHAT_TAG"
-  "$OLLAMA_BIN" pull "$EMBED_TAG"
+  OLLAMA_HOST="$OLLAMA_URL" "$OLLAMA_BIN" pull "$CHAT_TAG"
+  OLLAMA_HOST="$OLLAMA_URL" "$OLLAMA_BIN" pull "$EMBED_TAG"
 fi
 
 if [ "$OS" = "Darwin" ]; then
@@ -450,37 +523,39 @@ if [ "$NO_SERVICE" = "0" ]; then
     systemctl --user enable --now homer || warn "could not start the user service"
     loginctl enable-linger "$USER" >/dev/null 2>&1 || true
   fi
-else
-  warn "service not registered; start with $VENV/bin/homer serve"
 fi
 
-"$VENV/bin/homer" db upgrade
 "$VENV/bin/homer" doctor || warn "doctor reported a problem; see the table above"
 
 if [ "$NO_SERVICE" = "0" ]; then
   attempts=0
-  while [ "$attempts" -lt 60 ]; do
-    curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1 && break
+  until curl -fsS "$DASHBOARD/api/health" >/dev/null 2>&1 || [ "$attempts" -ge 60 ]; do
     attempts=$((attempts + 1))
     sleep 1
   done
+  if curl -fsS "$DASHBOARD/api/health" >/dev/null 2>&1; then
+    START="Homer is running and starts again when you log in."
+    [ "$OS" = "Darwin" ] && open "$DASHBOARD" >/dev/null 2>&1 || true
+  else
+    START="The service did not answer yet; read $HOMER_HOME/logs/homer.err.log."
+  fi
+else
+  START="Start it with: $VENV/bin/homer serve"
 fi
 
 cat <<EOF
 
-Homer is installed.
+Homer is installed. $START
 
-  Dashboard:  http://127.0.0.1:8000
+  Dashboard:  $DASHBOARD
   Data:       $HOMER_HOME
-  Backups:    $HOMER_HOME/backups
   Logs:       $VENV/bin/homer logs -f
 
 Next:
-  1. Open the dashboard and sign in with your passphrase.
-  2. Connect Google with the onboarding guide, then run:
-       $VENV/bin/homer setup google
-  3. Re-run the doctor after the first sign-in:
-       $VENV/bin/homer doctor
-
-If anything fails, read $HOMER_HOME/logs/homer.err.log.
+  1. Open $DASHBOARD and sign in with your passphrase.
+  2. Connect Google: follow GOOGLE_SETUP.md (published with the release), save the file as
+       $HOMER_HOME/credentials/client_secret.json
+     then press Connect in Settings, or run: $VENV/bin/homer setup google
+  3. Check everything: $VENV/bin/homer doctor
+  To remove Homer later: $VENV/bin/homer uninstall
 EOF

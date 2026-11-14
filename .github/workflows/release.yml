@@ -49,7 +49,7 @@ jobs:
         run: |
           uv export --all-packages --no-dev --no-emit-workspace --no-hashes \
             --format requirements-txt -o dist/requirements.lock
-          cd dist && sha256sum ./*.whl requirements.lock > SHA256SUMS && cat SHA256SUMS
+          cd dist && sha256sum -- *.whl requirements.lock > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -66,22 +66,18 @@ jobs:
       HOMER_HOME: ${{ github.workspace }}/homer-home
       HOMER_PASSPHRASE: smoke-test
     steps:
+      - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist
-      - name: Verify the checksums
-        run: cd dist && (sha256sum -c SHA256SUMS || shasum -a 256 -c SHA256SUMS)
-      - name: Install the wheels into a clean venv
-        run: |
-          uv venv --python 3.12 venv
-          uv pip install --python venv/bin/python -c dist/requirements.lock dist/*.whl
+      - name: Install with the release installer, as a user would
+        run: /bin/bash scripts/install.sh --wheels-dir dist --skip-ollama --no-service --force
       - name: Run the installed CLI
         run: |
-          venv/bin/homer db upgrade
-          venv/bin/homer doctor --quick
-          venv/bin/homer privacy > /dev/null
+          "$HOMER_HOME/venv/bin/homer" doctor --quick
+          "$HOMER_HOME/venv/bin/homer" privacy > /dev/null
 
   publish:
     needs: smoke
@@ -100,4 +96,4 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             dist/*.whl dist/SHA256SUMS dist/requirements.lock \
-            scripts/install.sh CLIENT_ONBOARDING.md PRIVACY.md
+            scripts/install.sh CLIENT_ONBOARDING.md PRIVACY.md docs/GOOGLE_SETUP.md
