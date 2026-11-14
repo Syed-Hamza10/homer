@@ -23,7 +23,7 @@ Local-first AI assistant (email, calendar, search) running on the client's machi
 
 ## Keeping Hamza in the loop
 
-After every build step: a chat summary in simple technical English, and `docs/EXPLAINERS/<step>.md` (one page max: what was built, why, how to explain it in an interview, what a client may ask).
+After every build step: a chat summary in simple technical English, and a one-page explainer in the private repo `homer-internal` under `docs/EXPLAINERS/<step>.md` (what was built, why, how to explain it, common questions). Explainers, launch notes, QA scores and the handoff live only in that private repo.
 
 ## Conventions
 
