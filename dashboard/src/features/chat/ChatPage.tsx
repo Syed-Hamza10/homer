@@ -30,6 +30,7 @@ export function ChatPage() {
   const navigate = useNavigate()
   const queued = (location.state as { send?: string } | null)?.send
   const sent = useRef<string | null>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const empty = !conversationId && !messages.length && !streaming
 
   useEffect(() => {
@@ -45,7 +46,12 @@ export function ChatPage() {
   const composer = (
     <>
       {error && <p className="px-2 text-sm text-destructive">{error}</p>}
-      <Composer streaming={streaming} onSend={send} onStop={stop} />
+      <Composer
+        streaming={streaming}
+        onSend={send}
+        onStop={stop}
+        inputRef={input}
+      />
     </>
   )
 
@@ -72,6 +78,13 @@ export function ChatPage() {
         activity={activity}
         status={status}
         onRegenerate={regenerate}
+        onChoose={(card, option) =>
+          void send(option.label, {
+            question_id: card.question_id,
+            option_id: option.id,
+          })
+        }
+        onOther={() => input.current?.focus()}
       />
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 px-5 pt-1 pb-4">
         {composer}

@@ -1,5 +1,5 @@
 import { ArrowUp, Square } from "lucide-react"
-import { useState, type KeyboardEvent } from "react"
+import { useState, type KeyboardEvent, type Ref } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -7,9 +7,10 @@ type Props = {
   streaming: boolean
   onSend: (message: string) => void
   onStop: () => void
+  inputRef?: Ref<HTMLTextAreaElement>
 }
 
-export function Composer({ streaming, onSend, onStop }: Props) {
+export function Composer({ streaming, onSend, onStop, inputRef }: Props) {
   const [value, setValue] = useState("")
 
   const submit = () => {
@@ -29,6 +30,7 @@ export function Composer({ streaming, onSend, onStop }: Props) {
   return (
     <div className="flex items-end gap-2 rounded-2xl border border-border bg-card py-1.5 pr-1.5 pl-2 shadow-[0_1px_2px_oklch(0_0_0/0.04),inset_0_1px_0_var(--marble-1)] transition-shadow focus-within:border-ring/60 focus-within:ring-3 focus-within:ring-ring/15">
       <Textarea
+        ref={inputRef}
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}

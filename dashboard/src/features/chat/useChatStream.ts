@@ -4,6 +4,8 @@ import { ApiError, postJson, streamSse } from "@/lib/api"
 import type {
   ActivityItem,
   ApprovalRequiredEvent,
+  ChoiceEvent,
+  ChoiceHint,
   DoneEvent,
   ErrorEvent,
   GoogleReconnectEvent,
@@ -39,16 +41,18 @@ export function useChatStream(
   const add = (item: ActivityItem) =>
     setRun((r) => ({ ...r, items: [...r.items, item] }))
 
-  const send = async (message: string) => {
+  const send = async (message: string, choice?: ChoiceHint) => {
     const abort = new AbortController()
     controller.current = abort
     setError(null)
     setStatus(null)
     setRun({ conversation: conversationId, items: [] })
     setDraft({ user: message, assistant: "" })
-    const body = conversationId
-      ? { conversation_id: conversationId, message }
-      : { message }
+    const body = {
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+      message,
+      ...(choice ? { choice } : {}),
+    }
     try {
       await streamSse(
         "/api/chat",
@@ -77,6 +81,7 @@ export function useChatStream(
             add({ kind: "approval", ...(data as ApprovalRequiredEvent) })
             void queryClient.invalidateQueries({ queryKey: approvalsKey })
           },
+          choice: (data) => add({ kind: "choice", ...(data as ChoiceEvent) }),
           google_reconnect: (data) =>
             add({ kind: "reconnect", ...(data as GoogleReconnectEvent) }),
           done: (data) => {
