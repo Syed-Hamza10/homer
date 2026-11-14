@@ -51,8 +51,10 @@ class Fact(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)
     text: str
+    person: str | None = None
     source: str = "user"
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class OutboundLog(SQLModel, table=True):

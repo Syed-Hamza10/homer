@@ -102,16 +102,24 @@ and search server defaults.
    chars), saves the
    user message and rebuilds the model history from the stored messages.
 3. `agent/router.py` matches the skill commands, `/approve N` and `/reject N`; `/remind <text>`
-   becomes "Remind me <text>". A whole-message decision word ("send it", "yes", "approved",
-   "no", "cancel", "discard") with exactly one pending approval settles it without the model;
-   with several it lists them; with none, a bare yes/no goes on and the rest answer "Nothing is
-   waiting for your approval."
+   becomes "Remind me <text>". A reply made only of decision and filler words ("send it",
+   "looks good send", "fire it off", "yes", "no", "discard", "ok never mind, cancel it") with
+   exactly one pending approval in this chat settles it without the model; with several it lists
+   them; with none, an approval word answers "There's no draft waiting in this chat." and
+   everything else goes on. Nothing else is decided before the model.
 4. One structured call (`agent/intents.py`, Pydantic AI `ToolOutput` named `record_intents`, a
-   discriminated union) turns the message, the last 6 stored messages and a table of dates
-   (today, tomorrow, the next 7 days by name, this week) into a list of intents: `send_email`,
-   `create_event`, `read_calendar`, `read_email`, `web_search`, `remind`, `chat`. The model copies
-   dates and times; validators normalise `3pm` to `15:00` and reject anything that is not
+   discriminated union) turns the message into a list of intents: `send_email`, `edit_draft`,
+   `draft_question`, `send_status`, `discard_draft`, `create_event`, `update_event`,
+   `cancel_event`, `read_calendar`, `free_time`, `read_email`, `remember`, `correct_memory`,
+   `forget`, `recall`, `calculate`, `web_search`, `remind`, `day_summary`, `chat`. The
+   instructions and the few-shot examples (`agent/prompts/intent_examples.md`) are static, so
+   Ollama keeps their prefix cached; the user prompt then carries the timezone, the latest 20
+   saved facts, a 14-day date table, the cards pending in this chat, the previous turn's
+   resolved intents, the last 6 stored messages as quoted lines, and the message. The model
+   copies dates and times; validators normalise `3pm` to `15:00` and reject anything that is not
    `YYYY-MM-DD`, which makes Pydantic AI retry. A failed call falls back to `chat`.
+   `agent/routing.refined` then turns a `web_search` without `needs_live_data` (and not asked
+   for) into `chat`, and drops a calendar listing nobody asked for next to another request.
 5. `services/jobs/dispatch.py` runs each intent in order through its executor in
    `services/jobs/` (one module per job). Each gets a `Turn`: session, user, rules, history, the
    user's local `now`, and an event queue. `Turn.call` is the only way to an MCP tool (it emits
@@ -130,8 +138,8 @@ and search server defaults.
    stores `created_approval` (an `approval_required` event was sent during the turn), and every
    approval shown in the turn gets that message's id as `approvals.message_id`. The dashboard loads
    `GET /api/approvals?conversation_id=N` (all statuses but `superseded`) and draws each card under
-   its message, so cards survive a reload. "show me the draft" with a pending approval re-sends the
-   card with "Here's the draft." and no model call. After the first turn the title becomes a short
+   its message, so cards survive a reload. A `draft_question` answers from the waiting draft and
+   re-sends its card (marked `again`, so the turn does not count as having made one). After the first turn the title becomes a short
    one from the resolved intent (`services/conversations.title_for`).
 8. Regenerate: `POST /api/conversations/{id}/regenerate` deletes the last user/assistant pair and
    returns the user text; the browser sends it again through `/api/chat`. A reply with
@@ -157,6 +165,17 @@ and search server defaults.
 - `web_search`: `web_search`, `fetch_page` on the top 2 results (2,500 chars each, the snippet
   when a fetch fails), one answer call under 120 words, then a "Sources:" list written by code.
 - `remind`: a reminder row at the local date and time; no model call.
+- `edit_draft`, `draft_question`, `send_status`, `discard_draft`: act on this chat's waiting card.
+  An edit rewrites the draft (or, for "add the event link", inserts the event's real link once it
+  exists); a question is answered from the draft and the card is shown again; a status question
+  reads the approvals table (by recipient across chats, else this chat); a discard rejects the
+  newest pending card.
+- Memory: facts carry `person` and `updated_at`. `remember` adds one; `correct_memory` rewrites
+  the fact the previous turn touched, or the best keyword match for the person and topic;
+  `forget` deletes every fact scoring near the best match (all of a person's facts for a bare
+  name) and lists them; `recall` sends the matching facts, newest first with ids, to one
+  structured call that answers in a sentence and names facts a newer one contradicts, which
+  code deletes.
 - `chat`: the short system prompt (`prompts/system.md`; the user's name only when it is not the
   install-time placeholder) and the last 10 messages, no tools. The claim guard
   (`agent/claims.py`) replaces any "I've sent/scheduled/created" text with a fixed honest
@@ -165,9 +184,10 @@ and search server defaults.
 ### Editing an approval
 
 `POST /api/approvals/{id}/edit` takes `{to, subject, body}` for `mail_send` or `{title, date,
-start, end, attendees}` for `cal_create` (local date and times). A mail edit calls the hidden
-`mail_draft_update` (Gmail `drafts.update`, same draft id); an event edit calls `cal_create` again
-with the user's timezone. A fresh approval with a new hash is created and the old one moves
+start, end, attendees}` for `cal_create` and `cal_update` (local date and times). A mail edit calls
+the hidden `mail_draft_update` (Gmail `drafts.update`, same draft id); an event edit calls
+`cal_create` again with the user's timezone, and a move edit calls `cal_update` again for the same
+event (title only when changed, attendees only when given). A fresh approval with a new hash is created and the old one moves
 `pending -> superseded`; editing a non-pending approval is 409, the wrong shape 422. Rejecting a
 `mail_send` (button, `/reject`, typed "discard") also deletes the Gmail draft with
 `mail_draft_delete`.

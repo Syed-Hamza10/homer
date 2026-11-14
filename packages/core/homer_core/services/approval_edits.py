@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator
@@ -17,6 +18,8 @@ from homer_core.services.approvals import (
 )
 from homer_core.services.errors import DomainError
 from homer_core.services.jobs.send_email import request_send
+
+QUOTED_TITLE = re.compile(r"'(.+?)'")
 
 
 class NotEditable(DomainError):
@@ -95,6 +98,31 @@ async def edited_event(
     return create_from_tool_result(session, user.id, "google", result)
 
 
+def current_title(preview: str) -> str:
+    found = QUOTED_TITLE.search(preview)
+    return found.group(1) if found else ""
+
+
+async def edited_update(
+    session: Session, user: User, manager: McpManager, approval: Approval, change: EventEdit
+) -> Approval:
+    payload = json.loads(approval.payload_json)
+    args: dict[str, Any] = {
+        "event_id": payload["event_id"],
+        "start": f"{change.date}T{change.start}:00",
+        "end": f"{change.date}T{change.end}:00",
+        "timezone": payload.get("timezone") or user.timezone,
+    }
+    if change.title.strip() and change.title.strip() != current_title(approval.preview):
+        args["title"] = change.title.strip()
+    if change.attendees:
+        args["attendees"] = change.attendees
+    result = await manager.call("google", "cal_update", args)
+    if not is_approval_object(result):
+        raise DomainError(f"could not update the event change: {problem(result) or result}")
+    return create_from_tool_result(session, user.id, "google", result)
+
+
 async def edit(
     session: Session,
     user: User,
@@ -112,6 +140,8 @@ async def edit(
             fresh = await edited_mail(session, user, manager, payload, change)
         case "cal_create", EventEdit():
             fresh = await edited_event(session, user, manager, payload, change)
+        case "cal_update", EventEdit():
+            fresh = await edited_update(session, user, manager, approval, change)
         case _:
             raise NotEditable(f"approval {approval.id} ({approval.action}) cannot take that edit")
     try:

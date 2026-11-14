@@ -322,11 +322,6 @@ def by_pronoun(turn: Turn, intent: SendEmail) -> bool:
     return bool(PRONOUN_TO.search(turn.message)) and first not in turn.message.lower()
 
 
-def unexplained(turn: Turn) -> bool:
-    """A first message that emails "her" or "him": nothing in the chat says who that is."""
-    return not turn.history and PRONOUN_TO.search(turn.message) is not None
-
-
 def vague(turn: Turn, intent: SendEmail) -> bool:
     """The recipient or topic comes only from "her" or "about it" with nothing earlier in the
     chat to say who or what that is."""

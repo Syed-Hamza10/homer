@@ -1,13 +1,16 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from homer_core.agent.intents import Intent
+from homer_core.agent.intents import FreeTime, Intent, as_free
 from homer_core.services.jobs import (
     calculate,
     change_event,
     chat,
     create_event,
     day_summary,
+    draft_question,
+    edit_email,
+    mail_status,
     memory,
     read_calendar,
     read_email,
@@ -17,8 +20,18 @@ from homer_core.services.jobs import (
 )
 from homer_core.services.jobs.turn import Turn
 
+
+async def free_time(turn: Turn, intent: FreeTime) -> None:
+    await read_calendar.run(turn, as_free(intent))
+
+
 RUNNERS: dict[str, Callable[[Turn, Any], Awaitable[None]]] = {
     "send_email": send_email.run,
+    "edit_draft": edit_email.edit,
+    "draft_question": draft_question.question,
+    "send_status": mail_status.status,
+    "discard_draft": draft_question.discard,
+    "free_time": free_time,
     "create_event": create_event.run,
     "update_event": change_event.update,
     "cancel_event": change_event.cancel,
@@ -27,6 +40,7 @@ RUNNERS: dict[str, Callable[[Turn, Any], Awaitable[None]]] = {
     "web_search": web_search.run,
     "remind": remind.run,
     "remember": memory.remember,
+    "correct_memory": memory.correct,
     "forget": memory.drop,
     "day_summary": day_summary.run,
     "recall": memory.recall,

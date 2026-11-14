@@ -6,12 +6,19 @@ import type { ApprovalEdit } from "./types"
 
 type Props = {
   initial: ApprovalEdit
+  guests?: boolean
   saving: boolean
   onSave: (change: ApprovalEdit) => void
   onCancel: () => void
 }
 
-export function ApprovalEditor({ initial, saving, onSave, onCancel }: Props) {
+export function ApprovalEditor({
+  initial,
+  guests,
+  saving,
+  onSave,
+  onCancel,
+}: Props) {
   const [value, setValue] = useState<ApprovalEdit>(initial)
 
   return (
@@ -25,7 +32,7 @@ export function ApprovalEditor({ initial, saving, onSave, onCancel }: Props) {
       {"to" in value ? (
         <MailForm value={value} onChange={setValue} />
       ) : (
-        <EventForm value={value} onChange={setValue} />
+        <EventForm value={value} onChange={setValue} guests={guests} />
       )}
       <div className="flex gap-2">
         <Button size="sm" type="submit" disabled={saving}>

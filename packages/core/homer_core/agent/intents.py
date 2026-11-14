@@ -1,7 +1,10 @@
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from functools import cache
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import structlog
@@ -50,7 +53,7 @@ REPLY = re.compile(
     r"(?:reply|respond|write back|answer)\b",
     re.IGNORECASE,
 )
-NEXT_EVENT = re.compile(r"\b(?:next|upcoming) (?:meeting|event|call|appointment)\b", re.IGNORECASE)
+NEXT_EVENT = re.compile(r"\b(?:next|upcoming) (?:mee+ting|event|call|appointment)\b", re.IGNORECASE)
 SLOT = re.compile(
     r"\bfind (?:me |us )?(?:a |an )?"
     r"(?:(\d+)\s*(?:-\s*)?(min|mins|minutes|minute|h|hr|hrs|hour|hours)"
@@ -65,65 +68,79 @@ WHATS_ON = re.compile(
     re.IGNORECASE,
 )
 
-PROMPT = """You turn the user's latest message into a list of intents for Homer, an email,
-calendar and web assistant. Do not answer the message: call record_intents once with every
-intent.
-Dates. Copy them from this table, never calculate one. A weekday name ("wed", "Friday",
-"next Wednesday") is the first day in the table with that name after today, or today itself
-when today has that name and the user did not say "next".
-{dates}{numeric}
+INSTRUCTIONS = """You read the user's latest message and record what they want Homer, an email,
+calendar, memory and web assistant, to do. Do not answer it: call record_intents once with
+every intent, in the order asked.
 Intents:
-- send_email: write, send, email or reply to someone. `to` is the name or address as written.
-  `body_instructions` is what the email should say. Set `reply_to_latest_from` only when the
-  user asks to reply to someone's email.
-- create_event: schedule, book or add a NEW meeting or event. Use start/end for an exact time
-  ("at 3pm", "from 2 to 3"). Use window_start/window_end when the user wants a free slot inside
-  a range ("between 9 and 11", "sometime in the morning"). attendees are every person the
-  meeting is with, as names or addresses.
-- update_event: move, reschedule, push, shift, rename or change the time of an EXISTING event,
-  including one booked earlier in this chat. `match` is how the user names it ("design review",
-  "lunch with Sam", "Monday call with Elena"), or "it" for "it", "that" or "the call we just
-  booked". `date` only when they say which day it is on NOW ("my Monday call"); never put the
-  new day there. Fill only what changes: new_date, new_start, new_end, new_title, and
-  duration_minutes only when they state a new length.
-- cancel_event: cancel, delete or remove an existing event. `match` names it as above.
-- read_calendar: questions about the user's calendar, schedule, meetings or free time.
-  range: today, tomorrow, this_week, next_week, this_weekend, next_n_days (with `days`),
-  date (one day in `date`) or range (`date` to `end_date`). `person` when the user asks about
-  events with someone; `title_contains` when they name an event. When a person or event is
-  named with no time, use next_n_days with days 14. start/end narrow the time of day (morning
-  09:00-12:00, afternoon 12:00-17:00, evening 17:00-21:00, "at 1:30pm" is start 13:30).
-  asks_if is "free" or "busy" when the user asks whether they are free or busy.
-- read_email: questions about email the user received. Use `sender` for a person, `query` for
-  a topic, `latest` for the newest email. `question` is what the user wants to know.
-- web_search: things that change: news, current events, prices, weather, sports results, who
-  holds an office now, or when the user asks you to search. Never for questions about the user
-  themself, and never for stable general knowledge (capitals, definitions, how things work).
-- calculate: arithmetic or a unit or currency conversion. `expression` is the sum or
-  conversion as written ("17 * 23", "3400 USD to EUR").
-- remind: the user asks to be reminded of something.
-- remember: the user tells you a fact to remember ("my dog is Biscuit, remember that").
-  `fact` is the fact in one sentence, keeping every name and detail.
-- forget: the user asks you to forget something. `about` names it, or stays empty for
-  "forget that".
-- day_summary: what the user got done, sent or booked today, what is still open, pending or
-  waiting on them.
-- recall: the user asks what you remember about them or about someone. `about` names who.
-- chat: anything else: greetings, thanks, questions about the user (answer them from the
-  facts below), about you or about this conversation, and general knowledge.
-A message with several requests gives several intents, in the order asked.
-Follow-ups. The previous request is shown below with its resolved dates. A short follow-up
-("and the day after?", "what about Monday?", "what about Rosa?", "anything with her?")
-repeats its kind and changes only what the message changes; "the day after" is the day after
-the previous date. A correction ("no, I meant Friday", "make it 4pm") repeats the previous
-request with the corrected field and keeps everything else.
-Previous request: {previous}
-Facts the user asked you to remember:
+- send_email: write, send or reply to someone. `to` is the name or address as written;
+  `body_instructions` is what it should say; `reply_to_latest_from` only when answering
+  their email.
+- edit_draft: change the email draft pending in this chat ("make it shorter", "add that I'm
+  late", "change the subject to X", "add the event link"). `instruction` is the change.
+- draft_question: a question about the pending draft ("where's the link?", "does it mention
+  Friday?", "show me the draft"). `question` is the question.
+- send_status: whether an email went out ("did you send it?", "has the reply to Sarah gone
+  out?"). `about` is the person's name or address, empty for "it".
+- discard_draft: drop the pending draft or card ("cancel it", "never mind", "scrap that").
+- create_event: book a NEW event. `date` from the table; start/end for an exact time;
+  window_start/window_end for a free slot inside a range; `attendees` are names or addresses.
+- update_event: move, retime or rename an EXISTING event, also one booked earlier in this
+  chat. `match` names it ("design review", or "it"); `date` only for the day it is on now;
+  fill only what changes: new_date, new_start, new_end, new_title, duration_minutes.
+- cancel_event: delete an existing calendar event. `match` names it.
+- read_calendar: what is on the calendar. range is today, tomorrow, this_week, next_week,
+  this_weekend, next_n_days (with `days`), date (`date`) or range (`date` to `end_date`).
+  `person` or `title_contains` when named (next_n_days, days 14, when no time is given).
+  start/end narrow the time of day: morning 09:00-12:00, afternoon 12:00-17:00, evening
+  17:00-21:00.
+- free_time: whether the user is free or busy, or has a gap. `date` (and `end_date`),
+  start/end for the part of the day.
+- read_email: questions about email received or sent. `sender`, `query` for a topic,
+  `latest` for the newest; `question` is what they want to know.
+- remember: a new fact to keep. `fact` is one full sentence with every name and detail,
+  saying "your" for the user; `about_person` is who it is about, if anyone.
+- correct_memory: the user corrects a saved fact ("actually", "no, it's", "I made a
+  mistake"). `about` is the person and topic; `new_fact` is the whole corrected fact as one
+  sentence naming the person.
+- forget: delete saved facts. `about` is the person or topic, empty for "forget that".
+- recall: a question answered from saved facts, about the user or someone in them. `about`
+  is the person or topic.
+- calculate: arithmetic, percentages, time sums, unit or currency conversion. `expression`
+  as written ("15% of 240", "3400 USD to EUR").
+- web_search: needs the internet. `query`; `needs_live_data` is true for things that change
+  (news, weather, prices, scores, who holds an office) or when the user asks to search.
+- remind: remind the user of something. `text`, `date`, `time`.
+- day_summary: what the user got done today, or what is still open or waiting on them.
+- chat: anything else: greetings, thanks, goodbyes, general knowledge, questions about
+  Homer, and requests too vague to act on (Homer then asks what they mean).
+Rules:
+- Dates: copy them from the table, never calculate one. A weekday name is the first day in
+  the table with that name after today, or today when today has it and "next" is not said.
+- With a card pending in this chat, "it", "the draft", "the link" and "the email" mean that
+  card: questions about it are draft_question, changes are edit_draft, "cancel it" or "never
+  mind" is discard_draft. "Email her about it" goes to the person named in the earlier turns;
+  with no one named anywhere it is chat.
+- A follow-up ("and the day after?", "what about Omar?") repeats the previous request's kind
+  and changes only what the message changes; "the day after" is the day after the previous
+  date. A correction ("actually I meant Friday", "make it 4pm") repeats the previous request
+  with that field changed. A correction of a saved fact is correct_memory.
+- Questions about the user or a person in the saved facts are recall, never web_search.
+- Earlier turns only say who or what the message refers to; never repeat an earlier request
+  unless the message follows it up.
+Examples (context, then message, then intents):
+{examples}"""
+CONTEXT = """Timezone: {timezone}
+Saved facts:
 {facts}
-Classify only the latest message. Earlier turns, quoted below, only tell you who or what it
-refers to ("him", "that email"); never repeat an earlier request unless it is a follow-up.
+Dates:
+{dates}
+Pending in this chat: {pending}
+Previous request: {previous}
 Earlier turns:
-{context}"""
+{context}
+
+Latest message: {message}{numeric}"""
+EXAMPLES = Path(__file__).parent / "prompts" / "intent_examples.md"
 
 
 def clock(value: str | None) -> str | None:
@@ -231,6 +248,7 @@ class ReadEmail(BaseModel):
 class WebSearch(BaseModel):
     kind: Literal["web_search"]
     query: str
+    needs_live_data: bool
 
 
 class Remind(BaseModel):
@@ -243,6 +261,13 @@ class Remind(BaseModel):
 class Remember(BaseModel):
     kind: Literal["remember"]
     fact: str
+    about_person: str | None = None
+
+
+class CorrectMemory(BaseModel):
+    kind: Literal["correct_memory"]
+    about: str
+    new_fact: str
 
 
 class Forget(BaseModel):
@@ -264,20 +289,53 @@ class Recall(BaseModel):
     about: str | None = None
 
 
+class EditDraft(BaseModel):
+    kind: Literal["edit_draft"]
+    instruction: str
+
+
+class DraftQuestion(BaseModel):
+    kind: Literal["draft_question"]
+    question: str
+
+
+class SendStatus(BaseModel):
+    kind: Literal["send_status"]
+    about: str | None = None
+
+
+class DiscardDraft(BaseModel):
+    kind: Literal["discard_draft"]
+
+
+class FreeTime(BaseModel):
+    kind: Literal["free_time"]
+    date: OptionalDate
+    end_date: OptionalDate
+    start: Clock
+    end: Clock
+
+
 class ChatIntent(BaseModel):
     kind: Literal["chat"]
 
 
 Intent = Annotated[
     SendEmail
+    | EditDraft
+    | DraftQuestion
+    | SendStatus
+    | DiscardDraft
     | CreateEvent
     | UpdateEvent
     | CancelEvent
     | ReadCalendar
+    | FreeTime
     | ReadEmail
     | WebSearch
     | Remind
     | Remember
+    | CorrectMemory
     | Forget
     | DaySummary
     | Calculate
@@ -313,11 +371,14 @@ def context(history: list[ModelMessage]) -> str:
 @dataclass(frozen=True)
 class Background:
     """What the intent call knows beyond the message: the previous turn's resolved intents,
-    the user's remembered facts and how they write numeric dates."""
+    the user's remembered facts, how they write numeric dates, their timezone and the card
+    waiting in this chat."""
 
     previous: list[dict[str, Any]] = field(default_factory=list)
     facts: list[str] = field(default_factory=list)
     date_format: DateFormat = "DD/MM"
+    timezone: str = "UTC"
+    pending: str = "nothing"
 
 
 def single_day(intent: ReadCalendar, today: date) -> date | None:
@@ -372,6 +433,22 @@ def pin_dates(intent: Intent, expected: date, exact: bool, today: date) -> Inten
             fixed = replacement(str(intent.new_date), expected, exact, today)
             return intent.model_copy(update={"new_date": fixed})
     return intent
+
+
+def as_free(intent: Intent) -> Intent:
+    """A free-time question is a calendar read that answers yes or no first."""
+    if not isinstance(intent, FreeTime):
+        return intent
+    span = "range" if intent.end_date not in (None, intent.date) else "date"
+    return ReadCalendar(
+        kind="read_calendar",
+        range=span if intent.date else "today",
+        date=intent.date,
+        end_date=intent.end_date if span == "range" else None,
+        start=intent.start,
+        end=intent.end,
+        asks_if="free",
+    )
 
 
 def as_move(intent: Intent, message: str) -> Intent:
@@ -481,7 +558,7 @@ def widened(intent: Intent, message: str) -> Intent:
 
 def repaired(intent: Intent, message: str, today: date) -> Intent:
     """Code's corrections of what the model tends to misread, in order."""
-    intent = as_reply(as_move(intent, message), message)
+    intent = as_reply(as_move(as_free(intent), message), message)
     intent = as_calendar(as_slot(intent, message, today), message, today)
     return one_day(as_next(widened(intent, message), message), message, today)
 
@@ -509,6 +586,33 @@ def shown_facts(facts: list[str]) -> str:
     return "\n".join(f"- {fact}" for fact in facts) or "(none)"
 
 
+@cache
+def instructions() -> str:
+    return INSTRUCTIONS.format(examples=EXAMPLES.read_text().strip())
+
+
+def prompt(message: str, history: list[ModelMessage], now: datetime, known: Background) -> str:
+    return CONTEXT.format(
+        dates=date_table(now),
+        timezone=known.timezone,
+        pending=known.pending,
+        previous=shown_previous(known.previous),
+        facts=shown_facts(known.facts),
+        context=context(history),
+        message=message,
+        numeric=numeric_hint(message, now.date(), known.date_format),
+    )
+
+
+async def prime(agent: Agent[None, Intents]) -> None:
+    """One throwaway intent call, so Ollama has the static prefix cached before the first real
+    message; a failure is logged, never raised."""
+    try:
+        await agent.run("hello", instructions=instructions())
+    except Exception as error:
+        log.warning("intent_prime_failed", error=str(error))
+
+
 async def extract(
     agent: Agent[None, Intents],
     message: str,
@@ -516,20 +620,17 @@ async def extract(
     now: datetime,
     known: Background | None = None,
 ) -> tuple[list[Intent], RunUsage]:
-    """One structured call; a model that cannot produce valid intents falls back to chat.
-    Dates code can read from the message itself override the model's."""
+    """One structured call: the static instructions and examples first, so Ollama reuses
+    their cached prefix, then this turn's context and message. A model that cannot produce
+    valid intents falls back to chat. Dates code can read from the message itself override
+    the model's."""
     known = known or Background()
-    instructions = PROMPT.format(
-        dates=date_table(now),
-        numeric=numeric_hint(message, now.date(), known.date_format),
-        previous=shown_previous(known.previous),
-        facts=shown_facts(known.facts),
-        context=context(history),
-    )
+    started = time.monotonic()
     try:
-        result = await agent.run(message, instructions=instructions)
+        result = await agent.run(prompt(message, history, now, known), instructions=instructions())
     except UnexpectedModelBehavior:
         log.warning("intents_failed", message=message)
         return [ChatIntent(kind="chat")], RunUsage()
+    log.info("intent_call", seconds=round(time.monotonic() - started, 2))
     intents = result.output.intents or [ChatIntent(kind="chat")]
     return checked(intents, message, now, known), result.usage

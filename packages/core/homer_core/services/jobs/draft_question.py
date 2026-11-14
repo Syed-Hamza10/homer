@@ -4,13 +4,17 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from homer_core.agent.intents import ChatIntent, DiscardDraft, DraftQuestion
 from homer_core.db.models import Approval
 from homer_core.services import approval_edits, approvals
 from homer_core.services.approval_edits import MailEdit
+from homer_core.services.jobs import chat
 from homer_core.services.jobs.send_email import assemble, split
 from homer_core.services.jobs.turn import Turn
 
 EVENT_ACTION = "cal_create"
+NO_DRAFT = "There's no draft waiting in this chat."
+NOTHING_WAITING = "There's nothing waiting in this chat to discard."
 URL = re.compile(r"https?://\S+")
 LINK = re.compile(r"\blink\b", re.IGNORECASE)
 NOT_CREATED = "The event gets its Google Calendar link once you press Create."
@@ -136,3 +140,40 @@ async def answer(turn: Turn, draft: Approval) -> None:
         body=payload["body"],
     )
     await turn.stream(turn.message, instructions)
+
+
+async def question(turn: Turn, intent: DraftQuestion) -> None:
+    """Answers from this chat's waiting draft and shows its card again; with no draft waiting
+    the question goes to chat."""
+    draft = pending_draft(turn)
+    if draft is None:
+        await chat.run(turn, ChatIntent(kind="chat"))
+        return
+    await answer(turn, draft)
+    turn.show(draft, again=True)
+
+
+def dropped(approval: Approval) -> str:
+    payload = json.loads(approval.payload_json)
+    if approval.action == approvals.SEND_ACTION:
+        to = payload.get("to_name") or payload.get("to", "")
+        return f"Discarded the draft to {to}. Nothing was sent."
+    if approval.action == EVENT_ACTION:
+        return f"Dropped the proposed event '{payload.get('title', '')}'. Nothing was booked."
+    return f"Discarded: {approval.preview.splitlines()[0]}. Nothing was changed."
+
+
+async def discard(turn: Turn, intent: DiscardDraft) -> None:
+    """Rejects the newest card waiting in this chat."""
+    waiting = (
+        approvals.list_pending(turn.session, turn.user, turn.conversation_id)
+        if turn.conversation_id is not None
+        else []
+    )
+    if not waiting:
+        turn.say(NOTHING_WAITING)
+        return
+    card = waiting[-1]
+    await approvals.discard(turn.session, turn.user, card.id, turn.runtime.manager)
+    turn.note(approval_id=card.id)
+    turn.say(dropped(card))

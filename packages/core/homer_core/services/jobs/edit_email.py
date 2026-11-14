@@ -1,12 +1,14 @@
 import json
 import re
 
+from homer_core.agent.intents import EditDraft
 from homer_core.agent.voice import phrase
 from homer_core.db.models import Approval
 from homer_core.services import approval_edits
 from homer_core.services.approval_edits import MailEdit
+from homer_core.services.jobs import draft_question
 from homer_core.services.jobs.send_email import revise
-from homer_core.services.jobs.turn import Turn
+from homer_core.services.jobs.turn import JobError, Turn
 
 UPDATED = (
     "Updated the draft. Edit it or press Send.",
@@ -23,6 +25,7 @@ SUBJECT_ONLY = re.compile(
     re.IGNORECASE,
 )
 QUOTED = re.compile(r"[\"“‘'](.+?)[\"”’']")
+LINK = re.compile(r"\blink\b", re.IGNORECASE)
 
 
 def literal_subject(instruction: str) -> str | None:
@@ -51,3 +54,21 @@ async def run(turn: Turn, approval: Approval) -> None:
     )
     turn.requested(fresh)
     turn.say(phrase(turn.history, UPDATED))
+
+
+def wants_event_link(turn: Turn, intent: EditDraft) -> bool:
+    """The change asks for a link, gives no URL itself, and this chat has an event to link."""
+    asked = f"{intent.instruction} {turn.message}"
+    linked = LINK.search(asked) and not draft_question.URL.search(asked)
+    return bool(linked) and draft_question.latest_event(turn) is not None
+
+
+async def edit(turn: Turn, intent: EditDraft) -> None:
+    """Changes this chat's waiting draft as the user asked, in their own words."""
+    draft = draft_question.pending_draft(turn)
+    if draft is None:
+        raise JobError(draft_question.NO_DRAFT)
+    if wants_event_link(turn, intent):
+        await draft_question.link_event(turn, draft)
+        return
+    await run(turn, draft)

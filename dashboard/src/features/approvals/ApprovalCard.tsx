@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { ApprovalEditor } from "./ApprovalEditor"
 import {
   approvalTitle,
+  editsGuests,
   eventFields,
   mailFields,
   primaryLabel,
@@ -78,6 +79,7 @@ export function ApprovalCard({ approval, onDecided }: Props) {
         {editing && editable ? (
           <ApprovalEditor
             initial={editable}
+            guests={editsGuests(current.action)}
             saving={edit.isPending}
             onSave={(change) => edit.mutate({ id: current.id, change })}
             onCancel={() => setEditing(false)}

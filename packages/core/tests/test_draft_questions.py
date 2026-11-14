@@ -10,10 +10,8 @@ from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 
-from homer_core.agent.router import asks_about_draft, asks_if_sent, wants_link
 from homer_core.config import Settings
 from homer_core.mcp.manager import McpManager
-from homer_core.services.chat import named_earlier
 from homer_core.services.jobs.draft_question import CREATE_FIRST, when_line
 from homer_core.services.jobs.send_email import undangled
 
@@ -69,8 +67,21 @@ def seen() -> list[list[ModelMessage]]:
 
 
 @pytest.fixture
-def model(jobs: JobModel, seen: list[list[ModelMessage]]) -> Model:
-    return jobs([booked_and_drafted()], text="Yes, it says Saturday at 3pm.", seen=seen)
+def follow() -> list[dict[str, Any]]:
+    return [{"kind": "chat"}]
+
+
+@pytest.fixture
+def asked() -> list[str]:
+    return []
+
+
+@pytest.fixture
+def model(
+    jobs: JobModel, seen: list[list[ModelMessage]], follow: list[dict[str, Any]], asked: list[str]
+) -> Model:
+    turns = [booked_and_drafted(), follow]
+    return jobs(turns, text="Yes, it says Saturday at 3pm.", seen=seen, asked=asked)
 
 
 def cards(frames: list[tuple[str, dict[str, Any]]]) -> dict[str, dict[str, Any]]:
@@ -82,6 +93,7 @@ def start(post_chat: PostChat) -> tuple[int, dict[str, dict[str, Any]]]:
     return frames[0][1]["conversation_id"], cards(frames)
 
 
+@pytest.mark.parametrize("follow", [[{"kind": "edit_draft", "instruction": LINK_ASK}]])
 class TestEventLink:
     def test_a_pending_event_gets_an_honest_answer_and_the_time_line(
         self, post_chat: PostChat
@@ -107,12 +119,16 @@ class TestEventLink:
 
 
 class TestDraftQuestions:
+    @pytest.mark.parametrize("follow", [[{"kind": "draft_question", "question": "where?"}]])
     def test_where_is_the_link_is_answered_from_the_draft(self, post_chat: PostChat) -> None:
-        chat, _ = start(post_chat)
+        chat, made = start(post_chat)
         frames = post_chat({"message": "where's the link in this draft?", "conversation_id": chat})
         assert said(frames) == f"No, the link isn't in it yet. {CREATE_FIRST}"
-        assert of(frames, "approval_required") == []
+        shown = of(frames, "approval_required")
+        assert [card["approval_id"] for card in shown] == [made["mail_send"]["approval_id"]]
+        assert shown[0]["again"] is True
 
+    @pytest.mark.parametrize("follow", [[{"kind": "draft_question", "question": "saturday?"}]])
     def test_a_yes_or_no_question_reads_the_draft(
         self, post_chat: PostChat, seen: list[list[ModelMessage]]
     ) -> None:
@@ -125,6 +141,7 @@ class TestDraftQuestions:
         assert made["mail_send"]["payload"]["body"] in prompt
         assert "not created yet" in prompt
 
+    @pytest.mark.parametrize("follow", [[{"kind": "send_status"}]])
     def test_the_status_line_is_only_for_status_questions(self, post_chat: PostChat) -> None:
         chat, _ = start(post_chat)
         frames = post_chat({"message": "did you send it?", "conversation_id": chat})
@@ -148,30 +165,6 @@ class TestRepeats:
         assert said(frames) != "I already drafted that one — it's above."
 
 
-def test_a_name_before_him_is_enough_to_email() -> None:
-    message = "book an event with hassan about the demo saturday 3pm. Then send him a brief email"
-    assert named_earlier(message)
-    assert not named_earlier("email her about it")
-
-
-@pytest.mark.parametrize(
-    ("message", "expected"),
-    [
-        ("are you adding the link of the event in the email yes or no?", (True, False, False)),
-        ("where's the link in this draft?", (True, False, False)),
-        (LINK_ASK, (False, True, False)),
-        ("did you send it?", (False, False, True)),
-        ("has it gone out?", (False, False, True)),
-        ("did you add the link before you send it?", (True, False, False)),
-        ("any email from Rosa?", (False, False, False)),
-    ],
-)
-def test_draft_questions_links_and_status_are_told_apart(
-    message: str, expected: tuple[bool, bool, bool]
-) -> None:
-    assert (asks_about_draft(message), wants_link(message), asks_if_sent(message)) == expected
-
-
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -192,3 +185,14 @@ def test_dangling_placeholders_are_removed(text: str, expected: str) -> None:
 def test_the_time_line_reads_like_a_person_wrote_it() -> None:
     payload = {"start": "2026-11-14T11:30:00+05:00", "end": "2026-11-14T12:30:00+05:00"}
     assert when_line(payload, KARACHI) == "Saturday 14 Nov, 11:30 am–12:30 pm PKT"
+
+
+def test_the_intent_call_sees_the_pending_cards_and_the_timezone(
+    post_chat: PostChat, asked: list[str]
+) -> None:
+    chat, _ = start(post_chat)
+    post_chat({"message": "where's the link?", "conversation_id": chat})
+    assert "Pending in this chat: nothing" in asked[0]
+    assert f"Timezone: {KARACHI}" in asked[1]
+    assert "new event 'Homer demo'" in asked[1] and f"email draft to {HASSAN}" in asked[1]
+    assert asked[1].endswith("Latest message: where's the link?")
