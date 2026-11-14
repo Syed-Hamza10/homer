@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from homer_core.db.models import EmailCache, User
 from homer_core.mcp.manager import ExecuteFailed, McpManager, ServerUnavailable
-from homer_core.services.errors import DomainError, NotFound
+from homer_core.services.errors import DomainError, GoogleFailed, NotFound
 from homer_core.services.rules import ClientRules
 
 log = structlog.get_logger(__name__)
@@ -201,6 +201,29 @@ def get_email(session: Session, user: User, message_id: str) -> EmailCache:
     if row is None:
         raise NotFound(f"message {message_id} not found")
     return row
+
+
+async def ensure_email(
+    session: Session, user: User, manager: McpManager, rules: ClientRules, message_id: str
+) -> EmailCache:
+    """The cached message; one Homer has not cached yet is read from Gmail and cached first."""
+    row = session.exec(
+        select(EmailCache).where(EmailCache.user_id == user.id, EmailCache.message_id == message_id)
+    ).first()
+    if row is not None:
+        return row
+    message = await manager.call("google", "mail_get", {"message_id": message_id})
+    if isinstance(message, dict) and message.get("id"):
+        row = upsert_email(session, user.id, message, rules, datetime.now(UTC))
+        row.archived = "INBOX" not in message.get("labels", [])
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+    if isinstance(message, dict) and message.get("status") == 404:
+        raise NotFound(f"message {message_id} not found in Gmail")
+    raise GoogleFailed(f"could not read message {message_id}: {message}")
 
 
 def get_email_by_thread(session: Session, user: User, thread_id: str) -> EmailCache | None:

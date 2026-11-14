@@ -24,6 +24,16 @@ class State:
         self.contacts: list[dict[str, Any]] = seed["contacts"]
         self.tokens: set[str] = {KNOWN_TOKEN}
         self.token_requests = 0
+        self.calendar_writes: list[dict[str, Any]] = []
+
+    def record_write(
+        self, method: str, event_id: str, send_updates: str | None, body: dict[str, Any]
+    ) -> None:
+        """Keeps each calendar write with its sendUpdates value, which decides whether Google
+        would email the attendees."""
+        self.calendar_writes.append(
+            {"method": method, "event_id": event_id, "send_updates": send_updates, "body": body}
+        )
 
     def issue_token(self) -> str:
         token = f"sim-access-{secrets.token_hex(8)}"

@@ -45,4 +45,8 @@ def create_app(seed_path: Path = DEFAULT_SEED) -> FastAPI:
     def state(sim: Sim) -> dict[str, int]:
         return sim.counts()
 
+    @app.get("/_sim/calendar-writes")
+    def calendar_writes(sim: Sim) -> list[dict[str, Any]]:
+        return sim.calendar_writes
+
     return app

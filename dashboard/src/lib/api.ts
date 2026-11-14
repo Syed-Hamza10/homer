@@ -1,10 +1,27 @@
 import { createSseParser, type SseHandlers } from "./sse"
 
+const plainErrors: Record<number, string> = {
+  400: "Homer could not do that. Check the details and try again.",
+  401: "Your session has ended. Sign in again.",
+  403: "That was blocked for safety. Reload the page and try again.",
+  404: "That could not be found. It may have been moved or deleted.",
+  409: "That was already done.",
+  422: "Nothing to change, or a field is not valid.",
+  502: "Google could not be reached. Try again, or reconnect Google in Settings.",
+}
+
+export function plainError(status: number): string {
+  return (
+    plainErrors[status] ??
+    "Something went wrong on the Homer server. Try again in a moment."
+  )
+}
+
 export class ApiError extends Error {
   readonly status: number
 
   constructor(status: number) {
-    super(`Request failed with status ${status}`)
+    super(plainError(status))
     this.status = status
   }
 }

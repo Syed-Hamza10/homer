@@ -163,6 +163,19 @@ async def test_followup_drafts_after_due(
     assert fake_google.executed == [{"action": "mail_send", "payload": {"draft_id": "d1"}}]
 
 
+def test_follow_up_works_for_a_message_homer_has_not_cached(
+    app: FastAPI, logged_in: TestClient, origin: dict[str, str]
+) -> None:
+    created = logged_in.post("/api/inbox/m3/follow-up", json={"days": 3}, headers=origin)
+    assert created.status_code == 200
+    assert created.json()["subject"] == "Proposal follow-up"
+    with Session(app.state.engine) as session:
+        row = session.exec(select(EmailCache).where(EmailCache.message_id == "m3")).one()
+        assert row.thread_id == "t3" and row.archived is False
+    missing = logged_in.post("/api/inbox/nope/follow-up", json={}, headers=origin)
+    assert missing.status_code == 404
+
+
 def test_follow_up_without_a_draft_cannot_be_sent(
     logged_in: TestClient, origin: dict[str, str]
 ) -> None:

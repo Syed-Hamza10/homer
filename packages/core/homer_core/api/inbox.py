@@ -56,8 +56,8 @@ async def create_follow_up(
     session: SessionDep,
     runtime: RuntimeDep,
 ) -> FollowUpOut:
-    row = inbox.get_email(session, user, message_id)
     rules = get_rules(session, user.id)
+    row = await inbox.ensure_email(session, user, runtime.manager, rules, message_id)
     followup = await followups.create_followup(
         session, user, runtime.manager, rules, row.thread_id, body.days
     )

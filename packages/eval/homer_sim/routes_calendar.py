@@ -22,8 +22,10 @@ def list_events(
 
 
 @router.post("/calendars/primary/events", status_code=200)
-def insert_event(sim: Sim, body: dict[str, Any]) -> dict[str, Any]:
-    return sim.calendar.insert(body, sim.now)
+def insert_event(sim: Sim, body: dict[str, Any], sendUpdates: str | None = None) -> dict[str, Any]:
+    event = sim.calendar.insert(body, sim.now)
+    sim.record_write("insert", event["id"], sendUpdates, body)
+    return event
 
 
 @router.get("/calendars/primary/events/{event_id}")
@@ -32,13 +34,18 @@ def get_event(sim: Sim, event_id: str) -> dict[str, Any]:
 
 
 @router.patch("/calendars/primary/events/{event_id}")
-def patch_event(sim: Sim, event_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    return sim.calendar.patch(event_id, body, sim.now)
+def patch_event(
+    sim: Sim, event_id: str, body: dict[str, Any], sendUpdates: str | None = None
+) -> dict[str, Any]:
+    event = sim.calendar.patch(event_id, body, sim.now)
+    sim.record_write("patch", event_id, sendUpdates, body)
+    return event
 
 
 @router.delete("/calendars/primary/events/{event_id}", status_code=204)
-def delete_event(sim: Sim, event_id: str) -> Response:
+def delete_event(sim: Sim, event_id: str, sendUpdates: str | None = None) -> Response:
     sim.calendar.delete(event_id)
+    sim.record_write("delete", event_id, sendUpdates, {})
     return Response(status_code=204)
 
 

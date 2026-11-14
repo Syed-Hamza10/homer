@@ -236,7 +236,8 @@ async def test_slots_and_event_in_the_users_timezone(mcp: Client, sim: httpx.Cli
         attendees=["maya.lindqvist@example.test"],
         timezone="Asia/Karachi",
     )
-    assert localised["payload"] == pending["payload"]
+    assert localised["payload"] == {**pending["payload"], "timezone": "Asia/Karachi"}
+
     created = await call(mcp, "execute", action="cal_create", payload=pending["payload"])
     assert created["start"] == f"{day}T09:00:00+05:00"
     assert created["attendees"] == ["maya.lindqvist@example.test"]
@@ -306,6 +307,18 @@ async def test_calendar_write_tools_need_approval(mcp: Client, sim: httpx.Client
     assert update["action"] == "cal_update" and "Kickoff (moved)" in update["preview"]
     updated = await call(mcp, "execute", action="cal_update", payload=update["payload"])
     assert updated["title"] == "Kickoff (moved)"
+    later = (start - timedelta(minutes=30)).isoformat()
+    move = await call(mcp, "cal_update", event_id=created["id"], start=later)
+    assert move["payload"]["changes"] == {"start": later, "end": end.isoformat()}
+    assert move["payload"]["send_updates"] == "all"
+    moved = await call(mcp, "execute", action="cal_update", payload=move["payload"])
+    assert moved["attendees"] == ["maya.lindqvist@example.test"]
+    writes = sim.get("/_sim/calendar-writes").json()
+    assert [(w["method"], w["send_updates"]) for w in writes] == [
+        ("insert", "all"),
+        ("patch", "all"),
+        ("patch", "all"),
+    ]
 
     delete = await call(mcp, "cal_delete", event_id=created["id"])
     assert delete["action"] == "cal_delete" and "Kickoff (moved)" in delete["preview"]

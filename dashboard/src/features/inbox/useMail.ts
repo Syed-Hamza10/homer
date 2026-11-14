@@ -5,6 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { getJson, postJson } from "@/lib/api"
+import { liveQuery } from "@/lib/live"
 import type { Approval } from "@/features/approvals/types"
 import { todayKey } from "@/features/today/useToday"
 import type {
@@ -19,15 +20,13 @@ import type {
 } from "./types"
 
 export const mailKey = ["mail"]
-const FRESH_MS = 120_000
 const PAGE_SIZE = 20
 
 export function useFolders() {
   return useQuery({
     queryKey: [...mailKey, "folders"],
     queryFn: () => getJson<Folder[]>("/api/mail/folders"),
-    refetchOnWindowFocus: true,
-    refetchInterval: FRESH_MS,
+    ...liveQuery,
   })
 }
 
@@ -45,8 +44,7 @@ export function useThreads(folder: string, query: string) {
       getJson<ThreadPage>(threadsUrl(folder, query, pageParam)),
     initialPageParam: "",
     getNextPageParam: (page) => page.next_page_token ?? undefined,
-    refetchOnWindowFocus: true,
-    refetchInterval: FRESH_MS,
+    ...liveQuery,
   })
 }
 
@@ -103,7 +101,7 @@ export function useWriteWithHomer() {
   })
 }
 
-export function useSortInbox() {
+export function useLabelInbox() {
   const refresh = useMailRefresh()
   return useMutation({
     mutationFn: () => postJson<RefreshResult>("/api/inbox/refresh", {}),

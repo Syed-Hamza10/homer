@@ -88,17 +88,21 @@ class GoogleClient:
     async def get(self, path: str, **params: Any) -> Any:
         return await self.request("GET", path, params=params)
 
-    async def post(self, path: str, json: dict[str, Any] | None = None) -> Any:
-        return await self.request("POST", path, json=json)
+    async def post(
+        self, path: str, json: dict[str, Any] | None = None, params: dict[str, Any] | None = None
+    ) -> Any:
+        return await self.request("POST", path, params=params, json=json)
 
     async def put(self, path: str, json: dict[str, Any]) -> Any:
         return await self.request("PUT", path, json=json)
 
-    async def patch(self, path: str, json: dict[str, Any]) -> Any:
-        return await self.request("PATCH", path, json=json)
+    async def patch(
+        self, path: str, json: dict[str, Any], params: dict[str, Any] | None = None
+    ) -> Any:
+        return await self.request("PATCH", path, params=params, json=json)
 
-    async def delete(self, path: str) -> Any:
-        return await self.request("DELETE", path)
+    async def delete(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return await self.request("DELETE", path, params=params)
 
 
 def _error_message(response: Any) -> str:

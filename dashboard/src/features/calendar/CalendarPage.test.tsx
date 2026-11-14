@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { MemoryRouter, Route, Routes, useLocation } from "react-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CalendarPage } from "./CalendarPage"
 
@@ -8,7 +9,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function renderPage() {
+function Where() {
+  return <output data-testid="where">{useLocation().search}</output>
+}
+
+function renderPage(entry = "/calendar") {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) =>
@@ -19,7 +24,19 @@ function renderPage() {
   )
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <CalendarPage />
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route
+            path="/calendar"
+            element={
+              <>
+                <CalendarPage />
+                <Where />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -58,5 +75,25 @@ describe("CalendarPage shortcuts", () => {
     expect(
       screen.getByRole("dialog", { name: "Calendar keyboard shortcuts" }),
     ).toBeTruthy()
+  })
+})
+
+describe("CalendarPage URL", () => {
+  it("restores the view and date from the URL and keeps them there", () => {
+    renderPage("/calendar?view=month&date=2026-11-16")
+    expect(pressed("Month")).toBe("true")
+    expect(screen.getByTestId("calendar-title").textContent).toBe(
+      "November 2026",
+    )
+    fireEvent.keyDown(window, { key: "j" })
+    expect(screen.getByTestId("where").textContent).toBe(
+      "?view=month&date=2026-12-01",
+    )
+    fireEvent.keyDown(window, { key: "w" })
+    expect(screen.getByTestId("where").textContent).toBe(
+      "?view=week&date=2026-12-01",
+    )
+    fireEvent.keyDown(window, { key: "t" })
+    expect(screen.getByTestId("where").textContent).toBe("?view=week")
   })
 })

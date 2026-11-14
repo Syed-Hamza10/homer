@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from homer_core.db.models import Approval, EmailCache, User
 from homer_core.mcp.manager import PROFILE_TOOL, McpManager
-from homer_core.services.errors import DomainError
+from homer_core.services.errors import GoogleFailed
 from homer_core.services.followups import clean_subject
 from homer_core.services.inbox import CATEGORY_RULES, DEFAULT_CATEGORY, PRIORITY_LABEL, clean
 from homer_core.services.jobs.send_email import request_send
@@ -37,10 +37,6 @@ BULK_LABELS = frozenset(
     {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "SPAM"}
 )
 ReplyMode = Literal["reply", "reply_all", "forward"]
-
-
-class GoogleFailed(DomainError):
-    status_code = 502
 
 
 def checked(result: Any) -> dict[str, Any]:

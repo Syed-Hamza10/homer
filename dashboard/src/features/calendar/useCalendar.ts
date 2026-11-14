@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { getJson, patchJson, postJson } from "@/lib/api"
+import { liveQuery } from "@/lib/live"
 import type { Approval } from "@/features/approvals/types"
 import type { EventFields, EventRange, Slot } from "./types"
 
@@ -14,8 +15,7 @@ export function useEvents(start: Date, end: Date) {
       getJson<EventRange>(
         `/api/calendar/events?start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}`,
       ),
-    refetchOnWindowFocus: true,
-    refetchInterval: 120000,
+    ...liveQuery,
   })
 }
 

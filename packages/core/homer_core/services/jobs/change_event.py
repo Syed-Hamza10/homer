@@ -256,7 +256,8 @@ async def update(turn: Turn, intent: UpdateEvent) -> None:
     event = found.event
     title = str(event.get("title", ""))
     start, end = moved(event, intent, zone)
-    args: dict[str, Any] = {"event_id": event["id"]}
+    args: dict[str, Any] = {"event_id": event["id"], "timezone": turn.user.timezone}
+
     after = f"{start:%a %d %b} {start:%H:%M}-{end:%H:%M}"
     if (start, end) != bounds(event, zone):
         args |= {"start": start.isoformat(), "end": end.isoformat()}

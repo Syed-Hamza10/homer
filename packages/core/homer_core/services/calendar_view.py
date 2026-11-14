@@ -138,7 +138,9 @@ async def request_update(
     changes = changed_fields(current, wanted, zone)
     if not changes:
         raise NothingToChange("nothing to change")
-    result = await manager.call("google", "cal_update", {"event_id": event_id, **changes})
+    args = {"event_id": event_id, **changes, "timezone": user.timezone}
+    result = await manager.call("google", "cal_update", args)
+
     return approval_from(session, user, result, update_preview(current, changes, zone))
 
 
