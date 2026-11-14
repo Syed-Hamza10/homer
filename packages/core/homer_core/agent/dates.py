@@ -1,6 +1,7 @@
 import re
 from datetime import date, datetime, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 DateFormat = Literal["DD/MM", "MM/DD"]
 TABLE_DAYS = 14
@@ -196,6 +197,17 @@ def relative_minutes(message: str) -> int | None:
 def now_line(now: datetime) -> str:
     """ "Now: Saturday 14 Nov 2026, 16:23 PKT", the one clock every prompt states."""
     return f"Now: {now:%A %d %b %Y, %H:%M} {now:%Z}".rstrip()
+
+
+def span_label(opens: datetime, closes: datetime) -> str:
+    """ "Thu 19 Nov 15:00-17:00 PKT": both ends in the zone `opens` carries, and its name."""
+    return f"{opens:%a %d %b} {opens:%H:%M}-{closes:%H:%M} {opens:%Z}".rstrip()
+
+
+def in_zone(value: str, zone: ZoneInfo) -> datetime:
+    """An ISO time in `zone`: a time with an offset is converted, one without is read there."""
+    parsed = datetime.fromisoformat(value)
+    return parsed.astimezone(zone) if parsed.tzinfo else parsed.replace(tzinfo=zone)
 
 
 def from_now(now: datetime, minutes: int) -> datetime:

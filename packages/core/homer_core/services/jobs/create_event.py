@@ -2,7 +2,7 @@ import re
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from homer_core.agent.dates import from_now
+from homer_core.agent.dates import from_now, in_zone, span_label
 from homer_core.agent.intents import CORRECTION, CreateEvent
 from homer_core.agent.voice import phrase
 from homer_core.db.models import Approval
@@ -13,6 +13,7 @@ from homer_core.services.approvals import (
     is_approval_object,
     transition_from_pending,
 )
+from homer_core.services.jobs.choice import Choice
 from homer_core.services.jobs.read_calendar import bounds
 from homer_core.services.jobs.recipients import listed, resolve
 from homer_core.services.jobs.turn import JobError, Turn
@@ -30,9 +31,9 @@ def at(day: str, clock: str) -> str:
     return f"{day}T{clock}:00"
 
 
-def span_text(start: str, end: str) -> str:
-    opens, closes = datetime.fromisoformat(start), datetime.fromisoformat(end)
-    return f"{opens:%a %d %b} {opens:%H:%M}-{closes:%H:%M}"
+def wall_time(value: str, zone: ZoneInfo) -> str:
+    """The time as a wall time in the user's zone, with no offset."""
+    return in_zone(value, zone).replace(tzinfo=None).isoformat()
 
 
 async def find_slot(turn: Turn, intent: CreateEvent, minutes: int) -> tuple[str, str]:
@@ -50,7 +51,8 @@ async def find_slot(turn: Turn, intent: CreateEvent, minutes: int) -> tuple[str,
         raise JobError(
             f"No free {minutes}-minute slot on {intent.date} between {opens} and {closes}."
         )
-    return slots[0]["start"], slots[0]["end"]
+    zone = ZoneInfo(turn.user.timezone)
+    return wall_time(slots[0]["start"], zone), wall_time(slots[0]["end"], zone)
 
 
 def kept_minutes(turn: Turn) -> int | None:
@@ -128,6 +130,8 @@ async def run(turn: Turn, intent: CreateEvent) -> None:
     for who in people(intent):
         try:
             attendees.append((await resolve(turn, who)).email)
+        except Choice:
+            raise
         except JobError as error:
             questions.append(f"I left {who} off the invite. {error}")
     start, end = await resolve_slot(turn, intent)
@@ -147,6 +151,8 @@ async def run(turn: Turn, intent: CreateEvent) -> None:
     turn.note(approval_id=approval.id, start=start[11:16], end=end[11:16])
     if CORRECTION.search(turn.message):
         supersede_previous(turn)
-    turn.say(phrase(turn.history, READY, title=intent.title, when=span_text(start, end)))
+    zone = ZoneInfo(turn.user.timezone)
+    when = span_label(in_zone(start, zone), in_zone(end, zone))
+    turn.say(phrase(turn.history, READY, title=intent.title, when=when))
     for question in questions:
         turn.say(question)

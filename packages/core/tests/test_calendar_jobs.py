@@ -179,13 +179,13 @@ class TestChangeEvent:
             },
         }
         preview = (
-            f"Move 'Design review: packaging drafts' from {short(1)} 14:00-14:45 "
-            f"to {short(1)} 16:00-16:45"
+            f"Move 'Design review: packaging drafts' from {short(1)} 14:00-14:45 PKT "
+            f"to {short(1)} 16:00-16:45 PKT"
         )
         assert approval["preview"] == preview
         assert said(frames) == (
-            f"Ready to move 'Design review: packaging drafts' from {short(1)} 14:00-14:45 to "
-            f"{short(1)} 16:00-16:45. Press Approve to apply it, or Reject."
+            f"Ready to move 'Design review: packaging drafts' from {short(1)} 14:00-14:45 PKT to "
+            f"{short(1)} 16:00-16:45 PKT. Press Approve to apply it, or Reject."
         )
         assert calls(frames) == ["cal_list", "cal_update"]
 
@@ -213,8 +213,8 @@ class TestChangeEvent:
         assert of(frames, "approval_required") == []
         assert said(frames) == (
             "Several events match 'the lunch with Sam':\n"
-            f"- {short(4)} 13:00-14:00 Lunch with Sam, mentor\n"
-            f"- {short(9)} 13:00-14:00 Lunch with Sam\nWhich one do you mean?"
+            f"- {short(4)} 13:00-14:00 PKT Lunch with Sam, mentor\n"
+            f"- {short(9)} 13:00-14:00 PKT Lunch with Sam\nWhich one do you mean?"
         )
 
     @pytest.mark.parametrize("intents", [[[{"kind": "cancel_event", "match": "lunch with Sam"}]]])
@@ -609,7 +609,7 @@ class TestRoundSeven:
         chat = first[0][1]["conversation_id"]
         why = post_chat({"message": "why that time?", "conversation_id": chat})
         assert said(why) == (
-            f'You asked for "dinner with Faisal at 7", so I set {short(5)} 19:00-19:30. '
+            f'You asked for "dinner with Faisal at 7", so I set {short(5)} 19:00-19:30 PKT. '
             "Want a different time?"
         )
         assert of(why, "approval_required") == [] and "cal_create" not in calls(why)
@@ -669,3 +669,81 @@ def test_what_does_someone_want_reads_their_mail(post_chat: PostChat) -> None:
     queries = [call["args"]["query"] for event, call in frames if event == "tool_call"]
     assert queries and queries[0].startswith("from:Ada")
     assert "nothing saved" not in said(frames)
+
+
+def thursday_after_next() -> date:
+    return today() + timedelta(days=(3 - today().weekday()) % 7 + 14)
+
+
+ORION = thursday_after_next()
+MEMO = {
+    "kind": "create_event",
+    "title": "Drafting the Orion memo",
+    "date": ORION.isoformat(),
+    "window_start": "13:00",
+    "window_end": "17:00",
+    "duration_minutes": 120,
+}
+
+
+class TestEventTimesInTheUsersZone:
+    @pytest.fixture
+    def mcp(self, sim_mcp: McpManager, sim: FastAPI) -> McpManager:
+        state = sim.state.sim
+        busy = {
+            "summary": "Client call",
+            "start": {"dateTime": f"{ORION.isoformat()}T13:00:00+05:00"},
+            "end": {"dateTime": f"{ORION.isoformat()}T15:00:00+05:00"},
+        }
+        state.calendar.insert(busy, state.now)
+        return sim_mcp
+
+    @pytest.mark.parametrize("intents", [[[MEMO], [WHY], [MEMO]]])
+    def test_a_slot_from_a_window_shows_local_time_on_the_card_reply_and_explanation(
+        self, post_chat: PostChat
+    ) -> None:
+        frames = post_chat({"message": "block 2 hours for the Orion memo, between 1pm and 5pm"})
+        [card] = of(frames, "approval_required")
+        assert card["payload"]["start"] == f"{ORION.isoformat()}T15:00:00+05:00"
+        assert card["payload"]["end"] == f"{ORION.isoformat()}T17:00:00+05:00"
+        assert card["payload"]["timezone"] == KARACHI
+        assert f"{ORION:%a %d %b %Y} 15:00-17:00 (PKT)" in card["preview"]
+        assert f"on {ORION:%a %d %b} 15:00-17:00 PKT is ready" in said(frames)
+        assert "UTC" not in card["preview"] + said(frames)
+        chat = of(frames, "meta")[0]["conversation_id"]
+        why = post_chat({"message": "why that time?", "conversation_id": chat})
+        assert f"so I set {ORION:%a %d %b} 15:00-17:00 PKT." in said(why)
+        assert of(why, "approval_required") == []
+
+
+SARA_CALL = {
+    "kind": "create_event",
+    "title": "Call with Sara",
+    "date": day(2).isoformat(),
+    "start": "15:00",
+    "attendees": ["Sara"],
+}
+
+
+class TestAmbiguousInvitee:
+    @pytest.mark.parametrize("intents", [[[SARA_CALL]]])
+    def test_two_saras_pause_on_a_choice_card_then_the_pick_gets_the_invite(
+        self, post_chat: PostChat
+    ) -> None:
+        first = post_chat({"message": "set up a call with Sara the day after tomorrow at 3pm"})
+        assert of(first, "approval_required") == [] and "cal_create" not in calls(first)
+        [card] = of(first, "choice")
+        assert said(first) == "Which Sara do you mean?"
+        assert [option["label"] for option in card["options"]] == ["Sara Whitfield", "Sara Mbeki"]
+        picked = card["options"][1]
+        frames = post_chat(
+            {
+                "conversation_id": of(first, "meta")[0]["conversation_id"],
+                "message": picked["label"],
+                "choice": {"question_id": card["question_id"], "option_id": picked["id"]},
+            }
+        )
+        [approval] = of(frames, "approval_required")
+        assert approval["action"] == "cal_create"
+        assert approval["payload"]["attendees"] == ["sara.mbeki@example.test"]
+        assert "left" not in said(frames)
