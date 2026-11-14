@@ -4,12 +4,14 @@ import { Outlet } from "react-router"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useStoredFlag } from "@/lib/useStoredFlag"
+import { useWarmModel } from "@/lib/useWarmModel"
 import { Sidebar } from "./Sidebar"
 import { Wordmark } from "./Wordmark"
 
 export function AppShell() {
   const [collapsed, setCollapsed] = useStoredFlag("homer.sidebar.collapsed")
   const [open, setOpen] = useState(false)
+  useWarmModel()
   const close = () => setOpen(false)
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") close()

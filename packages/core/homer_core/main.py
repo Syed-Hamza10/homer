@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -38,6 +39,7 @@ from homer_core.mcp.manager import McpManager
 from homer_core.platform import ensure_home
 from homer_core.services.errors import DomainError
 from homer_core.services.google_account import Connector
+from homer_core.services.ollama import warm_up
 from homer_core.services.outbound_log import make_logger
 from homer_core.services.privacy import WEB_SEARCH_KEY
 from homer_core.services.rules import get_rules
@@ -82,7 +84,16 @@ def create_app(
         scheduler = build_scheduler(settings, engine, runtime, http_client)
         scheduler.start()
         app.state.scheduler = scheduler
+        warming = None
+        if model is None:
+            warming = asyncio.create_task(
+                warm_up(
+                    http_client, settings.ollama_url, app.state.model.model_name, runtime.intents
+                )
+            )
         yield
+        if warming is not None:
+            warming.cancel()
         scheduler.stop()
         await manager.stop()
         await http_client.aclose()
