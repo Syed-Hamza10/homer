@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input"
+import { followedEndDate } from "./editable"
 import { FormField } from "./FormField"
 import type { EventEdit } from "./types"
 
@@ -17,22 +18,40 @@ export function EventForm({ value, onChange, guests = true }: Props) {
           onChange={(e) => onChange({ ...value, title: e.target.value })}
         />
       </FormField>
-      <div className="grid grid-cols-3 gap-2">
-        <FormField label="Date">
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <FormField label="Start date">
           <Input
             type="date"
             value={value.date}
-            onChange={(e) => onChange({ ...value, date: e.target.value })}
+            onChange={(e) =>
+              onChange({
+                ...value,
+                date: e.target.value,
+                end_date: followedEndDate(
+                  value.date,
+                  value.end_date,
+                  e.target.value,
+                ),
+              })
+            }
           />
         </FormField>
-        <FormField label="Start">
+        <FormField label="Start time">
           <Input
             type="time"
             value={value.start}
             onChange={(e) => onChange({ ...value, start: e.target.value })}
           />
         </FormField>
-        <FormField label="End">
+        <FormField label="End date">
+          <Input
+            type="date"
+            value={value.end_date}
+            min={value.date}
+            onChange={(e) => onChange({ ...value, end_date: e.target.value })}
+          />
+        </FormField>
+        <FormField label="End time">
           <Input
             type="time"
             value={value.end}

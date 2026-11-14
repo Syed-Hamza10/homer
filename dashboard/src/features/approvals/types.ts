@@ -27,6 +27,7 @@ export type EventEdit = {
   title: string
   date: string
   start: string
+  end_date: string
   end: string
   attendees: string[]
 }

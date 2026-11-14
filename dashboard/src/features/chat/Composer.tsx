@@ -2,16 +2,28 @@ import { ArrowUp, Square } from "lucide-react"
 import { useState, type KeyboardEvent, type Ref } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { composing } from "@/lib/ime"
 
 type Props = {
   streaming: boolean
   onSend: (message: string) => void
   onStop: () => void
   inputRef?: Ref<HTMLTextAreaElement>
+  value?: string
+  onValueChange?: (value: string) => void
 }
 
-export function Composer({ streaming, onSend, onStop, inputRef }: Props) {
-  const [value, setValue] = useState("")
+export function Composer({
+  streaming,
+  onSend,
+  onStop,
+  inputRef,
+  value: controlled,
+  onValueChange,
+}: Props) {
+  const [own, setOwn] = useState("")
+  const value = controlled ?? own
+  const setValue = onValueChange ?? setOwn
 
   const submit = () => {
     const message = value.trim()
@@ -21,7 +33,7 @@ export function Composer({ streaming, onSend, onStop, inputRef }: Props) {
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !composing(event)) {
       event.preventDefault()
       submit()
     }

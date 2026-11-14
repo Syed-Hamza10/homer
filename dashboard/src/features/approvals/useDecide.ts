@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { ApiError, postJson } from "@/lib/api"
-import { errorText } from "@/lib/errorText"
+import { postJson } from "@/lib/api"
 import { eventsKey } from "@/features/calendar/useCalendar"
 import { mailKey } from "@/features/inbox/useMail"
 import { todayKey } from "@/features/today/useToday"
@@ -10,12 +9,6 @@ import { approvalsKey } from "./useApprovals"
 type Args = { id: number; decision: Decision }
 
 const ran = new Set(["done", "unknown"])
-
-export function describeDecisionError(error: Error | null): string | null {
-  if (error instanceof ApiError && error.status === 409)
-    return "Already decided"
-  return errorText(error)
-}
 
 export function useDecide(onDecided?: (approval: Approval) => void) {
   const queryClient = useQueryClient()

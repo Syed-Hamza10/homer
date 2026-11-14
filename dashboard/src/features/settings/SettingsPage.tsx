@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react"
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { useLeaveWarning } from "@/lib/useLeaveWarning"
 import { GoogleAccount } from "./GoogleAccount"
 import { ModelChoice } from "./ModelChoice"
 import { ModelHint } from "./ModelHint"
@@ -58,22 +60,32 @@ function RulesForm({ initial }: { initial: ClientRules }) {
   const health = useHealth()
   const selfEmailNote = health.data && selfEmailNotes[health.data.self_email]
 
+  const rules: ClientRules = {
+    signature,
+    tone,
+    business_hours: hours,
+    follow_up_days: days,
+    priority_contacts: contacts
+      .split(/[\n,]/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+    email_to_self: emailToSelf,
+    self_email: selfEmail,
+    model_tier: modelTier ? (modelTier as ModelTier) : null,
+    timezone,
+  }
+  const [savedRules, setSavedRules] = useState(() => JSON.stringify(rules))
+  const dirty = JSON.stringify(rules) !== savedRules
+  useLeaveWarning(dirty)
+
+  const persist = () => {
+    const sent = JSON.stringify(rules)
+    save.mutate(rules, { onSuccess: () => setSavedRules(sent) })
+  }
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    save.mutate({
-      signature,
-      tone,
-      business_hours: hours,
-      follow_up_days: days,
-      priority_contacts: contacts
-        .split(/[\n,]/)
-        .map((value) => value.trim())
-        .filter(Boolean),
-      email_to_self: emailToSelf,
-      self_email: selfEmail,
-      model_tier: modelTier ? (modelTier as ModelTier) : null,
-      timezone,
-    })
+    persist()
   }
 
   return (
@@ -189,22 +201,20 @@ function RulesForm({ initial }: { initial: ClientRules }) {
         )}
       </div>
       <div className="flex items-center gap-3 border-t border-border pt-4">
-        <Button type="submit" disabled={save.isPending}>
-          Save
+        <Button type="submit" disabled={save.isPending || !dirty}>
+          {save.isPending ? "Saving…" : "Save"}
         </Button>
-        {save.isSuccess && (
-          <span className="text-sm text-muted-foreground">Saved.</span>
-        )}
-        {save.error && (
-          <span className="text-sm text-destructive">{save.error.message}</span>
-        )}
+        <span className="text-sm text-muted-foreground" aria-live="polite">
+          {dirty ? "Unsaved changes" : save.isSuccess ? "Saved." : ""}
+        </span>
+        <ErrorNotice error={dirty ? save.error : null} onRetry={persist} />
       </div>
     </form>
   )
 }
 
 export function SettingsPage() {
-  const { data } = useRules()
+  const { data, error, refetch, isFetching } = useRules()
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -222,6 +232,12 @@ export function SettingsPage() {
           <CardContent>
             {data ? (
               <RulesForm initial={data} />
+            ) : error && !isFetching ? (
+              <ErrorNotice
+                error={error}
+                lead="Could not load your preferences."
+                onRetry={() => void refetch()}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">
                 Loading your preferences.

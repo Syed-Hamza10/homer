@@ -15,7 +15,9 @@ type Props = {
   stopped?: boolean
   pending?: boolean
   quiet?: boolean
+  failed?: boolean
   onRegenerate?: () => void
+  onRetry?: () => void
 }
 
 function formatTime(iso: string): string {
@@ -32,7 +34,9 @@ export function MessageBubble({
   stopped,
   pending,
   quiet = false,
+  failed = false,
   onRegenerate,
+  onRetry,
 }: Props) {
   const own = role === "user"
   const { body, sources } = own
@@ -66,6 +70,18 @@ export function MessageBubble({
           </span>
         )}
       </div>
+      {failed && (
+        <p className="flex items-center gap-1 pr-1 text-[11px] text-destructive">
+          Failed ·
+          <button
+            type="button"
+            onClick={onRetry}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Try again
+          </button>
+        </p>
+      )}
       {(showActions || stopped || createdAt) && (
         <div
           className={cn(

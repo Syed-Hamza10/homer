@@ -1,12 +1,14 @@
 import { Sparkles } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { errorText } from "@/lib/errorText"
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { holdImeEnter } from "@/lib/ime"
 import { ApprovalCard } from "@/features/approvals/ApprovalCard"
 import { FormField } from "@/features/approvals/FormField"
 import type { Approval } from "@/features/approvals/types"
+import { clearDraft, saveDraft } from "./drafts"
 import { splitQuote } from "./format"
 import type { ComposeDraft } from "./types"
 import { useCompose, useMailRefresh, useWriteWithHomer } from "./useMail"
@@ -14,19 +16,62 @@ import { useCompose, useMailRefresh, useWriteWithHomer } from "./useMail"
 type Props = {
   initial: ComposeDraft
   title: string
+  slot: string
+  restored?: boolean
   onClose: () => void
 }
 
-export function MailComposer({ initial, title, onClose }: Props) {
+type Fields = { to: string; subject: string; text: string }
+
+export function MailComposer({
+  initial,
+  title,
+  slot,
+  restored = false,
+  onClose,
+}: Props) {
   const parts = splitQuote(initial.body)
-  const [to, setTo] = useState(initial.to)
-  const [subject, setSubject] = useState(initial.subject)
-  const [text, setText] = useState(parts.text)
+  const [fields, setFields] = useState<Fields>({
+    to: initial.to,
+    subject: initial.subject,
+    text: parts.text,
+  })
+  const { to, subject, text } = fields
   const [instruction, setInstruction] = useState("")
   const [approval, setApproval] = useState<Approval | null>(null)
   const compose = useCompose()
   const write = useWriteWithHomer()
   const refresh = useMailRefresh()
+  const [touched, setTouched] = useState(false)
+  const body = text + parts.quote
+  const edit = (change: Partial<Fields>) => {
+    setTouched(true)
+    setFields((current) => ({ ...current, ...change }))
+  }
+  const review = (draft: ComposeDraft) =>
+    compose.mutate(draft, {
+      onSuccess: (created) => {
+        clearDraft(slot)
+        setApproval(created)
+      },
+    })
+  const writeBody = (args: Parameters<typeof write.mutate>[0]) =>
+    write.mutate(args, { onSuccess: (written) => edit({ text: written.body }) })
+
+  useEffect(() => {
+    if (touched)
+      saveDraft(slot, {
+        to,
+        subject,
+        body,
+        thread_id: initial.thread_id,
+        title,
+      })
+  }, [touched, slot, to, subject, body, initial.thread_id, title])
+  const discard = () => {
+    clearDraft(slot)
+    onClose()
+  }
 
   if (approval)
     return (
@@ -47,24 +92,22 @@ export function MailComposer({ initial, title, onClose }: Props) {
     <form
       data-testid="composer"
       className="flex flex-col gap-3 rounded-lg border border-border bg-card/60 p-4 shadow-[inset_0_1px_0_var(--marble-1)]"
+      onKeyDown={holdImeEnter}
       onSubmit={(event) => {
         event.preventDefault()
-        compose.mutate(
-          {
-            to,
-            subject,
-            body: text + parts.quote,
-            thread_id: initial.thread_id,
-          },
-          { onSuccess: setApproval },
-        )
+        review({ to, subject, body, thread_id: initial.thread_id })
       }}
     >
-      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      <p className="text-xs font-medium text-muted-foreground">
+        {title}
+        {restored && !touched && (
+          <span className="font-normal"> · Draft restored</span>
+        )}
+      </p>
       <FormField label="To">
         <Input
           value={to}
-          onChange={(event) => setTo(event.target.value)}
+          onChange={(event) => edit({ to: event.target.value })}
           placeholder="name@example.com, another@example.com"
           required
         />
@@ -72,13 +115,13 @@ export function MailComposer({ initial, title, onClose }: Props) {
       <FormField label="Subject">
         <Input
           value={subject}
-          onChange={(event) => setSubject(event.target.value)}
+          onChange={(event) => edit({ subject: event.target.value })}
         />
       </FormField>
       <FormField label="Message">
         <Textarea
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => edit({ text: event.target.value })}
           className="min-h-36"
         />
       </FormField>
@@ -103,35 +146,34 @@ export function MailComposer({ initial, title, onClose }: Props) {
           variant="outline"
           disabled={!instruction.trim() || write.isPending}
           onClick={() =>
-            write.mutate(
-              {
-                instruction: instruction.trim(),
-                thread_id: initial.thread_id,
-                to,
-              },
-              { onSuccess: (written) => setText(written.body) },
-            )
+            writeBody({
+              instruction: instruction.trim(),
+              thread_id: initial.thread_id,
+              to,
+            })
           }
         >
           {write.isPending ? "Writing…" : "Draft with Homer"}
         </Button>
       </div>
-      {(compose.error ?? write.error) && (
-        <p className="text-sm text-destructive">
-          {errorText(compose.error ?? write.error)}
-        </p>
-      )}
+      <ErrorNotice
+        error={compose.error ?? write.error}
+        onRetry={() => {
+          if (compose.error && compose.variables) review(compose.variables)
+          else if (write.variables) writeBody(write.variables)
+        }}
+      />
       <div className="flex gap-2">
         <Button size="sm" type="submit" disabled={compose.isPending || !to}>
-          Send
+          Review email
         </Button>
-        <Button size="sm" type="button" variant="outline" onClick={onClose}>
+        <Button size="sm" type="button" variant="outline" onClick={discard}>
           Discard
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Send saves a Gmail draft and asks for your approval before anything goes
-        out.
+        Review email saves a Gmail draft and shows it to you. Nothing goes out
+        until you press Send email.
       </p>
     </form>
   )

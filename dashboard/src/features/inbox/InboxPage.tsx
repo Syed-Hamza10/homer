@@ -1,12 +1,13 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { Keyboard, PenLine } from "lucide-react"
 import { useRef, useState } from "react"
 import { ShortcutsHelp } from "@/components/ShortcutsHelp"
 import { Button } from "@/components/ui/button"
-import { errorText } from "@/lib/errorText"
 import { useTimezone } from "@/features/settings/useTimezone"
 import { stepId, useShortcuts } from "@/lib/shortcuts"
 import { useUrlParams } from "@/lib/useUrlParams"
 import { cn } from "@/lib/utils"
+import { loadDraft, NEW_MESSAGE } from "./drafts"
 import { FolderList } from "./FolderList"
 import { MailComposer } from "./MailComposer"
 import { ReadingPane } from "./ReadingPane"
@@ -26,6 +27,19 @@ const fallbackFolders = [
   { id: "inbox", name: "Inbox", kind: "folder" as const, unread: 0, total: 0 },
 ]
 
+function NewMessage({ onClose }: { onClose: () => void }) {
+  const [saved] = useState(() => loadDraft(NEW_MESSAGE))
+  return (
+    <MailComposer
+      initial={saved ?? blankDraft}
+      title="New message"
+      slot={NEW_MESSAGE}
+      restored={saved !== null}
+      onClose={onClose}
+    />
+  )
+}
+
 export function InboxPage() {
   const timeZone = useTimezone()
   const folders = useFolders()
@@ -35,7 +49,9 @@ export function InboxPage() {
   const folder = params.get("folder") ?? "inbox"
   const query = params.get("q") ?? ""
   const selected = params.get("thread")
-  const [composing, setComposing] = useState(false)
+  const [composing, setComposing] = useState(
+    () => !selected && loadDraft(NEW_MESSAGE) !== null,
+  )
   const [cursor, setCursor] = useState<string | null>(null)
   const [help, setHelp] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -124,9 +140,13 @@ export function InboxPage() {
         </div>
       </header>
       {(folders.error ?? triage.error) && (
-        <p className="border-b border-border px-5 py-2 text-sm text-destructive">
-          {errorText(folders.error ?? triage.error)}
-        </p>
+        <ErrorNotice
+          error={folders.error ?? triage.error}
+          onRetry={() =>
+            folders.error ? void folders.refetch() : triage.mutate()
+          }
+          className="border-b border-border px-5 py-2"
+        />
       )}
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[13rem_minmax(18rem,24rem)_minmax(0,1fr)]">
         <aside className="flex flex-col gap-3 border-b border-border p-3 lg:overflow-y-auto lg:border-r lg:border-b-0">
@@ -174,11 +194,7 @@ export function InboxPage() {
         >
           {composing ? (
             <div className="overflow-y-auto p-4">
-              <MailComposer
-                initial={blankDraft}
-                title="New message"
-                onClose={() => setComposing(false)}
-              />
+              <NewMessage onClose={() => setComposing(false)} />
             </div>
           ) : selected ? (
             <ReadingPane

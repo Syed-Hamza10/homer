@@ -1,3 +1,4 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -160,9 +161,13 @@ function SearchForm({ initial }: { initial: SearchSettings }) {
         {save.isSuccess && (
           <span className="text-sm text-muted-foreground">Saved.</span>
         )}
-        {save.error && (
-          <span className="text-sm text-destructive">{save.error.message}</span>
-        )}
+        <ErrorNotice
+          error={save.error}
+          onRetry={() =>
+            save.variables &&
+            save.mutate(save.variables, { onSuccess: () => setApiKey("") })
+          }
+        />
       </div>
       {probe.data && (
         <p
@@ -176,9 +181,7 @@ function SearchForm({ initial }: { initial: SearchSettings }) {
           {probeText(probe.data)}
         </p>
       )}
-      {probe.error && (
-        <p className="text-sm text-destructive">{probe.error.message}</p>
-      )}
+      <ErrorNotice error={probe.error} onRetry={() => probe.mutate()} />
     </form>
   )
 }

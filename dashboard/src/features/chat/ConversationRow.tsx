@@ -2,12 +2,14 @@ import { Check, Pencil, Trash2, X } from "lucide-react"
 import { useState, type KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { composing } from "@/lib/ime"
 import { cn } from "@/lib/utils"
 import type { Conversation } from "./types"
 
 type Props = {
   conversation: Conversation
   selected: boolean
+  replying?: boolean
   onSelect: () => void
   onRename: (title: string) => void
   onDelete: () => void
@@ -18,6 +20,7 @@ type Mode = "view" | "rename" | "confirm"
 export function ConversationRow({
   conversation,
   selected,
+  replying = false,
   onSelect,
   onRename,
   onDelete,
@@ -38,7 +41,7 @@ export function ConversationRow({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") save()
+    if (event.key === "Enter" && !composing(event)) save()
     if (event.key === "Escape") setMode("view")
   }
 
@@ -95,6 +98,11 @@ export function ConversationRow({
         className="min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {title}
+        {replying && (
+          <span className="block text-[11px] text-muted-foreground">
+            Replying…
+          </span>
+        )}
       </button>
       <div className="flex shrink-0 gap-0.5 pr-1 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100">
         <Button

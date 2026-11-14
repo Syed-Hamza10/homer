@@ -1,6 +1,8 @@
 import { CalendarPlus, Mail, ShieldCheck } from "lucide-react"
 import { useState } from "react"
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { Button } from "@/components/ui/button"
+import { ApiError } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { ApprovalEditor } from "./ApprovalEditor"
 import {
@@ -11,7 +13,7 @@ import {
   primaryLabel,
   statusLabel,
 } from "./editable"
-import { describeDecisionError, useDecide } from "./useDecide"
+import { useDecide } from "./useDecide"
 import { useEditApproval } from "./useEditApproval"
 import type { Approval, PendingApproval } from "./types"
 
@@ -39,7 +41,12 @@ export function ApprovalCard({ approval, onDecided }: Props) {
   })
   const status = decide.data?.status ?? approval.status ?? "pending"
   const problem = resultText(decide.data?.result ?? approval.result)
-  const error = describeDecisionError(decide.error ?? edit.error)
+  const failure = decide.error ?? edit.error
+  const decided = failure instanceof ApiError && failure.status === 409
+  const retry = () => {
+    if (decide.error && decide.variables) decide.mutate(decide.variables)
+    else if (edit.variables) edit.mutate(edit.variables)
+  }
   const mail = mailFields(current)
   const editable = mail ?? eventFields(current)
   const busy = decide.isPending || edit.isPending
@@ -107,7 +114,11 @@ export function ApprovalCard({ approval, onDecided }: Props) {
         {problem && (
           <p className="mt-2 text-sm text-muted-foreground">{problem}</p>
         )}
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+        <ErrorNotice
+          error={decided ? "Already decided" : failure}
+          onRetry={decided ? undefined : retry}
+          className="mt-2"
+        />
       </div>
       {!settled && !editing && (
         <footer className="flex items-center gap-1.5 border-t border-border/80 bg-muted/40 px-4 py-2.5">

@@ -99,6 +99,15 @@ def test_create_validates_times_and_addresses(
     assert logged_in.post("/api/calendar/events", json=bad, headers=origin).status_code == 422
 
 
+def test_create_accepts_an_event_that_crosses_midnight(
+    logged_in: TestClient, origin: dict[str, str]
+) -> None:
+    body = {"title": "Launch watch", "start": "2026-11-20T23:00", "end": "2026-11-21T01:00"}
+    response = logged_in.post("/api/calendar/events", json=body, headers=origin)
+    assert response.status_code == 200, response.text
+    assert response.json()["payload"]["end"] == "2026-11-21T01:00:00+00:00"
+
+
 def test_move_asks_for_approval_with_before_and_after(
     logged_in: TestClient, origin: dict[str, str], sim: FastAPI
 ) -> None:

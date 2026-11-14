@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ConversationRow } from "./ConversationRow"
 import { filterConversations, groupConversations } from "./groups"
+import { useReplying } from "./streams"
 import { useConversationActions } from "./useConversationActions"
 import { useConversations } from "./useConversations"
 
@@ -14,6 +15,7 @@ type Props = { onNavigate?: () => void }
 export function ConversationList({ onNavigate }: Props) {
   const { data = [], isPending } = useConversations()
   const { rename, remove } = useConversationActions()
+  const replying = useReplying()
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const selectedId = params.get("conversation")
@@ -103,6 +105,7 @@ export function ConversationList({ onNavigate }: Props) {
                     <ConversationRow
                       conversation={c}
                       selected={String(c.id) === selectedId}
+                      replying={replying.has(String(c.id))}
                       onSelect={() => select(String(c.id))}
                       onRename={(title) => rename.mutate({ id: c.id, title })}
                       onDelete={() => onDelete(c.id)}

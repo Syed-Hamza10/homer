@@ -205,3 +205,55 @@ describe("InboxPage URL and sorting", () => {
     )
   })
 })
+
+describe("InboxPage drafts", () => {
+  it("keeps an unsent reply when another thread is opened", async () => {
+    const fetchMock = stubApi([])
+    const base = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url.includes("/reply?")
+        ? new Response(
+            JSON.stringify({
+              to: "maya@example.test",
+              subject: "Re: First",
+              body: "",
+              thread_id: "t1",
+            }),
+          )
+        : base(url, init),
+    )
+    renderPage()
+    fireEvent.click(await screen.findByTestId("thread-t1"))
+    fireEvent.click(await screen.findByRole("button", { name: /^Reply$/ }))
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Thursday works for me." },
+    })
+    fireEvent.click(screen.getByTestId("thread-t2"))
+    expect(await screen.findByText("Body of t2")).toBeTruthy()
+    expect(screen.queryByTestId("composer")).toBeNull()
+    fireEvent.click(screen.getByTestId("thread-t1"))
+    expect(
+      await screen.findByDisplayValue("Thursday works for me."),
+    ).toBeTruthy()
+    expect(screen.getByText("· Draft restored")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }))
+    expect(localStorage.getItem("homer.draft.t1")).toBeNull()
+  })
+
+  it("restores a new message after leaving the page", async () => {
+    stubApi([])
+    renderPage()
+    fireEvent.click(await screen.findByRole("button", { name: /New message/ }))
+    fireEvent.change(screen.getByLabelText("To"), {
+      target: { value: "sam@example.test" },
+    })
+    fireEvent.change(screen.getByLabelText("Subject"), {
+      target: { value: "Lunch" },
+    })
+    cleanup()
+    renderPage()
+    expect(await screen.findByDisplayValue("sam@example.test")).toBeTruthy()
+    expect(screen.getByDisplayValue("Lunch")).toBeTruthy()
+    expect(screen.getByText("· Draft restored")).toBeTruthy()
+  })
+})

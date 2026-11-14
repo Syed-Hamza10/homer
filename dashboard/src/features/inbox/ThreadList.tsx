@@ -1,8 +1,8 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { ArrowDown, ArrowUp, Search } from "lucide-react"
 import { useEffect, useRef, useState, type RefObject } from "react"
 import { UpdatedAt } from "@/components/UpdatedAt"
 import { Button } from "@/components/ui/button"
-import { errorText } from "@/lib/errorText"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
@@ -190,8 +190,11 @@ export function ThreadList({
           <li className="px-3 py-6 text-sm text-muted-foreground">Loading…</li>
         )}
         {threads.error && (
-          <li className="px-3 py-6 text-sm text-destructive">
-            {errorText(threads.error)}
+          <li className="px-3 py-6">
+            <ErrorNotice
+              error={threads.error}
+              onRetry={() => void threads.refetch()}
+            />
           </li>
         )}
         {!threads.isPending && !threads.error && rows.length === 0 && (

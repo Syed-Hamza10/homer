@@ -1,6 +1,5 @@
 import { useState } from "react"
 import type { Approval } from "@/features/approvals/types"
-import { errorText } from "@/lib/errorText"
 import { EventForm } from "./EventForm"
 import { toFields } from "./formValue"
 import { PanelFrame } from "./PanelFrame"
@@ -23,9 +22,9 @@ export function QuickCreate({ initial, onClose, onApproval }: Props) {
         value={value}
         onChange={setValue}
         onBack={onClose}
-        submitLabel="Create"
+        submitLabel="Review event"
         busy={create.isPending}
-        error={errorText(create.error)}
+        error={create.error}
         onSubmit={() =>
           create.mutate(toFields(value), { onSuccess: onApproval })
         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { editsGuests, eventFields } from "./editable"
+import { editsGuests, eventFields, eventOrderProblem } from "./editable"
 
 describe("eventFields", () => {
   it("reads a move card's new time and current title", () => {
@@ -19,6 +19,7 @@ describe("eventFields", () => {
     expect(eventFields(move)).toEqual({
       title: "Lunch with Sam",
       date: "2026-11-18",
+      end_date: "2026-11-18",
       start: "15:00",
       end: "16:00",
       attendees: [],
@@ -35,5 +36,29 @@ describe("eventFields", () => {
       payload: { event_id: "evt_0005" },
     }
     expect(eventFields(remove)).toBeNull()
+  })
+
+  it("keeps an event that crosses midnight on two dates", () => {
+    const overnight = eventFields({
+      id: 8,
+      action: "cal_create",
+      preview: "Create 'Launch watch'",
+      payload: {
+        title: "Launch watch",
+        start: "2026-11-20T23:00:00",
+        end: "2026-11-21T01:00:00",
+        attendees: [],
+      },
+    })
+    expect(overnight).toMatchObject({
+      date: "2026-11-20",
+      start: "23:00",
+      end_date: "2026-11-21",
+      end: "01:00",
+    })
+    expect(overnight && eventOrderProblem(overnight)).toBeNull()
+    expect(
+      overnight && eventOrderProblem({ ...overnight, end_date: "2026-11-20" }),
+    ).toBe("The end must be after the start.")
   })
 })

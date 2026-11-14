@@ -69,10 +69,10 @@ describe("EventPopover", () => {
     vi.stubGlobal("fetch", fetchMock)
     show()
     fireEvent.click(screen.getByRole("button", { name: "Move" }))
-    fireEvent.change(screen.getByLabelText("Start"), {
+    fireEvent.change(screen.getByLabelText("Start time"), {
       target: { value: "16:00" },
     })
-    fireEvent.change(screen.getByLabelText("End"), {
+    fireEvent.change(screen.getByLabelText("End time"), {
       target: { value: "17:00" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Ask to move" }))
@@ -83,6 +83,38 @@ describe("EventPopover", () => {
     expect(JSON.parse(init.body)).toEqual({
       start: "2026-11-06T16:00",
       end: "2026-11-06T17:00",
+    })
+  })
+
+  it("moves an event across midnight with its own end date", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 8,
+          action: "cal_update",
+          preview: "Move",
+          payload: {},
+        }),
+      ),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    show()
+    fireEvent.click(screen.getByRole("button", { name: "Move" }))
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "23:00" },
+    })
+    fireEvent.change(screen.getByLabelText("End time"), {
+      target: { value: "01:00" },
+    })
+    expect(screen.getByText("The end must be after the start.")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("End date"), {
+      target: { value: "2026-11-07" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Ask to move" }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      start: "2026-11-06T23:00",
+      end: "2026-11-07T01:00",
     })
   })
 })

@@ -400,6 +400,23 @@ class TestEdit:
             stored = session.get(Approval, old_id)
             assert stored is not None and stored.status == "superseded"
 
+    def test_an_event_edit_can_cross_midnight(
+        self, logged_in: TestClient, app: FastAPI, origin: dict[str, str]
+    ) -> None:
+        payload = {"event_id": "e1", "changes": {"start": "2026-11-20T15:00:00+05:00"}}
+        with Session(app.state.engine) as session:
+            old_id = create(session, 1, "google", "cal_update", payload, "Move 'Watch' to 15:00").id
+        change = {"title": "Watch", "date": "2026-11-20", "start": "23:00", "end": "01:00"}
+        backwards = logged_in.post(f"/api/approvals/{old_id}/edit", json=change, headers=origin)
+        assert backwards.status_code == 422
+        overnight = {**change, "end_date": "2026-11-21"}
+        response = logged_in.post(f"/api/approvals/{old_id}/edit", json=overnight, headers=origin)
+        assert response.status_code == 200, response.text
+        assert response.json()["payload"]["changes"] == {
+            "start": "2026-11-20T23:00:00",
+            "end": "2026-11-21T01:00:00",
+        }
+
     def test_edit_hash_changes(
         self, logged_in: TestClient, app: FastAPI, origin: dict[str, str]
     ) -> None:

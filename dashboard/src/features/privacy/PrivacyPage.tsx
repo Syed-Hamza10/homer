@@ -1,3 +1,4 @@
+import { ErrorNotice } from "@/components/ErrorNotice"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -89,11 +90,14 @@ export function PrivacyPage() {
                 Restart Homer to apply this change.
               </p>
             )}
-            {setWebSearch.error && (
-              <p className="w-full text-xs text-destructive">
-                {setWebSearch.error.message}
-              </p>
-            )}
+            <ErrorNotice
+              error={setWebSearch.error}
+              onRetry={() =>
+                setWebSearch.variables !== undefined &&
+                setWebSearch.mutate(setWebSearch.variables)
+              }
+              className="w-full text-xs"
+            />
           </CardContent>
         </Card>
 
@@ -160,9 +164,7 @@ export function PrivacyPage() {
               .
             </p>
           )}
-          {wipe.error && (
-            <p className="text-xs text-destructive">{wipe.error.message}</p>
-          )}
+          <ErrorNotice error={wipe.error} className="text-xs" />
         </section>
       </main>
     </ScrollArea>
