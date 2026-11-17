@@ -1,6 +1,6 @@
 [project]
 name = "homer-mcp-google"
-version = "0.1.2"
+version = "0.1.3"
 description = "MCP server exposing mail, calendar and contacts tools over Google's REST APIs."
 requires-python = ">=3.12,<3.13"
 dependencies = [

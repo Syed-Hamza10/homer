@@ -572,7 +572,7 @@ dev = [
 
 [[package]]
 name = "homer-core"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "alembic" },
@@ -631,7 +631,7 @@ dev = [
 
 [[package]]
 name = "homer-eval"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "packages/eval" }
 dependencies = [
     { name = "fastapi" },
@@ -658,7 +658,7 @@ requires-dist = [
 
 [[package]]
 name = "homer-mcp-google"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "packages/mcp_google" }
 dependencies = [
     { name = "fastmcp" },
@@ -683,7 +683,7 @@ dev = [{ name = "homer-eval", editable = "packages/eval" }]
 
 [[package]]
 name = "homer-mcp-search"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "packages/mcp_search" }
 dependencies = [
     { name = "fastmcp" },
@@ -700,7 +700,7 @@ requires-dist = [
 
 [[package]]
 name = "homer-mcp-system"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "packages/mcp_system" }
 dependencies = [
     { name = "dateparser" },
@@ -715,7 +715,7 @@ requires-dist = [
 
 [[package]]
 name = "homer-net"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "packages/net" }
 dependencies = [
     { name = "httpx" },
