@@ -4,7 +4,7 @@ import { connectStep } from "./googleStatus"
 import type { GoogleStatus } from "./types"
 
 const GOOGLE_SETUP_URL =
-  "https://github.com/Syed-Hamza10/homer/blob/main/docs/GOOGLE_SETUP.md"
+  "https://github.com/homer-app/homer/blob/main/docs/GOOGLE_SETUP.md"
 
 const panelClass =
   "flex flex-col gap-3 rounded-md border border-border/70 p-3 text-sm"

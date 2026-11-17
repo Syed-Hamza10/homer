@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Syed-Hamza10/homer/actions/workflows/ci.yml"><img src="https://github.com/Syed-Hamza10/homer/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/homer-app/homer/actions/workflows/ci.yml"><img src="https://github.com/homer-app/homer/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue" alt="License: PolyForm Noncommercial 1.0.0"></a>
   <img src="https://img.shields.io/badge/AI-runs%20locally%20via%20Ollama-2f6b5e" alt="AI runs locally via Ollama">
 </p>
@@ -34,7 +34,7 @@
 One line, on a Mac with Apple Silicon (16 GB or more) or a Linux machine with an NVIDIA GPU (8 GB or more). You need about 30 GB of free disk.
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://github.com/Syed-Hamza10/homer/releases/latest/download/install.sh)"
+/bin/bash -c "$(curl -fsSL https://github.com/homer-app/homer/releases/latest/download/install.sh)"
 ```
 
 The installer sets everything up: Ollama, Homer, and the model. It asks you for a passphrase, starts Homer in the background, and opens **http://127.0.0.1:8000**.

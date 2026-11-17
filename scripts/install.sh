@@ -7,7 +7,7 @@ UV_INSTALLER="https://astral.sh/uv/${UV_VERSION}/install.sh"
 OLLAMA_RELEASE="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}"
 OLLAMA_INSTALLER="https://ollama.com/install.sh"
 
-REPO="Syed-Hamza10/homer"
+REPO="homer-app/homer"
 RELEASES="${HOMER_RELEASE_URL:-https://github.com/$REPO/releases}"
 VERSION="${HOMER_VERSION:-latest}"
 HOMER_HOME="${HOMER_HOME:-$HOME/.homer}"

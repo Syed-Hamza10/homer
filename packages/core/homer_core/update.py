@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO = "Syed-Hamza10/homer"
+REPO = "homer-app/homer"
 GITHUB_API = "https://api.github.com"
 RELEASE_FILES = ("SHA256SUMS", "requirements.lock")
 

@@ -128,7 +128,7 @@ ollama serve
 In a second terminal:
 
 ```sh
-git clone https://github.com/Syed-Hamza10/homer.git
+git clone https://github.com/homer-app/homer.git
 cd homer
 
 uv sync --all-packages
