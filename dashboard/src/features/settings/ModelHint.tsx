@@ -1,7 +1,7 @@
 import { useHealth } from "./useSettings"
 
 export const MODEL_DOC =
-  "https://github.com/Syed-Hamza10/homer/blob/main/CLIENT_ONBOARDING.md#8-troubleshooting"
+  "https://github.com/homer-app/homer/blob/main/CLIENT_ONBOARDING.md#8-troubleshooting"
 
 export function ModelHint() {
   const { data } = useHealth()

@@ -9,7 +9,7 @@ Open **Terminal** (press Cmd+Space, type "Terminal", press Return), paste this l
 Return:
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://github.com/Syed-Hamza10/homer/releases/latest/download/install.sh)"
+/bin/bash -c "$(curl -fsSL https://github.com/homer-app/homer/releases/latest/download/install.sh)"
 ```
 
 > The repository is private for now, so this link only works once a release is public. Until then,
@@ -53,7 +53,7 @@ installer; it downloads the private release with `gh`:
 
 ```sh
 brew install gh && gh auth login
-gh release download -R Syed-Hamza10/homer -p install.sh -D ~/homer-release
+gh release download -R homer-app/homer -p install.sh -D ~/homer-release
 /bin/bash ~/homer-release/install.sh
 ```
 
