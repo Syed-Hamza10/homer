@@ -4,7 +4,7 @@ version = "0.1.3"
 description = "Homer MCP server for the current time and natural-language dates."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "fastmcp>=4.0,<5",
+    "fastmcp>=4.2.1,<5",
     "dateparser>=1.2",
 ]
 
