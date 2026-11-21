@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "homer-core",
     "homer-net",
-    "fastapi>=0.115",
+    "fastapi>=0.163.2",
     "uvicorn[standard]>=0.32",
     "typer>=0.15",
     "pydantic-ai-slim[openai]>=1.0",

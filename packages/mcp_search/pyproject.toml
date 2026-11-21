@@ -5,7 +5,7 @@ description = "Homer MCP server for web search and page fetching."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "homer-net",
-    "fastmcp>=4.0,<5",
+    "fastmcp>=4.2.1,<5",
     "trafilatura>=2.0",
 ]
 
